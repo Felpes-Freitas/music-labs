@@ -7,7 +7,7 @@ import type { Project } from '../core/model.js';
 import { emptyProject } from '../core/model.js';
 import { History, Op, applyOps } from '../core/ops.js';
 
-export const HOME_DIR = process.env.BATUQUE_HOME ?? join(homedir(), 'Batuque');
+export const HOME_DIR = process.env.BATUQUE_HOME ?? join(homedir(), 'Music Labs');
 export const PROJECTS_DIR = join(HOME_DIR, 'Projetos');
 export const RENDERS_DIR = join(HOME_DIR, 'Renders');
 export const SAMPLES_DIR = join(HOME_DIR, 'Samples');
@@ -116,7 +116,7 @@ export class Store {
 
   open(path: string) {
     const p = JSON.parse(readFileSync(path, 'utf8')) as Project;
-    if (p.format !== 'batuque') throw new Error('Arquivo não é um projeto do Batuque');
+    if (p.format !== 'batuque') throw new Error('Arquivo não é um projeto do Music Labs');
     this.load(p, path);
   }
 

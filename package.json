@@ -1,5 +1,5 @@
 {
-  "name": "batuque",
+  "name": "music-labs",
   "version": "0.1.0",
   "description": "DAW open source para Linux, com fluxo de trabalho de rack de canais, piano roll e playlist, e servidor MCP embutido.",
   "license": "GPL-3.0-or-later",
@@ -34,6 +34,6 @@
     "vite": "^8.3.8"
   },
   "bin": {
-    "batuque": "bin/batuque"
+    "musiclabs": "bin/musiclabs"
   }
 }

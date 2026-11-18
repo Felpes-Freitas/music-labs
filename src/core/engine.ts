@@ -1,4 +1,4 @@
-// Engine de áudio do Batuque: sequenciador (pattern/song), rack de canais,
+// Engine de áudio do Music Labs: sequenciador (pattern/song), rack de canais,
 // mixer com inserts, efeitos, roteamento e sidechain. Roda igual no
 // AudioWorklet do navegador e no Node (render offline e análise via MCP).
 

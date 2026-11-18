@@ -1,4 +1,4 @@
-# Batuque
+# Music Labs
 
 DAW open source para Linux com o fluxo de trabalho de rack de canais, piano roll,
 playlist e mixer, e um **servidor MCP** embutido para produzir junto com o Claude.
@@ -9,10 +9,10 @@ roda no Node para render offline e análise de mix.
 ```bash
 npm install
 npm run build
-bin/batuque          # sobe o servidor (porta 7717) e abre a interface
+bin/musiclabs          # sobe o servidor (porta 7717) e abre a interface
 ```
 
-Há um atalho no menu de aplicativos ("Batuque") e o comando `batuque` em `~/.local/bin`.
+Há um atalho no menu de aplicativos ("Music Labs") e o comando `musiclabs` em `~/.local/bin`.
 
 ## O que tem
 
@@ -36,7 +36,7 @@ Há um atalho no menu de aplicativos ("Batuque") e o comando `batuque` em `~/.lo
 - **Importa .flp do FL Studio**: canais, patterns, notas, playlist, nomes do mixer e
   roteamento canal→insert. Samples são resolvidos na instalação do Wine; plugins do FL
   viram o instrumento nativo mais próximo (FPC → kit, baixo → reese, pad → pad...).
-- Navegador de samples (packs do FL instalados, ~/Música, Downloads, ~/Batuque/Samples)
+- Navegador de samples (packs do FL instalados, ~/Música, Downloads, ~/MusicLabs/Samples)
   com busca, pré-escuta e arrastar para o rack.
 - Teclado do computador como piano (Z…M / Q…P, `-` e `=` mudam a oitava), teclado MIDI
   (Web MIDI), undo/redo ilimitado, autosave, exportação WAV 16/24/32-bit.
@@ -47,7 +47,7 @@ F8 navegador · F9 mixer · Ctrl+S salvar · Ctrl+Z/Y desfazer/refazer.
 ## MCP
 
 ```bash
-claude mcp add -s user batuque -- node /caminho/para/batuque/build/mcp.mjs
+claude mcp add -s user musiclabs -- node /caminho/para/batuque/build/mcp.mjs
 ```
 
 O MCP sobe o servidor sozinho se o app não estiver aberto. Toda edição aparece na hora
@@ -76,7 +76,7 @@ src/web      interface Preact + AudioWorklet com a engine
 
 ## Sobre o FL Studio
 
-O Batuque é um projeto original. Nenhum código, binário, plugin, arte ou marca da
+O Music Labs é um projeto original. Nenhum código, binário, plugin, arte ou marca da
 Image-Line foi copiado ou decompilado. A compatibilidade com `.flp` foi feita a partir
 dos arquivos de projeto (dados) gerados por uma instalação legítima e da documentação
 pública do formato, apenas para interoperabilidade. Os packs de samples do FL só são

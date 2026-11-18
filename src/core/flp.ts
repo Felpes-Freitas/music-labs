@@ -1,9 +1,9 @@
-// Importador de projetos .flp (FL Studio) para o modelo do Batuque.
+// Importador de projetos .flp (FL Studio) para o modelo do Music Labs.
 //
 // Implementação clean-room: o layout foi levantado a partir dos arquivos de
 // dados (.flp) gerados por uma instalação legítima e da documentação pública
 // do formato. Nenhum código da Image-Line foi decompilado ou copiado. O objetivo
-// é só interoperabilidade: abrir os seus projetos no Batuque.
+// é só interoperabilidade: abrir os seus projetos no Music Labs.
 
 import type { Channel, Clip, InstrumentType, Note, Params, Pattern, Project } from './model.js';
 import { PPQ, color, emptyProject, makeInsert, uid } from './model.js';
@@ -114,7 +114,7 @@ export interface FlpImportOptions {
   exists?: (path: string) => boolean;
 }
 
-/** Heurística: escolhe um instrumento nativo do Batuque para plugins do FL. */
+/** Heurística: escolhe um instrumento nativo do Music Labs para plugins do FL. */
 function guessInstrument(name: string, plugin: string): { type: InstrumentType; params: Params } {
   const n = `${name} ${plugin}`.toLowerCase();
   const pick = (preset: string) => presetParams(preset)!;

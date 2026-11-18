@@ -1,4 +1,4 @@
-// Servidor do Batuque: guarda o projeto, sincroniza a interface por WebSocket,
+// Servidor do Music Labs: guarda o projeto, sincroniza a interface por WebSocket,
 // expõe a API que o MCP usa, converte samples e faz render offline.
 
 import { createServer, IncomingMessage, ServerResponse } from 'node:http';
@@ -122,7 +122,7 @@ function runActions(list: { name: string; args: any }[], origin: string, label?:
 function browseRoots() {
   const roots: { name: string; path: string }[] = [];
   const add = (name: string, path: string) => existsSync(path) && roots.push({ name, path });
-  add('Samples do Batuque', SAMPLES_DIR);
+  add('Samples do Music Labs', SAMPLES_DIR);
   add('Packs do FL Studio', join(FL_DIR, 'Data/Patches/Packs'));
   add('Música', join(homedir(), 'Música'));
   add('Músicas', join(homedir(), 'Músicas'));
@@ -374,5 +374,5 @@ export function startServer(port = PORT) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
-  startServer().then(() => console.log(`Batuque rodando em http://127.0.0.1:${PORT}`));
+  startServer().then(() => console.log(`Music Labs rodando em http://127.0.0.1:${PORT}`));
 }

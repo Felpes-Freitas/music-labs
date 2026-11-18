@@ -1,4 +1,4 @@
-// AudioWorklet: roda a engine do Batuque na thread de áudio do navegador.
+// AudioWorklet: roda a engine do Music Labs na thread de áudio do navegador.
 import { Engine } from '../core/engine';
 
 declare const sampleRate: number;
@@ -7,7 +7,7 @@ declare class AudioWorkletProcessor {
   port: MessagePort;
 }
 
-class BatuqueProcessor extends AudioWorkletProcessor {
+class MusicLabsProcessor extends AudioWorkletProcessor {
   engine = new Engine(sampleRate);
   blocks = 0;
   constructor() {
@@ -65,4 +65,4 @@ class BatuqueProcessor extends AudioWorkletProcessor {
   }
 }
 
-registerProcessor('batuque', BatuqueProcessor);
+registerProcessor('batuque', MusicLabsProcessor);

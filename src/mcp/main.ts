@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Servidor MCP do Batuque (stdio). Fala com o app pelo HTTP local; se o app
+// Servidor MCP do Music Labs (stdio). Fala com o app pelo HTTP local; se o app
 // não estiver rodando, sobe o servidor em segundo plano.
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -50,7 +50,7 @@ async function ensureServer() {
       /* esperando */
     }
   }
-  throw new Error('Não consegui iniciar o servidor do Batuque');
+  throw new Error('Não consegui iniciar o servidor do Music Labs');
 }
 
 async function api(method: 'GET' | 'POST', path: string, body?: unknown) {
@@ -77,10 +77,10 @@ function strip(o: Record<string, unknown>) {
 }
 
 const server = new McpServer(
-  { name: 'batuque', version: '0.1.0' },
+  { name: 'musiclabs', version: '0.1.0' },
   {
     instructions: [
-      'Batuque é uma DAW para Linux no estilo rack de canais + piano roll + playlist + mixer.',
+      'Music Labs é uma DAW para Linux no estilo rack de canais + piano roll + playlist + mixer.',
       'Tempo: posições em "beats" (semínimas, 0 = início do pattern) ou "compasso:tempo:step" com base 1 ("2:1:1").',
       'Durações em beats (0.25 = semicolcheia). Notas: "C4" (= MIDI 60) ou número MIDI. Velocity 0..1.',
       'Canais e patterns podem ser referenciados por id ou nome. Tracks da playlist e compassos começam em 1. Insert 0 = master.',
@@ -166,7 +166,7 @@ tool(
 
 tool(
   'search_samples',
-  'Procura arquivos de áudio (packs do FL Studio instalados, ~/Batuque/Samples, ~/Música, Downloads) por palavras no caminho. Use o path num canal sampler.',
+  'Procura arquivos de áudio (packs do FL Studio instalados, ~/MusicLabs/Samples, ~/Música, Downloads) por palavras no caminho. Use o path num canal sampler.',
   { query: z.string().describe('ex.: "kick 808", "snare trap", "vocal chop"'), limit: z.number().optional() },
   ({ query, limit }) => api('GET', `/api/search?q=${encodeURIComponent(query)}&limit=${limit ?? 30}`),
 );
@@ -207,7 +207,7 @@ tool(
   (a) => act('setProjectProps', a, 'Projeto atualizado'),
 );
 
-tool('save_project', 'Salva o projeto (.batuque). Sem path usa o arquivo atual ou ~/Batuque/Projetos/<nome>.batuque.', { path: z.string().optional() }, (a) => api('POST', '/api/save', a));
+tool('save_project', 'Salva o projeto (.batuque). Sem path usa o arquivo atual ou ~/MusicLabs/Projetos/<nome>.batuque.', { path: z.string().optional() }, (a) => api('POST', '/api/save', a));
 
 tool(
   'open_project',
@@ -216,7 +216,7 @@ tool(
   (a) => api('POST', '/api/open', a),
 );
 
-tool('list_projects', 'Lista projetos salvos em ~/Batuque/Projetos.', {}, () => api('GET', '/api/projects'));
+tool('list_projects', 'Lista projetos salvos em ~/MusicLabs/Projetos.', {}, () => api('GET', '/api/projects'));
 
 tool('undo', 'Desfaz a última edição.', {}, () => api('POST', '/api/undo'));
 tool('redo', 'Refaz.', {}, () => api('POST', '/api/redo'));

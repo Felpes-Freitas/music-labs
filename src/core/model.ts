@@ -1,4 +1,4 @@
-// Modelo de projeto do Batuque. Tudo aqui é JSON puro para poder viajar entre
+// Modelo de projeto do Music Labs. Tudo aqui é JSON puro para poder viajar entre
 // navegador, servidor, engine de áudio e MCP sem conversão.
 
 export const PPQ = 96; // ticks por semínima

@@ -120,7 +120,7 @@ function menus(): Record<string, Item[]> {
     ],
     Ajuda: [
       { label: 'Atalhos: Espaço tocar · L pattern/song · F5–F9 janelas · Ctrl+Z/Y · Z…M e Q…P = teclado musical · - / = oitava', run: () => {} },
-      { label: 'MCP: o Claude edita o projeto ao vivo (ferramentas "batuque")', run: () => {} },
+      { label: 'MCP: o Claude edita o projeto ao vivo (ferramentas "musiclabs")', run: () => {} },
     ],
   };
 }

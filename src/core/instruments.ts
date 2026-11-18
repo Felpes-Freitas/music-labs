@@ -1,4 +1,4 @@
-// Instrumentos nativos do Batuque. Cada canal do rack tem uma instância; a
+// Instrumentos nativos do Music Labs. Cada canal do rack tem uma instância; a
 // engine chama noteOn com deslocamento exato dentro do bloco.
 
 import type { InstrumentType, Params } from './model.js';
