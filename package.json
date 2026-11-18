@@ -1,0 +1,39 @@
+{
+  "name": "musiclabs",
+  "version": "0.1.0",
+  "description": "DAW open source para Linux, com fluxo de trabalho de rack de canais, piano roll e playlist, e servidor MCP embutido.",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && npm run build:node",
+    "start": "node build/server.mjs",
+    "mcp": "node build/mcp.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts",
+    "build:node": "esbuild src/server/main.ts --bundle --platform=node --format=esm --packages=external --outfile=build/server.mjs && esbuild src/mcp/main.ts --bundle --platform=node --format=esm --packages=external --outfile=build/mcp.mjs",
+    "dev:server": "tsx watch src/server/main.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "preact": "^11.2.0",
+    "tsx": "^4.23.15",
+    "ws": "^8.23.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.6",
+    "@types/node": "^26.6.6",
+    "@types/ws": "^8.18.2",
+    "playwright-core": "^1.65.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  },
+  "bin": {
+    "musiclabs": "bin/musiclabs"
+  }
+}
