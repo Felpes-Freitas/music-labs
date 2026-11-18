@@ -2,6 +2,7 @@
 import workletUrl from './worklet.ts?worker&url';
 import { decodeWav } from '../core/wav';
 import type { Project } from '../core/model';
+import type { Op } from '../core/ops';
 import type { EngineStatus } from '../core/engine';
 
 export class Audio {
@@ -10,7 +11,7 @@ export class Audio {
   status: EngineStatus = { playing: false, mode: 'pattern', patternId: null, tick: 0, meters: [], gr: [], activeChannels: [] };
   private loaded = new Set<string>();
   private loading = new Map<string, Promise<void>>();
-  private pending: Project | null = null;
+  getProject: () => Project | null = () => null;
   onStatus: (s: EngineStatus) => void = () => {};
   analyser: AnalyserNode | null = null;
 
@@ -31,10 +32,15 @@ export class Audio {
         this.status = e.data.status;
         this.onStatus(this.status);
       } else if (e.data.type === 'error') console.error('engine:', e.data.error);
+      else if (e.data.type === 'resync') {
+        const p = this.getProject();
+        if (p) this.setProject(p);
+      }
     };
     this.ctx = ctx;
     this.node = node;
-    if (this.pending) this.setProject(this.pending);
+    const p = this.getProject();
+    if (p) this.setProject(p);
   }
 
   get running() {
@@ -45,15 +51,23 @@ export class Audio {
     this.node?.port.postMessage(m);
   }
 
+  /** Envia o projeto inteiro (abrir, undo/redo). */
   setProject(p: Project) {
-    if (!this.node) {
-      this.pending = p;
-      return;
-    }
+    if (!this.node) return; // ao ligar o áudio, start() envia o projeto atual
     this.post({ type: 'project', project: p });
-    for (const ch of p.channels) {
-      if (ch.type === 'sampler' && ch.params.sample) this.loadSample(String(ch.params.sample));
-    }
+    this.syncSamples(p);
+  }
+
+  /** Envia só as alterações: a thread de áudio aplica as mesmas ops na cópia dela. */
+  applyOps(ops: Op[], p: Project) {
+    if (!this.node) return;
+    if (ops.some((o) => o.op === 'replace')) return this.setProject(p);
+    this.post({ type: 'ops', ops });
+    this.syncSamples(p);
+  }
+
+  private syncSamples(p: Project) {
+    for (const ch of p.channels) if (ch.type === 'sampler' && ch.params.sample) this.loadSample(String(ch.params.sample));
   }
 
   /** Carrega um arquivo ou um instrumento multi-sample (pasta / .fst) na engine. */

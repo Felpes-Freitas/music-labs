@@ -23,6 +23,7 @@ export interface FlpFile {
 
 export const EV = {
   ChannelEnabled: 0,
+  Registered: 28, // BYTE: 1 = salvo por cópia registrada
   ChannelType: 21,
   ChannelFxTarget: 22, // BYTE: insert do mixer (validado nos .flp de exemplo)
   ChannelNew: 64,
@@ -149,6 +150,15 @@ export interface FlpImportReport {
   substituted: { channel: string; plugin: string; as: string }[];
   missingSamples: string[];
   automationSkipped: number;
+  /**
+   * Projeto salvo por um FL não registrado (modo de avaliação). Nesses arquivos
+   * o próprio FL embaralha os valores numéricos (tempo, rota do mixer, estado dos
+   * canais) como trava de licença. Não tentamos desfazer isso: esses campos ficam
+   * no padrão e só o que está legível (notas, nomes, playlist) é importado.
+   */
+  locked: boolean;
+  /** O tempo não pôde ser lido (projeto travado ou valor fora da faixa): BPM ficou no padrão. */
+  tempoUnknown: boolean;
 }
 
 export function importFlp(buf: Uint8Array, name: string, opts: FlpImportOptions = {}): { project: Project; report: FlpImportReport } {
@@ -158,7 +168,12 @@ export function importFlp(buf: Uint8Array, name: string, opts: FlpImportOptions 
   pr.patterns = [];
   pr.clips = [];
   pr.meta.source = `FL Studio .flp`;
-  const report: FlpImportReport = { version: '', channels: 0, patterns: 0, clips: 0, notes: 0, substituted: [], missingSamples: [], automationSkipped: 0 };
+  const report: FlpImportReport = { version: '', channels: 0, patterns: 0, clips: 0, notes: 0, substituted: [], missingSamples: [], automationSkipped: 0, locked: false, tempoUnknown: false };
+  // Evento 28 = cópia registrada (1) ou não (0). Arquivos antigos podem não ter.
+  const regEvent = f.events.find((e) => e.id === EV.Registered);
+  const locked = !!regEvent && regEvent.data[0] === 0;
+  report.locked = locked;
+  let rawTempo: number | null = null;
 
   interface RawCh { iid: number; type: number; name: string; plugin: string; pluginName: string; sample: string; vol: number; pan: number; pitch: number; fx: number; enabled: boolean }
   const chans = new Map<number, RawCh>();
@@ -180,7 +195,7 @@ export function importFlp(buf: Uint8Array, name: string, opts: FlpImportOptions 
         report.version = flpText(d);
         break;
       case EV.Tempo:
-        if (u32(d, 0)) pr.bpm = u32(d, 0) / 1000;
+        rawTempo = u32(d, 0);
         break;
       case EV.ChannelNew: {
         const iid = u16(d, 0);
@@ -265,14 +280,15 @@ export function importFlp(buf: Uint8Array, name: string, opts: FlpImportOptions 
     }
     if (curCh && !curPat) {
       switch (e.id) {
+        // Valores numéricos simples ficam embaralhados em projetos travados: ignora.
         case EV.ChannelEnabled:
-          curCh.enabled = d[0] !== 0;
+          if (!locked) curCh.enabled = d[0] !== 0;
           break;
         case EV.ChannelType:
-          curCh.type = d[0];
+          if (!locked) curCh.type = d[0];
           break;
         case EV.ChannelFxTarget:
-          curCh.fx = d[0];
+          if (!locked) curCh.fx = d[0];
           break;
         case EV.ChannelName:
           if (!curCh.name) curCh.name = flpText(d);
@@ -286,15 +302,27 @@ export function importFlp(buf: Uint8Array, name: string, opts: FlpImportOptions 
         case EV.ChannelSamplePath:
           curCh.sample = flpText(d);
           break;
-        case EV.ChannelLevels:
-          if (curCh.type !== 5 && d.length >= 8) {
-            curCh.pan = Math.max(-1, Math.min(1, (s32(d, 0) - 6400) / 6400));
-            curCh.vol = Math.min(1.25, u32(d, 4) / 12800);
+        case EV.ChannelLevels: {
+          if (curCh.type === 5 || d.length < 8) break;
+          const pan = s32(d, 0), vol = u32(d, 4);
+          // só aplica valores dentro da faixa do formato
+          if (pan >= 0 && pan <= 12800 && vol <= 12800) {
+            curCh.pan = Math.max(-1, Math.min(1, (pan - 6400) / 6400));
+            curCh.vol = Math.min(1.25, vol / 12800);
           }
-          if (d.length >= 12) curCh.pitch = Math.round(s32(d, 8) / 100);
+          if (d.length >= 12 && Math.abs(s32(d, 8)) <= 4800) curCh.pitch = Math.round(s32(d, 8) / 100);
           break;
+        }
       }
     }
+  }
+
+  // Tempo: BPM x 1000 no formato normal. Fora de 10..999 BPM (ou projeto travado) fica no padrão.
+  const bpm = rawTempo !== null ? rawTempo / 1000 : NaN;
+  if (!locked && bpm >= 10 && bpm <= 999) pr.bpm = Math.round(bpm * 1000) / 1000;
+  else if (rawTempo !== null) {
+    pr.bpm = 120;
+    report.tempoUnknown = true;
   }
 
   // Canais: FL numera o rack por ordem de criação; notas apontam para essa posição.

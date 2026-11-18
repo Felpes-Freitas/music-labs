@@ -1,5 +1,6 @@
 // AudioWorklet: roda a engine do Music Labs na thread de áudio do navegador.
 import { Engine } from '../core/engine';
+import { applyOps } from '../core/ops';
 
 declare const sampleRate: number;
 declare function registerProcessor(name: string, ctor: unknown): void;
@@ -18,6 +19,15 @@ class MusicLabsProcessor extends AudioWorkletProcessor {
       switch (m.type) {
         case 'project':
           eng.setProject(m.project);
+          break;
+        case 'ops':
+          if (eng.project) {
+            try {
+              eng.setProject(applyOps(eng.project, m.ops));
+            } catch (err) {
+              this.port.postMessage({ type: 'resync', error: String(err) });
+            }
+          }
           break;
         case 'sample':
           eng.setSample(m.path, { sr: m.sr, ch: m.ch, root: m.root, loop: m.loop });

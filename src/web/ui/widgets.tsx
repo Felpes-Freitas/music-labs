@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import { state, focusWindow, closeWindow, emit, type WindowId } from '../state';
 import { Icon } from './icons';
@@ -176,25 +176,64 @@ export function IconBtn(p: { icon: string; hint: string; on?: boolean; onClick: 
   );
 }
 
-/** Canvas que se redesenha quando o tamanho muda (com devicePixelRatio). */
-export function useCanvas(draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void, deps: unknown[]) {
+/**
+ * Canvas em duas camadas: o conteúdo (draw) fica em cache e a sobreposição
+ * (overlay: cursor de reprodução, prévia sob o mouse, retângulo de seleção) é
+ * redesenhada sozinha, sem repintar todas as notas. paint() refaz tudo e roda
+ * no mesmo quadro da mudança (useLayoutEffect).
+ */
+export function useCanvas(
+  draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void,
+  deps: unknown[],
+  overlay?: (ctx: CanvasRenderingContext2D, w: number, h: number) => void,
+) {
   const ref = useRef<HTMLCanvasElement>(null);
   const size = useRef({ w: 0, h: 0 });
   const drawRef = useRef(draw);
+  const overlayRef = useRef(overlay);
   drawRef.current = draw;
-  const paint = () => {
+  overlayRef.current = overlay;
+  const cache = useRef<HTMLCanvasElement | null>(null);
+
+  const ensure = () => {
     const c = ref.current;
-    if (!c) return;
+    if (!c) return null;
     const dpr = window.devicePixelRatio || 1;
     const { w, h } = size.current;
-    if (!w || !h) return;
-    if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
-      c.width = Math.round(w * dpr);
-      c.height = Math.round(h * dpr);
+    if (!w || !h) return null;
+    const W = Math.round(w * dpr), H = Math.round(h * dpr);
+    if (c.width !== W || c.height !== H) {
+      c.width = W;
+      c.height = H;
     }
+    if (!cache.current) cache.current = document.createElement('canvas');
+    if (cache.current.width !== W || cache.current.height !== H) {
+      cache.current.width = W;
+      cache.current.height = H;
+    }
+    return { c, dpr, w, h };
+  };
+  const compose = (c: HTMLCanvasElement, dpr: number, w: number, h: number) => {
     const ctx = c.getContext('2d')!;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawRef.current(ctx, w, h);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(cache.current!, 0, 0);
+    if (overlayRef.current) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      overlayRef.current(ctx, w, h);
+    }
+  };
+  const paint = () => {
+    const g = ensure();
+    if (!g) return;
+    const cctx = cache.current!.getContext('2d')!;
+    cctx.setTransform(g.dpr, 0, 0, g.dpr, 0, 0);
+    drawRef.current(cctx, g.w, g.h);
+    compose(g.c, g.dpr, g.w, g.h);
+  };
+  const paintOverlay = () => {
+    const g = ensure();
+    if (!g) return;
+    compose(g.c, g.dpr, g.w, g.h);
   };
   // Observa o canvas sempre que ele (re)aparece: janelas fechadas desmontam o canvas.
   const ro = useRef<ResizeObserver | null>(null);
@@ -213,8 +252,8 @@ export function useCanvas(draw: (ctx: CanvasRenderingContext2D, w: number, h: nu
     ro.current.observe(c);
   });
   useEffect(() => () => ro.current?.disconnect(), []);
-  useEffect(paint, deps);
-  return { ref, paint, size };
+  useLayoutEffect(paint, deps);
+  return { ref, paint, paintOverlay, size };
 }
 
 export function Toggle(p: { on: boolean; onClick: () => void; children: ComponentChildren; title?: string; class?: string }) {

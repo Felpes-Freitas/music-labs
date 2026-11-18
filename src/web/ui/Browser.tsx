@@ -65,6 +65,9 @@ async function openFile(e: Entry) {
     if (r.imported) {
       const rep = r.imported;
       toast(`Importado do FL ${rep.version}: ${rep.channels} canais, ${rep.patterns} patterns, ${rep.clips} clips, ${rep.notes} notas. ${rep.substituted.length} plugins viraram instrumentos nativos.`);
+      if (rep.locked)
+        toast('Este projeto foi salvo por um FL não registrado (modo de avaliação). Nesse modo o FL embaralha o tempo e outros valores do arquivo como trava de licença; eles ficaram no padrão. Ajuste o BPM no topo (arraste ou duplo clique).');
+      else if (rep.tempoUnknown) toast('O tempo do projeto não pôde ser lido; ficou em 120 BPM.');
     }
   } catch (err) {
     toast(`Erro: ${(err as Error).message}`);

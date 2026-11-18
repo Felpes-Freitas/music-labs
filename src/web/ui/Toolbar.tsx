@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { useApp, state, play, stop, setMode, selectPattern, act, edit, previewEdit, undo, redo, openWindow, api, toast, onLive, emit, type WindowId } from '../state';
+import { useApp, useHint, state, play, stop, setMode, selectPattern, act, edit, previewEdit, undo, redo, openWindow, api, toast, onLive, emit, type WindowId } from '../state';
 import { audio } from '../audio';
 import * as A from '../../core/actions';
 import { INSTRUMENTS, PRESETS } from '../../core/registry';
@@ -181,6 +181,11 @@ function MenuBar() {
   );
 }
 
+function HintBar() {
+  const h = useHint();
+  return <div class="hintbar">{h || ' '}</div>;
+}
+
 // ---------------------------------------------------------------- transporte
 
 function Position() {
@@ -309,7 +314,7 @@ export function Toolbar() {
     <div class="toolbar">
       <div class="tb-left">
         <MenuBar />
-        <div class="hintbar">{s.hint || ' '}</div>
+        <HintBar />
       </div>
       <div class="tb-panel transport">
         <div class="modepill" data-hint="Modo: pattern toca só o pattern atual; song toca a playlist (L)">

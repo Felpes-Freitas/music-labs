@@ -27,7 +27,7 @@ export function Playlist() {
   const bar = ticksPerBar(p);
   const snap = snapBeats ? PPQ : bar;
 
-  const { ref, paint, size } = useCanvas(
+  const { ref, paint, paintOverlay, size } = useCanvas(
     (ctx, w, h) => {
       const v = view.current;
       const tx = (t: number) => HEADW + (t - v.scrollX) * v.zx;
@@ -140,16 +140,22 @@ export function Playlist() {
       ctx.fillRect(0, 0, HEADW, RULER);
       ctx.fillStyle = '#889';
       ctx.fillText('Tracks', 8, 15);
-      // playhead
-      if (playTick.current >= 0) {
-        const x = tx(playTick.current);
-        if (x >= HEADW) {
-          ctx.fillStyle = '#7fd6ff';
-          ctx.fillRect(x, 0, 1.5, h);
-        }
+    },
+    [s.version],
+    (ctx, w, h) => {
+      if (playTick.current < 0) return;
+      const v = view.current;
+      const x = HEADW + (playTick.current - v.scrollX) * v.zx;
+      if (x >= HEADW && x < w) {
+        ctx.fillStyle = '#9fe0ff';
+        ctx.fillRect(x, 0, 1.5, h);
+        ctx.beginPath();
+        ctx.moveTo(x - 5, 0);
+        ctx.lineTo(x + 5, 0);
+        ctx.lineTo(x, 8);
+        ctx.fill();
       }
     },
-    [p],
   );
 
   useEffect(
@@ -158,14 +164,19 @@ export function Playlist() {
         const t = st.playing && st.mode === 'song' ? st.tick : -1;
         if (t !== playTick.current) {
           playTick.current = t;
-          // segue a reprodução
+          // segue a reprodução (só repinta tudo quando a tela precisa rolar)
           const v = view.current;
           const w = size.current.w;
+          let scrolled = false;
           if (t >= 0 && state.followPlay) {
             const x = HEADW + (t - v.scrollX) * v.zx;
-            if (x > w - 40 || x < HEADW) v.scrollX = Math.max(0, t - 20 / v.zx);
+            if (x > w - 40 || x < HEADW) {
+              v.scrollX = Math.max(0, t - 20 / v.zx);
+              scrolled = true;
+            }
           }
-          paint();
+          if (scrolled) paint();
+          else paintOverlay();
         }
       }),
     [],
@@ -266,7 +277,7 @@ export function Playlist() {
     if (state.mode !== 'song') setMode('song');
     audio.seek(t);
     playTick.current = t;
-    paint();
+    paintOverlay();
   };
 
   const onMove = (e: PointerEvent) => {

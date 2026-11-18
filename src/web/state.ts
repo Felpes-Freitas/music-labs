@@ -56,6 +56,8 @@ export const state = {
   scale: 'chromatic',
   toasts: [] as Toast[],
   hint: '' as string,
+  /** Incrementa a cada mudança no projeto: os canvas usam isso para repintar. */
+  version: 0,
   followPlay: true,
   windows: defaultLayout(),
 };
@@ -88,6 +90,7 @@ export function onLive(fn: (s: EngineStatus) => void) {
   return () => void liveListeners.delete(fn);
 }
 audio.onLoading = (msg) => toast(msg);
+audio.getProject = () => state.project;
 audio.onStatus = (s) => {
   for (const l of liveListeners) l(s);
   if (!s.playing && playingFlag) {
@@ -122,6 +125,7 @@ function connect() {
         state.rev = m.rev;
         state.path = m.path;
         state.dirty = m.dirty;
+        state.version++;
         fixSelection();
         audio.setProject(state.project);
         emit();
@@ -129,18 +133,20 @@ function connect() {
       case 'ops':
         try {
           state.project = applyOps(state.project, m.ops);
+          audio.applyOps(m.ops, state.project);
         } catch (err) {
           console.warn('ops fora de sincronia, recarregando', err);
           fetch('/api/project').then((r) => r.json()).then((d) => {
             state.project = d.project;
+            state.version++;
             audio.setProject(state.project);
             emit();
           });
         }
         state.rev = m.rev;
         state.dirty = true;
+        state.version++;
         fixSelection();
-        audio.setProject(state.project);
         emit();
         break;
       case 'toast':
@@ -190,8 +196,9 @@ export function edit(ops: Op[], label?: string) {
     return;
   }
   state.dirty = true;
+  state.version++;
   fixSelection();
-  audio.setProject(state.project);
+  audio.applyOps(ops, state.project);
   send({ type: 'ops', ops, label });
   emit();
 }
@@ -203,7 +210,8 @@ export function previewEdit(ops: Op[]) {
   } catch {
     return;
   }
-  audio.setProject(state.project);
+  state.version++;
+  audio.applyOps(ops, state.project);
   emit();
 }
 
@@ -333,12 +341,23 @@ const unlock = () => {
 window.addEventListener('pointerdown', unlock);
 window.addEventListener('keydown', unlock);
 
-// Barra de dicas: mostra o data-hint (ou title) do controle sob o mouse.
+// Barra de dicas: assinatura própria, para passar o mouse não redesenhar o app.
+const hintListeners = new Set<() => void>();
+export function setHint(h: string) {
+  if (h === state.hint) return;
+  state.hint = h;
+  for (const l of hintListeners) l();
+}
+export function useHint() {
+  const [, force] = useReducer((x: number) => x + 1, 0);
+  useEffect(() => {
+    const l = () => force(undefined);
+    hintListeners.add(l);
+    return () => void hintListeners.delete(l);
+  }, []);
+  return state.hint;
+}
 window.addEventListener('pointerover', (e) => {
   const el = (e.target as HTMLElement)?.closest?.('[data-hint], [title]') as HTMLElement | null;
-  const h = el?.getAttribute('data-hint') ?? el?.getAttribute('title') ?? '';
-  if (h !== state.hint) {
-    state.hint = h;
-    emit();
-  }
+  setHint(el?.getAttribute('data-hint') ?? el?.getAttribute('title') ?? '');
 });
