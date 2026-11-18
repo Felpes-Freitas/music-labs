@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import { state, focusWindow, closeWindow, emit, type WindowId } from '../state';
+import { Icon } from './icons';
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -69,7 +70,7 @@ export function Knob(p: KnobProps) {
   };
   const tip = `${p.label ? p.label + ': ' : ''}${p.format ? p.format(shown) : fmt(shown)}`;
   return (
-    <div class="knob" title={p.title ?? tip}>
+    <div class="knob" data-hint={p.title ?? tip}>
       <svg
         width={size}
         height={size}
@@ -106,19 +107,31 @@ export function fmt(v: number) {
 export const dbFmt = (g: number) => (g <= 0.0001 ? '-∞ dB' : `${(20 * Math.log10(g)).toFixed(1)} dB`);
 export const panFmt = (v: number) => (Math.abs(v) < 0.01 ? 'C' : v < 0 ? `${Math.round(-v * 100)}% E` : `${Math.round(v * 100)}% D`);
 
-/** Janela flutuante (arrastar pelo título, redimensionar pelo canto). */
-export function Win(p: { id: WindowId; title: ComponentChildren; children: ComponentChildren; tools?: ComponentChildren; minW?: number; minH?: number }) {
+/** Janela flutuante: arrastar pelo título, duplo clique maximiza, canto redimensiona. */
+export function Win(p: { id: WindowId; title: ComponentChildren; icon?: string; children: ComponentChildren; tools?: ComponentChildren; minW?: number; minH?: number }) {
   const w = state.windows[p.id];
   if (!w.open) return null;
+  const max = (w as any).max as { x: number; y: number; w: number; h: number } | undefined;
+  const toggleMax = () => {
+    const ws = document.querySelector('.workspace') as HTMLElement | null;
+    if (max) {
+      Object.assign(w, max);
+      delete (w as any).max;
+    } else if (ws) {
+      (w as any).max = { x: w.x, y: w.y, w: w.w, h: w.h };
+      Object.assign(w, { x: 0, y: 0, w: ws.clientWidth, h: ws.clientHeight });
+    }
+    emit();
+  };
   const startDrag = (e: PointerEvent, kind: 'move' | 'size') => {
-    if ((e.target as Element).closest('button, input, select')) return;
+    if ((e.target as Element).closest('button, input, select, .knob, .nodrag')) return;
     e.preventDefault();
     focusWindow(p.id);
     const x0 = e.clientX, y0 = e.clientY;
     const s = { ...w };
     const move = (ev: PointerEvent) => {
       if (kind === 'move') {
-        w.x = Math.max(0, s.x + ev.clientX - x0);
+        w.x = Math.max(-s.w + 80, s.x + ev.clientX - x0);
         w.y = Math.max(0, s.y + ev.clientY - y0);
       } else {
         w.w = Math.max(p.minW ?? 260, s.w + ev.clientX - x0);
@@ -133,18 +146,33 @@ export function Win(p: { id: WindowId; title: ComponentChildren; children: Compo
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
   };
+  const top = Math.max(...Object.values(state.windows).filter((x) => x.open).map((x) => x.z));
   return (
-    <div class={`win win-${p.id}`} style={{ left: `${w.x}px`, top: `${w.y}px`, width: `${w.w}px`, height: `${w.h}px`, zIndex: w.z }} onPointerDown={() => focusWindow(p.id)}>
-      <div class="win-title" onPointerDown={(e) => startDrag(e as any, 'move')}>
+    <div class={`win win-${p.id} ${w.z === top ? 'focused' : ''}`} style={{ left: `${w.x}px`, top: `${w.y}px`, width: `${w.w}px`, height: `${w.h}px`, zIndex: w.z }} onPointerDown={() => focusWindow(p.id)}>
+      <div class="win-title" onPointerDown={(e) => startDrag(e as any, 'move')} onDblClick={(e) => !(e.target as Element).closest('button, input, select, .knob') && toggleMax()}>
+        {p.icon && <Icon name={p.icon} size={13} class="win-icon" />}
         <span class="win-name">{p.title}</span>
         <div class="win-tools">{p.tools}</div>
-        <button class="win-close" title="Fechar" onClick={() => closeWindow(p.id)}>
-          ×
+        <button class="win-btn" data-hint="Maximizar / restaurar (duplo clique no título)" onClick={toggleMax}>
+          <Icon name="max" size={11} />
+        </button>
+        <button class="win-btn win-close" data-hint="Fechar janela" onClick={() => closeWindow(p.id)}>
+          <Icon name="close" size={11} />
         </button>
       </div>
       <div class="win-body">{p.children}</div>
       <div class="win-resize" onPointerDown={(e) => startDrag(e as any, 'size')} />
     </div>
+  );
+}
+
+/** Botão de ícone com dica na barra de dicas. */
+export function IconBtn(p: { icon: string; hint: string; on?: boolean; onClick: (e: MouseEvent) => void; class?: string; size?: number; label?: string; disabled?: boolean }) {
+  return (
+    <button class={`ibtn ${p.on ? 'on' : ''} ${p.class ?? ''}`} data-hint={p.hint} onClick={p.onClick as any} disabled={p.disabled}>
+      <Icon name={p.icon} size={p.size ?? 14} />
+      {p.label && <span>{p.label}</span>}
+    </button>
   );
 }
 

@@ -2,7 +2,7 @@
 // Também resolve caminhos vindos do FL Studio/Wine para caminhos Linux.
 
 import { spawn } from 'node:child_process';
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, extname, basename } from 'node:path';
 import type { SampleData } from '../core/instruments.js';
@@ -62,15 +62,54 @@ function findByName(name: string): string | null {
   return nameIndex.get(name.toLowerCase()) ?? null;
 }
 
+/**
+ * Alguns WAV (como os packs de fábrica do FL Studio) guardam um fluxo Ogg Vorbis
+ * dentro do RIFF (format tag 0x674F/0x6750/0x6751). O ffmpeg não abre esse caso;
+ * devolve o Ogg embutido para ser decodificado direto.
+ */
+export function embeddedOgg(buf: Uint8Array): Uint8Array | null {
+  if (buf.length < 44 || String.fromCharCode(...buf.subarray(0, 4)) !== 'RIFF') return null;
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  let o = 12;
+  let tag = 0;
+  while (o + 8 <= buf.length) {
+    const id = String.fromCharCode(...buf.subarray(o, o + 4));
+    const size = dv.getUint32(o + 4, true);
+    if (id === 'fmt ') tag = dv.getUint16(o + 8, true);
+    if (id === 'data') {
+      if (![0x674f, 0x6750, 0x6751, 0x676f, 0x6770, 0x6771].includes(tag)) return null;
+      const data = buf.subarray(o + 8, Math.min(buf.length, o + 8 + size));
+      for (let i = 0; i + 4 <= data.length; i++)
+        if (data[i] === 0x4f && data[i + 1] === 0x67 && data[i + 2] === 0x67 && data[i + 3] === 0x53) return data.subarray(i);
+      return null;
+    }
+    o += 8 + size + (size & 1);
+  }
+  return null;
+}
+
 /** Converte qualquer áudio em WAV float32 (bytes). Mantém taxa e até 2 canais. */
 export function toWavBytes(path: string): Promise<Uint8Array> {
+  let ogg: Uint8Array | null = null;
+  if (/\.wav$/i.test(path)) {
+    try {
+      ogg = embeddedOgg(new Uint8Array(readFileSync(path)));
+    } catch {
+      ogg = null;
+    }
+  }
   return new Promise((resolve, reject) => {
-    const ff = spawn('ffmpeg', ['-v', 'error', '-i', path, '-vn', '-ac', '2', '-c:a', 'pcm_f32le', '-f', 'wav', '-'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const input = ogg ? ['-f', 'ogg', '-i', 'pipe:0'] : ['-i', path];
+    const ff = spawn('ffmpeg', ['-v', 'error', ...input, '-vn', '-ac', '2', '-c:a', 'pcm_f32le', '-f', 'wav', '-'], { stdio: [ogg ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
     const chunks: Buffer[] = [];
     let err = '';
-    ff.stdout.on('data', (c) => chunks.push(c));
-    ff.stderr.on('data', (c) => (err += c));
+    ff.stdout!.on('data', (c) => chunks.push(c));
+    ff.stderr!.on('data', (c) => (err += c));
     ff.on('error', reject);
+    if (ogg) {
+      ff.stdin!.on('error', () => {});
+      ff.stdin!.end(Buffer.from(ogg.buffer, ogg.byteOffset, ogg.byteLength));
+    }
     ff.on('close', (code) => {
       if (code !== 0 || chunks.length === 0) reject(new Error(`ffmpeg falhou em ${path}: ${err.slice(0, 300)}`));
       else resolve(new Uint8Array(Buffer.concat(chunks)));

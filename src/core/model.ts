@@ -15,6 +15,7 @@ export interface Note {
   vel: number; // 0..1
   pan?: number; // -1..1
   slide?: boolean;
+  mute?: boolean;
 }
 
 export type InstrumentType = 'synth' | 'sampler' | 'drum' | 'pluck' | 'fm';

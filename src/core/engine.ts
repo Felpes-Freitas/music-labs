@@ -194,6 +194,7 @@ export class Engine {
         const ch = p.channels.find((c) => c.id === chId);
         if (!ch || ch.mute) continue;
         for (const n of notes) {
+          if (n.mute) continue;
           const t = swingTick(n.pos);
           if (t >= from && t < to) {
             const abs = base + t;
