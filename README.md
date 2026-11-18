@@ -1,18 +1,56 @@
 # Music Labs
 
-DAW open source para Linux com o fluxo de trabalho de rack de canais, piano roll,
-playlist e mixer, e um **servidor MCP** embutido para produzir junto com o Claude.
+DAW open source (Linux, Windows e macOS) com o fluxo de trabalho de rack de canais,
+piano roll, playlist e mixer, um sintetizador espectral próprio (Prisma) e um
+**servidor MCP** para produzir junto com o Claude.
 
-Roda como app desktop (Electron, janela com barra de título própria) ou no navegador, com áudio em AudioWorklet. A mesma engine
-roda no Node para render offline e análise de mix.
+É um app desktop (Electron) com a engine de áudio rodando num AudioWorklet. A mesma
+engine roda no Node para render offline e análise de mix.
+
+## Instalar
+
+Baixe o instalador do seu sistema em [Releases](https://github.com/Felpes-Freitas/music-labs/releases):
+
+| Sistema | Arquivo | Observação |
+| --- | --- | --- |
+| Linux | `MusicLabs-<versão>-linux-x86_64.AppImage` ou `.deb` | O AppImage precisa do `libfuse2` (`sudo apt install libfuse2`). Dê permissão de execução e abra. |
+| Windows | `MusicLabs-<versão>-win-x64.exe` | O instalador ainda não é assinado: no aviso do SmartScreen, clique em "Mais informações" e "Executar assim mesmo". |
+| macOS (Apple Silicon) | `MusicLabs-<versão>-mac-arm64.dmg` | Sem assinatura: na primeira vez, clique com o botão direito no app e escolha "Abrir" (ou libere em Ajustes > Privacidade e Segurança). |
+| macOS (Intel) | `MusicLabs-<versão>-mac-x64.dmg` | Mesmo procedimento acima. |
+
+O ffmpeg vem embutido. Na primeira abertura o Music Labs varre as pastas de conteúdo
+das DAWs instaladas (FL Studio, Ableton Live, Bitwig, LMMS, Splice, GarageBand...;
+no Linux também dentro do Wine) e indexa os samples, que são usados no lugar onde
+estão.
+
+## Rodar a partir do código
+
+Requer Node.js 22+.
 
 ```bash
-npm install
+git clone https://github.com/Felpes-Freitas/music-labs.git
+cd music-labs
+npm ci
 npm run build
-bin/musiclabs          # abre o app desktop (Electron); sobe o servidor na porta 7717
+npm run app            # abre o app desktop (o servidor local sobe junto, porta 7717)
 ```
 
-Há um atalho no menu de aplicativos ("Music Labs") e o comando `musiclabs` em `~/.local/bin`.
+Outros comandos: `npm test` (testes), `npm run typecheck`, `npm run dev` (interface com
+recarga automática; rode `npm start` em outro terminal para o servidor) e
+`npm run dist` (gera o instalador do sistema atual em `release/`).
+
+No Linux, `bin/musiclabs` faz o mesmo que `npm run app` e pode ser ligado em
+`~/.local/bin`.
+
+### Releases
+
+Os instaladores são gerados pelo GitHub Actions (`.github/workflows/release.yml`) ao
+enviar uma tag de versão:
+
+```bash
+npm version patch      # ou minor/major: atualiza package.json e cria a tag
+git push --follow-tags
+```
 
 ## O que tem
 
@@ -48,23 +86,32 @@ F8 navegador · F9 mixer · Ctrl+S salvar · Ctrl+Z/Y desfazer/refazer.
 
 ## MCP
 
+O servidor MCP conversa com o app aberto (porta 7717) e sobe o servidor sozinho se o
+app estiver fechado. Ele fica no repositório: depois de `npm ci && npm run build`,
+
 ```bash
 claude mcp add -s user musiclabs -- node /caminho/para/music-labs/build/mcp.mjs
 ```
 
-O MCP sobe o servidor sozinho se o app não estiver aberto. Toda edição aparece na hora
-na interface, com aviso "Claude · …". Ferramentas:
+Funciona tanto com o app instalado quanto rodando a partir do código. Toda edição
+aparece na hora na interface, com aviso "Claude · …". Ferramentas:
 
 | grupo | ferramentas |
 | --- | --- |
-| leitura | `get_project`, `get_notes`, `list_sounds`, `search_samples`, `music_theory` |
+| leitura | `get_project`, `get_notes`, `list_sounds`, `search_samples`, `sample_library`, `music_theory` |
 | projeto | `new_project`, `set_project`, `save_project`, `open_project` (.musiclabs e .flp), `list_projects`, `undo`, `redo` |
-| canais | `add_channel`, `update_channel`, `remove_channel` |
+| canais | `add_channel`, `update_channel` (inclui nota raiz e ajuste fino), `remove_channel` |
 | notas | `add_pattern`, `edit_pattern`, `set_steps`, `add_notes`, `add_chords`, `clear_notes`, `transform_notes` |
 | arranjo | `arrange`, `update_track` |
-| mixer | `mixer_insert`, `add_effect`, `update_effect`, `remove_effect` |
+| mixer e efeitos | `mixer_insert`, `add_effect`, `update_effect`, `remove_effect` (num insert ou direto num canal) |
 | lote | `batch` (várias ações atômicas = um undo) |
 | áudio | `transport`, `preview_notes`, `render`, `analyze_mix` (LUFS, pico, crest, correlação, bandas, nível por insert) |
+
+## Onde ficam os dados
+
+- Projetos e renders: `~/MusicLabs` (`Projetos/`, `Renders/`, `Samples/`).
+- Estado (autosave, índice da biblioteca): `~/.local/share/musiclabs` no Linux,
+  `%APPDATA%\MusicLabs` no Windows, `~/Library/Application Support/MusicLabs` no macOS.
 
 ## Arquitetura
 
@@ -75,6 +122,11 @@ src/server   HTTP + WebSocket (127.0.0.1), estado do projeto, samples (ffmpeg), 
 src/mcp      servidor MCP (stdio) que fala com o servidor HTTP
 src/web      interface Preact + AudioWorklet com a engine
 ```
+
+## Licença
+
+GPL-3.0-or-later (veja `LICENSE`). Os instaladores incluem o ffmpeg (GPL), via
+[ffmpeg-static](https://github.com/eugeneware/ffmpeg-static).
 
 ## Sobre o FL Studio
 

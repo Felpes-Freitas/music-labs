@@ -1,0 +1,62 @@
+name: Release
+
+# Ao enviar uma tag vX.Y.Z, gera os instaladores de Linux, Windows e macOS
+# e publica um release com todos eles.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            args: --linux
+          - os: windows-latest
+            args: --win
+          - os: macos-latest # Apple Silicon
+            args: --mac --arm64
+          - os: macos-15-intel # Intel
+            args: --mac --x64
+    runs-on: ${{ matrix.os }}
+    env:
+      # instaladores ainda sem assinatura digital
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx electron-builder ${{ matrix.args }} --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: instaladores-${{ matrix.os }}
+          path: |
+            release/*.AppImage
+            release/*.deb
+            release/*.exe
+            release/*.dmg
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artefatos
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artefatos/*
+          generate_release_notes: true

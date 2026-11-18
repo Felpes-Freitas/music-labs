@@ -4,7 +4,8 @@
 import { spawn } from 'node:child_process';
 import { closeSync, existsSync, fstatSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, extname, basename } from 'node:path';
+import { join, extname, basename, sep } from 'node:path';
+import { createRequire } from 'node:module';
 import type { SampleData } from '../core/instruments.js';
 import { decodeWav } from '../core/wav.js';
 import { findFlInstall } from './library.js';
@@ -236,6 +237,27 @@ export function finalizeWav(wav: Uint8Array, meta: RiffMeta | null): Uint8Array 
   return out;
 }
 
+let ffmpegCached: string | null = null;
+/**
+ * ffmpeg usado para decodificar: MUSICLABS_FFMPEG, senão o embutido no app
+ * (ffmpeg-static, fora do .asar quando empacotado), senão o do sistema.
+ */
+export function ffmpegPath(): string {
+  if (ffmpegCached) return ffmpegCached;
+  let p = process.env.MUSICLABS_FFMPEG ?? '';
+  if (!p) {
+    try {
+      const req = createRequire(import.meta.url);
+      const bundled = String(req('ffmpeg-static') ?? '').replace(`app.asar${sep}`, `app.asar.unpacked${sep}`);
+      if (bundled && existsSync(bundled)) p = bundled;
+    } catch {
+      /* sem o pacote: usa o do sistema */
+    }
+  }
+  ffmpegCached = p || 'ffmpeg';
+  return ffmpegCached;
+}
+
 /** Converte qualquer áudio em WAV float32 estéreo (bytes), com smpl quando houver. */
 export function toWavBytes(path: string): Promise<Uint8Array> {
   let ogg: Uint8Array | null = null;
@@ -251,7 +273,7 @@ export function toWavBytes(path: string): Promise<Uint8Array> {
   }
   return new Promise((resolve, reject) => {
     const input = ogg ? ['-f', 'ogg', '-i', 'pipe:0'] : ['-i', path];
-    const ff = spawn('ffmpeg', ['-v', 'error', ...input, '-vn', '-ac', '2', '-c:a', 'pcm_f32le', '-f', 'wav', '-'], { stdio: [ogg ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
+    const ff = spawn(ffmpegPath(), ['-v', 'error', ...input, '-vn', '-ac', '2', '-c:a', 'pcm_f32le', '-f', 'wav', '-'], { stdio: [ogg ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
     const chunks: Buffer[] = [];
     let err = '';
     ff.stdout!.on('data', (c) => chunks.push(c));
