@@ -10,6 +10,7 @@ import { Playlist } from './ui/Playlist';
 import { Mixer } from './ui/Mixer';
 import { ChannelSettings } from './ui/ChannelSettings';
 import { Browser, addSampleChannel } from './ui/Browser';
+import { DialogHost, dialogOpen } from './ui/Dialog';
 
 // Teclado do computador como piano (duas fileiras, como em muitos DAWs).
 const KEYMAP: Record<string, number> = {
@@ -29,6 +30,7 @@ function isTextField(t: EventTarget | null) {
 }
 
 function onKeyDown(e: KeyboardEvent) {
+  if (dialogOpen()) return;
   const t = e.target as HTMLElement;
   if (isTextField(t)) {
     if (e.key === 'Enter' || e.key === 'Escape') (t as HTMLElement).blur();
@@ -190,6 +192,7 @@ function App() {
         </div>
       </div>
       <LoadingScreen />
+      <DialogHost />
       <div class="toasts">
         {s.toasts.map((t) => (
           <div class={`toast ${t.from === 'mcp' ? 'mcp' : ''}`} key={t.id}>

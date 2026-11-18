@@ -7,6 +7,7 @@ import { STEP, patternLength, uid, type Channel, type Note, type InstrumentType 
 import { set } from '../../core/ops';
 import { Knob, Win, dbFmt, panFmt } from './widgets';
 import { Icon } from './icons';
+import { askConfirm, askText } from './Dialog';
 
 const CELL = 21;
 
@@ -226,8 +227,8 @@ export function ChannelRack() {
             ['Configurações', () => openWindow('channel')],
             [
               'Renomear',
-              () => {
-                const n = prompt('Nome do canal:', menu.ch!.name);
+              async () => {
+                const n = await askText({ title: 'Renomear canal', label: 'Nome', value: menu.ch!.name, ok: 'Renomear' });
                 if (n) edit([set(['channels', menu.ch!.id, 'name'], n)]);
               },
             ],
@@ -240,7 +241,7 @@ export function ChannelRack() {
               },
             ],
             ['Limpar notas neste pattern', () => s.patternId && act(A.clearNotes, { pattern: s.patternId, channel: menu.ch!.id })],
-            ['Excluir', () => confirm(`Excluir ${menu.ch!.name}?`) && act(A.removeChannel, { channel: menu.ch!.id })],
+            ['Excluir', async () => (await askConfirm({ title: `Excluir ${menu.ch!.name}?`, message: 'O canal e as notas dele em todos os patterns serão removidos.', ok: 'Excluir', danger: true })) && act(A.removeChannel, { channel: menu.ch!.id })],
           ]}
         />
       )}

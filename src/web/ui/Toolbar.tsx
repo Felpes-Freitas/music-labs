@@ -7,13 +7,14 @@ import { PPQ, STEP, ticksPerBar, type InstrumentType } from '../../core/model';
 import { set } from '../../core/ops';
 import { Knob, IconBtn, dbFmt } from './widgets';
 import { Icon } from './icons';
+import { askConfirm, askText } from './Dialog';
 
 // ---------------------------------------------------------------- ações de arquivo
 
 export async function saveProject(as = false) {
   const s = state;
   if (as || !s.path) {
-    const name = prompt('Salvar como (nome do projeto):', s.project.name);
+    const name = await askText({ title: 'Salvar como', label: 'Nome do projeto', value: s.project.name, ok: 'Salvar' });
     if (!name) return;
     edit([set(['name'], name)]);
     const r = await api('POST', '/api/save', { path: `${name}.musiclabs` });
@@ -36,12 +37,12 @@ export async function exportWav() {
 }
 
 async function newProject(template: 'kit' | 'empty') {
-  if (state.dirty && !confirm('Criar projeto novo? Alterações não salvas serão perdidas.')) return;
+  if (state.dirty && !(await askConfirm({ title: 'Criar projeto novo?', message: 'As alterações não salvas do projeto atual serão perdidas.', ok: 'Criar', danger: true }))) return;
   await api('POST', '/api/new', { template });
 }
 
 async function importPath() {
-  const path = prompt('Caminho do arquivo (.musiclabs ou .flp):');
+  const path = await askText({ title: 'Abrir projeto', label: 'Caminho do arquivo (.musiclabs ou .flp)', placeholder: '/home/…/projeto.flp', ok: 'Abrir' });
   if (!path) return;
   try {
     const r = await api('POST', '/api/open', { path });
@@ -99,8 +100,8 @@ function menus(): Record<string, Item[]> {
     Patterns: [
       { label: 'Novo pattern', key: 'F4', run: () => { const r = act(A.addPattern, {}); if (r) selectPattern(r.id); } },
       { label: 'Clonar pattern', run: () => { const r = pat && act(A.duplicatePattern, { pattern: pat.id }); if (r) selectPattern(r.id); } },
-      { label: 'Renomear pattern…', key: 'F2', run: () => { const n = pat && prompt('Nome do pattern:', pat.name); if (n && pat) act(A.updatePattern, { pattern: pat.id, name: n }); } },
-      { label: 'Excluir pattern', run: () => pat && s.project.patterns.length > 1 && confirm(`Excluir ${pat.name}?`) && act(A.removePattern, { pattern: pat.id }) },
+      { label: 'Renomear pattern…', key: 'F2', run: async () => { const n = pat && (await askText({ title: 'Renomear pattern', label: 'Nome', value: pat.name, ok: 'Renomear' })); if (n && pat) act(A.updatePattern, { pattern: pat.id, name: n }); } },
+      { label: 'Excluir pattern', run: async () => pat && s.project.patterns.length > 1 && (await askConfirm({ title: `Excluir ${pat.name}?`, message: 'O pattern e os clips dele na playlist serão removidos.', ok: 'Excluir', danger: true })) && act(A.removePattern, { pattern: pat.id }) },
     ],
     Exibir: [
       { label: 'Playlist', key: 'F5', on: s.windows.playlist.open, run: () => openWindow('playlist', true) },
@@ -298,9 +299,9 @@ function BpmControl() {
       class="lcd bpmval"
       data-hint="Tempo: arraste para cima/baixo (Shift = fino), duplo clique para digitar"
       onPointerDown={onDown as any}
-      onDblClick={() => {
-        const v = Number(prompt('BPM:', String(bpm)));
-        if (v >= 20 && v <= 400) edit([set(['bpm'], v)]);
+      onDblClick={async () => {
+        const v = await askText({ title: 'Tempo', label: 'BPM (20 a 400)', value: String(bpm), numeric: { min: 20, max: 400 }, ok: 'Aplicar' });
+        if (v) edit([set(['bpm'], Number(v.replace(',', '.')))]);
       }}
     >
       {String(+bpm.toFixed(3)).padStart(3, ' ')}
