@@ -147,13 +147,21 @@ export function Browser() {
   const [local, setLocal] = useState<{ name: string; path: string }[]>([]);
   const [insts, setInsts] = useState<{ name: string; category: string; path: string }[]>([]);
 
+  const [lib, setLib] = useState<{ scanning: boolean; files: number; instruments: number; sources: { label: string; files: number }[] } | null>(null);
   useEffect(() => {
     api('GET', '/api/roots').then(setRoots);
     api('GET', '/api/registry').then((r) => {
       setLocal(r.localSamples ?? []);
       setInsts(r.localInstruments ?? []);
     });
-  }, []);
+    api('GET', '/api/library').then(setLib);
+  }, [s.libraryVersion]);
+  // enquanto a primeira varredura roda, consulta o andamento
+  useEffect(() => {
+    if (!lib?.scanning) return;
+    const t = setTimeout(() => api('GET', '/api/library').then(setLib), 2000);
+    return () => clearTimeout(t);
+  }, [lib]);
   useEffect(() => {
     api('GET', '/api/projects').then((r) => setProjects(r.projects));
   }, [s.path, tab]);
@@ -168,6 +176,9 @@ export function Browser() {
     <div class="browser">
       <div class="br-head">
         <input class="search" placeholder="Buscar samples (ex.: kick 808)" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} data-hint="Busca em todas as pastas de samples" />
+      </div>
+      <div class="br-lib" data-hint={lib?.sources.map((x) => `${x.label}: ${x.files}`).join(' · ') || ''}>
+        {!lib ? '' : lib.scanning ? 'Procurando samples das DAWs instaladas…' : `${lib.files.toLocaleString('pt-BR')} samples · ${lib.instruments} instrumentos · ${lib.sources.length} fontes`}
       </div>
       <div class="br-tabs">
         <button class={tab === 'files' ? 'on' : ''} onClick={() => setTab('files')}>
@@ -187,7 +198,7 @@ export function Browser() {
           roots.map((r) => <Folder entry={{ ...r, kind: 'dir' }} depth={0} root />)
         ) : tab === 'sounds' ? (
           <>
-            {insts.length > 0 && <div class="empty">Instrumentos da sua instalação do FL</div>}
+            {insts.length > 0 && <div class="empty">Instrumentos das DAWs instaladas</div>}
             {insts.map((it) => (
               <div class="node k-instrument" style={{ paddingLeft: '16px' }} onDblClick={() => addSampleChannel(it.path, it.name)} data-hint={`${it.category} · multi-sample · duplo clique: novo canal (segura enquanto a tecla estiver pressionada)`}>
                 <Icon name="piano" size={13} />
@@ -195,7 +206,7 @@ export function Browser() {
                 <span class="dim" style={{ marginLeft: 'auto', fontSize: '10px' }}>{it.category}</span>
               </div>
             ))}
-            {local.length > 0 && <div class="empty">Bateria da sua instalação do FL</div>}
+            {local.length > 0 && <div class="empty">Bateria padrão (das DAWs instaladas)</div>}
             {local.map((l) => (
               <div class="node k-audio" style={{ paddingLeft: '16px' }} onClick={() => audio.previewFile(l.path)} onDblClick={() => addSampleChannel(l.path, l.name)} data-hint="Clique: ouvir · duplo clique: novo canal">
                 <Icon name="wave" size={13} />

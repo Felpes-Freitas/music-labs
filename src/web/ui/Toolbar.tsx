@@ -113,6 +113,11 @@ function menus(): Record<string, Item[]> {
       { label: 'Seguir a reprodução', on: s.followPlay, run: () => ((state.followPlay = !state.followPlay), emit()) },
       { label: 'Ligar o áudio', run: () => audio.start().then(() => toast('Áudio ligado')) },
       { label: 'Pânico (cortar todas as notas)', run: () => audio.post({ type: 'panic' }) },
+      { sep: true, label: '' },
+      {
+        label: 'Varrer bibliotecas de samples (DAWs instaladas)',
+        run: () => api('POST', '/api/library/rescan', {}).then(() => toast('Procurando samples das DAWs instaladas…')),
+      },
     ],
     Ferramentas: [
       { label: 'Analisar a mix', run: analyze },

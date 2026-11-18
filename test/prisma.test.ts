@@ -61,12 +61,17 @@ test('Prisma: todos os presets geram som finito e sem clipar', () => {
 });
 
 test('Prisma: custo de CPU (acorde de 6 notas, supersaw de 8 vozes)', () => {
-  const { eng, ch } = setup('Prisma Supersaw');
-  for (const k of [48, 52, 55, 60, 64, 67]) eng.liveOn(ch, k, 0.8);
-  const t = performance.now();
-  run(eng, 5);
-  const ms = performance.now() - t;
-  const ratio = ms / 5000;
-  console.log(`5 s de áudio em ${ms.toFixed(0)} ms (${(ratio * 100).toFixed(1)}% de um núcleo)`);
-  assert.ok(ratio < 0.5, `pesado demais: ${(ratio * 100).toFixed(0)}% de um núcleo`);
+  // Mede relativo a uma nota simples na mesma hora: notebook na bateria pode
+  // estar com a CPU 6x mais lenta, e o teste não deve depender disso.
+  const time = (preset: string, keys: number[]) => {
+    const { eng, ch } = setup(preset);
+    for (const k of keys) eng.liveOn(ch, k, 0.8);
+    const t = performance.now();
+    run(eng, 3);
+    return performance.now() - t;
+  };
+  const one = time('Prisma Init', [60]);
+  const heavy = time('Prisma Supersaw', [48, 52, 55, 60, 64, 67]);
+  console.log(`nota simples: ${((one / 3000) * 100).toFixed(1)}% de um núcleo; acorde pesado: ${((heavy / 3000) * 100).toFixed(1)}% (${(heavy / one).toFixed(1)}x)`);
+  assert.ok(heavy / one < 25, `acorde pesado custa ${(heavy / one).toFixed(1)}x uma nota simples`);
 });

@@ -11,7 +11,7 @@ export const HOME_DIR = process.env.MUSICLABS_HOME ?? join(homedir(), 'MusicLabs
 export const PROJECTS_DIR = join(HOME_DIR, 'Projetos');
 export const RENDERS_DIR = join(HOME_DIR, 'Renders');
 export const SAMPLES_DIR = join(HOME_DIR, 'Samples');
-const STATE_DIR = process.env.MUSICLABS_STATE_DIR ?? join(homedir(), '.local/share/musiclabs');
+export const STATE_DIR = process.env.MUSICLABS_STATE_DIR ?? join(homedir(), '.local/share/musiclabs');
 const AUTOSAVE = join(STATE_DIR, 'autosave.json');
 
 for (const d of [PROJECTS_DIR, RENDERS_DIR, SAMPLES_DIR, STATE_DIR]) mkdirSync(d, { recursive: true });

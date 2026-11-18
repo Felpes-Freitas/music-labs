@@ -8,6 +8,7 @@ import type { SampleData, SampleSet, SampleZone } from '../core/instruments.js';
 import { detectPitch, fixNumberedSequence, noteFromName } from '../core/pitch.js';
 import { decodeWav, encodeSampleWav } from '../core/wav.js';
 import { AUDIO_EXT, FL_DIR, loadSample, riffMetaOf, toWavBytes } from './samples.js';
+import { library } from './library.js';
 
 const MAX_ZONES = 24; // limite de arquivos carregados por instrumento
 const MAX_SECONDS = 7; // samples sem loop são cortados (com fade) neste tempo
@@ -278,12 +279,12 @@ export interface LocalInstrument {
   path: string;
 }
 
-let localInst: LocalInstrument[] | null = null;
-
-/** Instrumentos multi-sample dos packs do FL instalados (Packs/Instruments/<categoria>/<nome>). */
+/** Instrumentos multi-sample encontrados na biblioteca (todas as DAWs indexadas). */
 export function localInstruments(): LocalInstrument[] {
-  if (localInst) return localInst;
-  localInst = [];
+  const ix = library();
+  if (ix) return ix.instruments.map((i) => ({ name: i.name, category: ix.sources[i.s]?.label ?? '', path: i.path }));
+  // ainda sem índice: só os instrumentos de fábrica do FL
+  const out: LocalInstrument[] = [];
   const base = join(FL_DIR, 'Data/Patches/Packs/Instruments');
   try {
     for (const cat of readdirSync(base).sort(natural)) {
@@ -291,13 +292,13 @@ export function localInstruments(): LocalInstrument[] {
       if (!statSync(cdir).isDirectory()) continue;
       for (const n of readdirSync(cdir).sort(natural)) {
         const d = join(cdir, n);
-        if (statSync(d).isDirectory() && audioFiles(d).length) localInst.push({ name: n, category: cat, path: d });
+        if (statSync(d).isDirectory() && audioFiles(d).length) out.push({ name: n, category: cat, path: d });
       }
     }
   } catch {
     /* FL não instalado */
   }
-  return localInst;
+  return out;
 }
 
 export function localInstrument(name: string): LocalInstrument | undefined {

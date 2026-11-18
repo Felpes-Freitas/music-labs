@@ -340,3 +340,5 @@ input[type='checkbox'] { height: auto; accent-color: var(--acc); }
 .pz-nodeknobs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 2px; justify-items: center; }
 .pz-nodeknobs .knob { width: 64px; }
 .pz-activate { width: 100%; margin-top: 4px; }
+
+.br-lib { font-size: 10px; color: var(--dim2); padding: 3px 8px; border-bottom: 1px solid var(--line2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
