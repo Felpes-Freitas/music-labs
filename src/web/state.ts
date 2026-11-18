@@ -55,6 +55,8 @@ export const state = {
   scaleRoot: 'C',
   scale: 'chromatic',
   toasts: [] as Toast[],
+  hint: '' as string,
+  followPlay: true,
   windows: defaultLayout(),
 };
 
@@ -329,3 +331,13 @@ const unlock = () => {
 };
 window.addEventListener('pointerdown', unlock);
 window.addEventListener('keydown', unlock);
+
+// Barra de dicas: mostra o data-hint (ou title) do controle sob o mouse.
+window.addEventListener('pointerover', (e) => {
+  const el = (e.target as HTMLElement)?.closest?.('[data-hint], [title]') as HTMLElement | null;
+  const h = el?.getAttribute('data-hint') ?? el?.getAttribute('title') ?? '';
+  if (h !== state.hint) {
+    state.hint = h;
+    emit();
+  }
+});

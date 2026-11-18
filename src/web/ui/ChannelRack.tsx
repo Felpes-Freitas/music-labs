@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { useApp, state, edit, act, previewEdit, selectChannel, openWindow, onLive, toast } from '../state';
+import { useApp, state, edit, act, previewEdit, selectChannel, selectPattern, openWindow, onLive, toast } from '../state';
 import { audio } from '../audio';
 import * as A from '../../core/actions';
 import { PRESETS, INSTRUMENTS } from '../../core/registry';
 import { STEP, patternLength, uid, type Channel, type Note, type InstrumentType } from '../../core/model';
 import { set } from '../../core/ops';
 import { Knob, Win, dbFmt, panFmt } from './widgets';
+import { Icon } from './icons';
 
-const CELL = 22;
+const CELL = 21;
 
 /** Canal "de steps" = só notas de 1 step na mesma tecla; senão mostra mini piano roll. */
 function isStepLike(notes: Note[]) {
@@ -23,17 +24,18 @@ export function ChannelRack() {
   const steps = pat ? Math.max(16, Math.round(patternLength(p, pat) / STEP)) : 16;
   const [menu, setMenu] = useState<{ x: number; y: number; ch?: Channel } | null>(null);
   const [adding, setAdding] = useState(false);
-  const head = useRef<HTMLDivElement>(null);
+  const lastStep = useRef(-1);
   const flashes = useRef(new Map<string, HTMLElement>());
 
   useEffect(
     () =>
       onLive((st) => {
-        const el = head.current;
-        if (el) {
-          const show = st.playing && st.mode === 'pattern' && st.patternId === state.patternId;
-          el.style.display = show ? 'block' : 'none';
-          el.style.transform = `translateX(${Math.floor(st.tick / STEP) * CELL}px)`;
+        const show = st.playing && st.mode === 'pattern' && st.patternId === state.patternId;
+        const idx = show ? Math.floor(st.tick / STEP) : -1;
+        if (idx !== lastStep.current) {
+          document.querySelectorAll('.step.play').forEach((e) => e.classList.remove('play'));
+          if (idx >= 0) document.querySelectorAll(`.step[data-i="${idx}"]`).forEach((e) => e.classList.add('play'));
+          lastStep.current = idx;
         }
         for (const id of st.activeChannels) {
           const e = flashes.current.get(id);
@@ -69,7 +71,9 @@ export function ChannelRack() {
     const row = (e.currentTarget as HTMLElement).parentElement!;
     const move = (ev: PointerEvent) => {
       const r = row.getBoundingClientRect();
-      const j = Math.floor((ev.clientX - r.left) / CELL);
+      const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
+      const di = el?.closest('.step')?.getAttribute('data-i');
+      const j = di != null && el!.closest('.steps')?.parentElement === row.parentElement ? Number(di) : Math.floor((ev.clientX - r.left) / (CELL + 0.75));
       if (j >= 0 && j < steps) toggleStep(ch, j, value);
     };
     const up = () => {
@@ -92,19 +96,33 @@ export function ChannelRack() {
   return (
     <Win
       id="rack"
-      title={`Rack de canais · ${pat?.name ?? ''}`}
+      icon="rack"
+      title={
+        <>
+          Rack de canais <span class="dim">· {pat?.name ?? ''}</span>
+        </>
+      }
       tools={
-        <span class="hint">
-          {steps} steps
-          <button
-            title="Mais 16 steps"
-            onClick={() => pat && edit([set(['patterns', pat.id, 'length'], steps + 16)])}
-          >
-            +16
-          </button>
-          <button title="Comprimento automático" onClick={() => pat && edit([set(['patterns', pat.id, 'length'], 0)])}>
-            auto
-          </button>
+        <span class="pr-tools nodrag">
+          <span class="tgroup" data-hint="Pattern editado no rack">
+            <select value={s.patternId ?? ''} onChange={(e) => selectPattern((e.target as HTMLSelectElement).value)}>
+              {p.patterns.map((pt) => (
+                <option value={pt.id}>{pt.name}</option>
+              ))}
+            </select>
+          </span>
+          <span class="tgroup">
+            <span class="hint">{steps} steps</span>
+            <button data-hint="Aumentar o pattern em 16 steps (1 compasso)" onClick={() => pat && edit([set(['patterns', pat.id, 'length'], steps + 16)])}>
+              +16
+            </button>
+            <button data-hint="Diminuir o pattern em 16 steps" disabled={steps <= 16} onClick={() => pat && edit([set(['patterns', pat.id, 'length'], Math.max(16, steps - 16))])}>
+              −16
+            </button>
+            <button data-hint="Comprimento automático (arredonda pelas notas)" onClick={() => pat && edit([set(['patterns', pat.id, 'length'], 0)])}>
+              auto
+            </button>
+          </span>
         </span>
       }
     >
@@ -117,7 +135,7 @@ export function ChannelRack() {
               <div class={`rack-row ${s.channelId === ch.id ? 'sel' : ''}`} key={ch.id}>
                 <button
                   class={`led ${ch.mute ? '' : 'on'}`}
-                  title="Mute (clique) / solo (clique direito)"
+                  data-hint="Mute (clique) / solo (clique direito)"
                   onClick={() => edit([set(['channels', ch.id, 'mute'], !ch.mute)])}
                   onContextMenu={(e) => {
                     e.preventDefault();
@@ -133,7 +151,7 @@ export function ChannelRack() {
                   min={0}
                   max={p.mixer.length - 1}
                   value={ch.insert}
-                  title="Insert do mixer"
+                  data-hint="Insert do mixer para onde o canal vai"
                   onChange={(e) => edit([set(['channels', ch.id, 'insert'], Math.max(0, Math.min(p.mixer.length - 1, Number((e.target as HTMLInputElement).value))))])}
                 />
                 <button
@@ -142,7 +160,7 @@ export function ChannelRack() {
                     if (el) flashes.current.set(ch.id, el);
                   }}
                   style={{ borderLeftColor: ch.color }}
-                  title={`${INSTRUMENTS[ch.type].label} · clique: selecionar · duplo: configurações · direito: menu`}
+                  data-hint={`${INSTRUMENTS[ch.type].label} · clique: selecionar · duplo clique: configurações · direito: menu`}
                   onClick={() => selectChannel(ch.id)}
                   onDblClick={() => {
                     selectChannel(ch.id);
@@ -157,10 +175,10 @@ export function ChannelRack() {
                   {ch.name}
                 </button>
                 {stepLike ? (
-                  <div class="steps" style={{ width: `${steps * CELL}px` }}>
+                  <div class="steps" style={{ width: `${steps * CELL + Math.floor(steps / 4) * 3}px` }}>
                     {Array.from({ length: steps }, (_, i) => {
                       const on = notes.some((n) => n.pos === i * STEP);
-                      return <div class={`step ${on ? 'on' : ''} ${Math.floor(i / 4) % 2 ? 'alt' : ''}`} onPointerDown={(e) => paint(ch, i, e as any)} />;
+                      return <div data-i={i} class={`step ${on ? 'on' : ''} ${Math.floor(i / 4) % 2 ? 'alt' : ''} ${i % 4 === 3 ? 'g4' : ''}`} onPointerDown={(e) => paint(ch, i, e as any)} />;
                     })}
                   </div>
                 ) : (
@@ -169,10 +187,12 @@ export function ChannelRack() {
               </div>
             );
           })}
-          <div ref={head} class="rack-head" style={{ display: 'none' }} />
         </div>
         <div class="rack-foot">
-          <button onClick={() => setAdding(!adding)}>+ Canal</button>
+          <button class="ibtn" data-hint="Adicionar canal (instrumento, preset ou sample)" onClick={() => setAdding(!adding)}>
+            <Icon name="plus" size={12} /> Canal
+          </button>
+          <span class="hint">Arraste samples do navegador para cá · duplo clique no nome abre o canal</span>
           {adding && (
             <div class="add-menu">
               <div class="add-col">

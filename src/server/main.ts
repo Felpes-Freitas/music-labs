@@ -18,6 +18,7 @@ import { emptyProject } from '../core/model.js';
 import { Store, listProjects, RENDERS_DIR, SAMPLES_DIR, PROJECTS_DIR, safeName } from './store.js';
 import { AUDIO_EXT, FL_DIR, resolveFlPath, wavFor } from './samples.js';
 import { renderProject } from './render.js';
+import { localKit, localSample } from './localkit.js';
 
 export const PORT = Number(process.env.MUSICLABS_PORT ?? 7717);
 /** Raiz do projeto: sobe até achar o package.json (funciona em src/ e em build/). */
@@ -75,6 +76,30 @@ export const ACTIONS: Record<string, ActionFn> = {
   setProjectProps: A.setProjectProps,
 };
 
+/** "localSample": nome de um som do kit local (ex. "Kick") vira um sampler com o caminho. */
+function expandLocalSample(name: string, args: any) {
+  if ((name !== 'addChannel' && name !== 'updateChannel') || !args?.localSample) return args;
+  const ls = localSample(String(args.localSample));
+  if (!ls) throw new Error(`Sample local "${args.localSample}" não encontrado. Disponíveis: ${localKit().map((x) => x.name).join(', ') || 'nenhum (FL Studio não instalado)'}`);
+  const { localSample: _, ...rest } = args;
+  return { name: ls.name, ...rest, type: 'sampler', preset: undefined, params: { sample: ls.path, keytrack: true, oneshot: true, ...(ls.cut ? { cut: ls.cut } : {}), ...(rest.params ?? {}) } };
+}
+
+/** Projeto novo: 4 canais de bateria (samples da instalação local, ou sintetizados). */
+function templateProject(name: string, withKit: boolean) {
+  let p = emptyProject(name);
+  if (!withKit) return p;
+  const kit = localKit();
+  for (const n of ['Kick', 'Clap', 'Hat', 'Snare']) {
+    const ls = kit.find((k) => k.name === n);
+    const r = ls
+      ? A.addChannel(p, { name: n, type: 'sampler', params: { sample: ls.path, keytrack: true, oneshot: true, ...(ls.cut ? { cut: ls.cut } : {}) }, insert: 'master' })
+      : A.addChannel(p, { preset: n, insert: 'master' });
+    p = applyOps(p, r.ops);
+  }
+  return p;
+}
+
 function runActions(list: { name: string; args: any }[], origin: string, label?: string) {
   // Aplica em sequência sobre uma cópia; só publica se tudo der certo.
   let draft = JSON.parse(JSON.stringify(store.project));
@@ -83,7 +108,7 @@ function runActions(list: { name: string; args: any }[], origin: string, label?:
   for (const { name, args } of list) {
     const fn = ACTIONS[name];
     if (!fn) throw new Error(`Ação desconhecida: ${name}`);
-    const r = fn(draft, args ?? {});
+    const r = fn(draft, expandLocalSample(name, args ?? {}));
     draft = applyOps(draft, r.ops);
     all.push(...r.ops);
     results.push(r.result ?? null);
@@ -229,7 +254,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       case 'GET /api/summary':
         return json(res, 200, { ...A.describe(store.project), file: store.path, unsaved: store.dirty, ui: uiStatus });
       case 'GET /api/registry':
-        return json(res, 200, { instruments: INSTRUMENTS, effects: EFFECTS, presets: PRESETS, scales: Object.keys(SCALES) });
+        return json(res, 200, { instruments: INSTRUMENTS, effects: EFFECTS, presets: PRESETS, scales: Object.keys(SCALES), localSamples: localKit() });
       case 'GET /api/status':
         return json(res, 200, uiStatus);
       case 'POST /api/ops': {
@@ -248,7 +273,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         return json(res, 200, { ok: store.redo() });
       case 'POST /api/new': {
         const b = await body(req);
-        store.load(emptyProject(b.name ?? 'Sem título'), null);
+        store.load(templateProject(b.name ?? 'Sem título', b.template !== 'empty'), null);
         if (b.bpm) store.apply(A.setProjectProps(store.project, { bpm: b.bpm }).ops, 'http');
         return json(res, 200, { ok: true });
       }

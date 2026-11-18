@@ -35,6 +35,9 @@ function Fader(p: { value: number; onInput: (v: number) => void; onCommit: (v: n
   return (
     <div class="fader" onPointerDown={onDown as any} onDblClick={() => p.onCommit(0.8)} title={dbFmt(p.value)}>
       <div class="fader-line" />
+      {[1.25, 0.8, 0.4, 0.2, 0.1, 0.05].map((g) => (
+        <div class="fader-tick" style={{ bottom: `calc(${toPos(g) * 100}% )` }} />
+      ))}
       <div class="fader-zero" style={{ bottom: `${toPos(0.8) * 100}%` }} />
       <div class="fader-cap" style={{ bottom: `calc(${pos * 100}% - 6px)` }} />
     </div>
@@ -89,7 +92,12 @@ export function Mixer() {
   return (
     <Win
       id="mixer"
-      title={`Mixer · ${cur.name}`}
+      icon="mixer"
+      title={
+        <>
+          Mixer <span class="dim">· {cur.name}</span>
+        </>
+      }
       minW={500}
       minH={320}
       tools={
@@ -161,53 +169,73 @@ export function Mixer() {
         </div>
         <div class="fxpanel">
           <div class="fx-head">
-            <b>{cur.name}</b>
-            <select
-              value=""
-              onChange={(e) => {
-                const t = (e.target as HTMLSelectElement).value as EffectType;
-                (e.target as HTMLSelectElement).value = '';
-                if (!t) return;
-                const r = act(A.addEffect, { insert: s.insert, type: t });
-                if (r) setFxSel(r.id);
-              }}
-            >
-              <option value="">+ efeito…</option>
-              {(Object.keys(EFFECTS) as EffectType[]).map((t) => (
-                <option value={t}>{EFFECTS[t].label}</option>
-              ))}
-            </select>
+            <b>
+              {s.insert === 0 ? 'Master' : `Insert ${s.insert}`} · {cur.name}
+            </b>
+            <span class="hint">{cur.effects.length}/10 efeitos</span>
           </div>
           <div class="slots">
-            {cur.effects.map((e, k) => (
-              <div class={`slot ${curFx?.id === e.id ? 'sel' : ''}`} onClick={() => setFxSel(e.id)}>
-                <input type="checkbox" checked={e.enabled} title="Ligar/desligar" onClick={(ev) => ev.stopPropagation()} onChange={() => edit([set(['mixer', s.insert, 'effects', e.id, 'enabled'], !e.enabled)])} />
-                <span class="slot-name">{EFFECTS[e.type].label}</span>
-                <Knob size={18} value={e.mix} min={0} max={1} def={1} format={(v) => `mix ${Math.round(v * 100)}%`} onInput={(v) => previewEdit([set(['mixer', s.insert, 'effects', e.id, 'mix'], v)])} onCommit={(v) => edit([set(['mixer', s.insert, 'effects', e.id, 'mix'], v)])} />
-                <button
-                  title="Subir"
-                  disabled={k === 0}
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    const list = [...cur.effects];
-                    [list[k - 1], list[k]] = [list[k], list[k - 1]];
-                    edit([set(['mixer', s.insert, 'effects'], list)]);
-                  }}
-                >
-                  ↑
-                </button>
-                <button
-                  title="Remover"
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    act(A.removeEffect, { insert: s.insert, effect: e.id });
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-            {!cur.effects.length && <div class="hint">Sem efeitos. Use "+ efeito".</div>}
+            {Array.from({ length: 10 }, (_, k) => {
+              const e = cur.effects[k];
+              if (!e)
+                return (
+                  <div class="slot empty">
+                    <span class="slot-n">{k + 1}</span>
+                    <select
+                      value=""
+                      data-hint="Slot vazio: escolha um efeito"
+                      onChange={(ev) => {
+                        const t = (ev.target as HTMLSelectElement).value as EffectType;
+                        (ev.target as HTMLSelectElement).value = '';
+                        if (!t) return;
+                        const r = act(A.addEffect, { insert: s.insert, type: t });
+                        if (r) setFxSel(r.id);
+                      }}
+                    >
+                      <option value="">(vazio)</option>
+                      {(Object.keys(EFFECTS) as EffectType[]).map((t) => (
+                        <option value={t}>{EFFECTS[t].label}</option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              return (
+                <div class={`slot ${curFx?.id === e.id ? 'sel' : ''}`} onClick={() => setFxSel(e.id)}>
+                  <span class="slot-n">{k + 1}</span>
+                  <button
+                    class={`led ${e.enabled ? 'on' : ''}`}
+                    data-hint="Ligar/desligar efeito"
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      edit([set(['mixer', s.insert, 'effects', e.id, 'enabled'], !e.enabled)]);
+                    }}
+                  />
+                  <span class="slot-name">{EFFECTS[e.type].label}</span>
+                  <Knob size={18} value={e.mix} min={0} max={1} def={1} format={(v) => `mix ${Math.round(v * 100)}%`} title="Dry/wet" onInput={(v) => previewEdit([set(['mixer', s.insert, 'effects', e.id, 'mix'], v)])} onCommit={(v) => edit([set(['mixer', s.insert, 'effects', e.id, 'mix'], v)])} />
+                  <button
+                    data-hint="Subir na cadeia"
+                    disabled={k === 0}
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      const list = [...cur.effects];
+                      [list[k - 1], list[k]] = [list[k], list[k - 1]];
+                      edit([set(['mixer', s.insert, 'effects'], list)]);
+                    }}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    data-hint="Remover efeito"
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      act(A.removeEffect, { insert: s.insert, effect: e.id });
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
           </div>
           {curFx && (
             <div class="fx-params">

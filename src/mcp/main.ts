@@ -140,7 +140,7 @@ tool(
 tool(
   'list_sounds',
   'Catálogo: presets de instrumento, tipos de instrumento e efeitos com seus parâmetros (faixas e padrões).',
-  { kind: z.enum(['presets', 'instruments', 'effects']).optional(), name: z.string().optional().describe('detalhar um tipo específico') },
+  { kind: z.enum(['presets', 'samples', 'instruments', 'effects']).optional(), name: z.string().optional().describe('detalhar um tipo específico') },
   async ({ kind, name }) => {
     const r = await api('GET', '/api/registry');
     const summarize = (o: Record<string, any>) =>
@@ -150,6 +150,7 @@ tool(
       if (!v) throw new Error(`Nada chamado ${name}`);
       return v;
     }
+    if (kind === 'samples') return r.localSamples;
     if (kind === 'presets') return Object.fromEntries(Object.entries(r.presets).map(([k, v]: any) => [k, `${v.type}: ${v.description}`]));
     if (kind === 'instruments') return summarize(r.instruments);
     if (kind === 'effects') return summarize(r.effects);
@@ -157,6 +158,7 @@ tool(
       presets: Object.fromEntries(Object.entries(r.presets).map(([k, v]: any) => [k, `${v.type}: ${v.description}`])),
       instruments: summarize(r.instruments),
       effects: summarize(r.effects),
+      localSamples: r.localSamples.map((x: any) => x.name),
       scales: r.scales,
     };
   },
@@ -191,7 +193,12 @@ tool(
 
 // ------------------------------------------------------------ projeto
 
-tool('new_project', 'Cria um projeto vazio (descarta o atual da tela; salve antes se precisar).', { name: z.string().optional(), bpm: z.number().optional() }, (a) => api('POST', '/api/new', a));
+tool(
+  'new_project',
+  'Cria um projeto novo (descarta o atual da tela; salve antes se precisar). template "kit" (padrão) já vem com Kick, Clap, Hat e Snare; "empty" vem vazio.',
+  { name: z.string().optional(), bpm: z.number().optional(), template: z.enum(['kit', 'empty']).optional() },
+  (a) => api('POST', '/api/new', a),
+);
 
 tool(
   'set_project',
@@ -220,9 +227,10 @@ const instrumentType = z.enum(['synth', 'sampler', 'drum', 'pluck', 'fm']);
 
 tool(
   'add_channel',
-  'Adiciona um canal ao rack. Use preset (ver list_sounds) ou type + params. Para samples: type "sampler", params {sample: "/caminho.wav"}. insert "auto" cria um insert próprio no mixer.',
+  'Adiciona um canal ao rack. Use preset (ver list_sounds), localSample (sample da instalação local do FL, ex. "Kick", "909 Snare"; ver list_sounds) ou type + params. Para outro arquivo: type "sampler", params {sample: "/caminho.wav"}. insert "auto" cria um insert próprio no mixer.',
   {
     name: z.string().optional(),
+    localSample: z.string().optional(),
     preset: z.string().optional(),
     type: instrumentType.optional(),
     params: z.record(z.string(), z.any()).optional(),

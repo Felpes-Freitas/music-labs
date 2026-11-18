@@ -4,7 +4,7 @@ import { audio } from '../audio';
 import { PPQ, patternLength, songLength, ticksPerBar, uid, type Clip } from '../../core/model';
 import { set, ins, rem } from '../../core/ops';
 import * as A from '../../core/actions';
-import { Win, useCanvas } from './widgets';
+import { Win, IconBtn, useCanvas } from './widgets';
 
 const HEADW = 120;
 const RULER = 22;
@@ -21,6 +21,7 @@ export function Playlist() {
   const p = s.project;
   const view = useRef({ scrollX: 0, scrollY: 0, zx: 0.12, rowH: 34 });
   const [snapBeats, setSnapBeats] = useState(true);
+  const [tool, setTool] = useState<'draw' | 'erase' | 'slice' | 'mute'>('draw');
   const drag = useRef<Drag | null>(null);
   const playTick = useRef(-1);
   const bar = ticksPerBar(p);
@@ -160,7 +161,7 @@ export function Playlist() {
           // segue a reprodução
           const v = view.current;
           const w = size.current.w;
-          if (t >= 0) {
+          if (t >= 0 && state.followPlay) {
             const x = HEADW + (t - v.scrollX) * v.zx;
             if (x > w - 40 || x < HEADW) v.scrollX = Math.max(0, t - 20 / v.zx);
           }
@@ -214,9 +215,24 @@ export function Playlist() {
       return;
     }
     const h = hit(x, y);
-    if (e.button === 2) {
+    if (e.button === 2 || tool === 'erase') {
       drag.current = { kind: 'erase' };
       if (h) edit([rem(['clips', h.c.id])]);
+      return;
+    }
+    if (tool === 'mute') {
+      if (h) edit([set(['clips', h.c.id, 'muted'], !h.c.muted || undefined)]);
+      return;
+    }
+    if (tool === 'slice') {
+      if (!h) return;
+      const at = Math.round(tickAt(x) / snap) * snap;
+      const c = h.c;
+      if (at <= c.pos || at >= c.pos + c.len) return;
+      const pat = p.patterns.find((q) => q.id === c.patternId);
+      const plen = pat ? patternLength(p, pat) : c.len;
+      const second = { ...c, id: uid('k'), pos: at, len: c.pos + c.len - at, offset: (c.offset + at - c.pos) % plen };
+      edit([set(['clips', c.id, 'len'], at - c.pos), ins(['clips'], second)]);
       return;
     }
     if (h) {
@@ -308,38 +324,60 @@ export function Playlist() {
   return (
     <Win
       id="playlist"
-      title={`Playlist · ${Math.ceil(len / bar)} compassos`}
+      icon="playlist"
+      title={
+        <>
+          Playlist <span class="dim">· arranjo · {Math.ceil(len / bar)} compassos</span>
+        </>
+      }
       minW={420}
       minH={200}
       tools={
-        <span class="pl-tools">
-          <span class="chips">
-            {p.patterns.map((pt) => (
-              <button
-                class={`chip ${pt.id === s.patternId ? 'on' : ''}`}
-                style={{ background: pt.id === s.patternId ? pt.color : undefined, borderColor: pt.color }}
-                onClick={() => selectPattern(pt.id)}
-                onDblClick={() => {
-                  const n = prompt('Nome do pattern:', pt.name);
-                  if (n) act(A.updatePattern, { pattern: pt.id, name: n });
-                }}
-                title="Clique: pincel da playlist · duplo clique: renomear"
-              >
-                {pt.name}
-              </button>
-            ))}
+        <span class="pl-tools nodrag">
+          <span class="tgroup">
+            <IconBtn icon="pencil" on={tool === 'draw'} hint="Lápis: clique pinta o pattern selecionado, arraste move, borda redimensiona (o pattern repete)" onClick={() => setTool('draw')} />
+            <IconBtn icon="eraser" on={tool === 'erase'} hint="Borracha: apaga clips (o botão direito também apaga)" onClick={() => setTool('erase')} />
+            <IconBtn icon="mute" on={tool === 'mute'} hint="Mute de clip" onClick={() => setTool('mute')} />
+            <IconBtn icon="slice" on={tool === 'slice'} hint="Fatiar clip no ponto clicado" onClick={() => setTool('slice')} />
           </span>
-          <button class={snapBeats ? '' : 'on'} title="Snap em compasso (ligado) ou tempo" onClick={() => setSnapBeats(!snapBeats)}>
-            {snapBeats ? 'snap 1/4' : 'snap bar'}
-          </button>
-          <button title="Adicionar track" onClick={() => edit([ins(['tracks'], { id: uid('t'), name: `Track ${p.tracks.length + 1}`, color: '#888', mute: false })])}>
-            + track
-          </button>
+          <span class="tgroup">
+            <IconBtn icon="magnet" label={snapBeats ? 'tempo' : 'compasso'} hint="Snap da playlist: tempo ou compasso" onClick={() => setSnapBeats(!snapBeats)} />
+            <IconBtn icon="follow" on={s.followPlay} hint="Seguir a reprodução" onClick={() => ((state.followPlay = !state.followPlay), paint())} />
+            <IconBtn icon="plus" label="track" hint="Adicionar track" onClick={() => edit([ins(['tracks'], { id: uid('t'), name: `Track ${p.tracks.length + 1}`, color: '#888', mute: false })])} />
+          </span>
         </span>
       }
     >
-      <canvas ref={ref} class="pl-canvas" onPointerDown={onDown as any} onPointerMove={onMove as any} onPointerUp={onUp} onWheel={onWheel as any} onContextMenu={(e) => e.preventDefault()} />
-      <div class="pr-help">clique: pintar pattern · arrastar: mover · Shift+arrastar: duplicar · borda: tamanho (o pattern repete) · direito: apagar · régua: posicionar · Shift/direito na régua: loop · duplo clique no clip: abrir no rack</div>
+      <div class="pl-wrap">
+        <div class="picker" data-hint="Patterns: clique escolhe o que o lápis pinta · duplo clique renomeia">
+          {p.patterns.map((pt) => (
+            <button
+              class={`pk ${pt.id === s.patternId ? 'on' : ''}`}
+              style={{ borderLeftColor: pt.color }}
+              onClick={() => selectPattern(pt.id)}
+              onDblClick={() => {
+                const n = prompt('Nome do pattern:', pt.name);
+                if (n) act(A.updatePattern, { pattern: pt.id, name: n });
+              }}
+            >
+              {pt.name}
+            </button>
+          ))}
+          <button class="pk pk-add" data-hint="Novo pattern" onClick={() => { const r = act(A.addPattern, {}); if (r) selectPattern(r.id); }}>
+            + pattern
+          </button>
+        </div>
+        <canvas
+          ref={ref}
+          class="pl-canvas"
+          onPointerDown={onDown as any}
+          onPointerMove={onMove as any}
+          onPointerUp={onUp}
+          onWheel={onWheel as any}
+          onContextMenu={(e) => e.preventDefault()}
+          data-hint="Régua: posicionar (Shift ou direito: loop) · Shift+arrastar clip: duplicar · duplo clique no clip: abrir no rack · Ctrl+roda: zoom · Alt+roda: altura"
+        />
+      </div>
     </Win>
   );
 }
