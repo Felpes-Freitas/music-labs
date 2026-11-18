@@ -359,6 +359,29 @@ tool(
   },
 );
 
+tool(
+  'add_audio_clip',
+  'Coloca um arquivo de áudio (vocal, loop, gravação) na playlist como clipe, tocando no tempo da música. Sem bars/lengthSec usa a duração do arquivo. insert = insert do mixer para onde o áudio vai.',
+  { sample: z.string().describe('caminho do arquivo'), bar: z.number().optional(), beat: z.number().optional(), track: z.number().optional(), bars: z.number().optional(), lengthSec: z.number().optional(), startSec: z.number().optional(), gain: z.number().optional(), insert: z.union([z.number(), z.string()]).optional() },
+  (a) => act('addAudioClip', a, 'Clipe de áudio na playlist'),
+);
+
+tool(
+  'add_automation',
+  'Cria um clipe de automação na playlist que move um parâmetro ao longo da música (só no modo song). Alvo: channel + param ("volume", "pan" ou um parâmetro do instrumento, ex. "cutoff"), ou insert + param ("volume"/"pan"), ou channel/insert + effect + param do efeito. points: [{beat (desde o início do clipe), value (na unidade do parâmetro)}]; sem points cria uma linha no valor atual.',
+  {
+    channel: ref.optional(),
+    insert: z.union([z.number(), z.string()]).optional(),
+    effect: z.union([z.string(), z.number()]).optional(),
+    param: z.string(),
+    bar: z.number().optional(),
+    bars: z.number().optional(),
+    track: z.number().optional(),
+    points: z.array(z.object({ beat: z.number(), value: z.number() })).optional(),
+  },
+  (a) => act('addAutomation', a, `Automação: ${a.param}`),
+);
+
 tool('update_track', 'Renomeia ou muta uma track da playlist.', { track: z.number(), name: z.string().optional(), mute: z.boolean().optional() }, (a) => act('updateTrack', a, `Track ${a.track} ajustada`));
 
 // ------------------------------------------------------------ mixer
@@ -411,7 +434,7 @@ tool('remove_effect', 'Remove um efeito de um insert ou de um canal.', { ...targ
 
 tool(
   'batch',
-  'Executa várias ações de uma vez, atomicamente (um passo de undo). Nomes: addChannel, updateChannel, removeChannel, addPattern, updatePattern, removePattern, duplicatePattern, addNotes, setSteps, addChords, clearNotes, transformNotes, placePattern, removeClips, updateTrack, updateInsert, addEffect, updateEffect, removeEffect, addChannelEffect, updateChannelEffect, removeChannelEffect, setProjectProps. Os args são iguais aos das ferramentas correspondentes (addNotes usa {pattern, channel, notes:[{note,start,length,velocity}]}). Canais/patterns criados no mesmo lote podem ser referenciados pelo nome.',
+  'Executa várias ações de uma vez, atomicamente (um passo de undo). Nomes: addChannel, updateChannel, removeChannel, addPattern, updatePattern, removePattern, duplicatePattern, addNotes, setSteps, addChords, clearNotes, transformNotes, placePattern, removeClips, updateTrack, updateInsert, addEffect, updateEffect, removeEffect, addChannelEffect, updateChannelEffect, removeChannelEffect, addAudioClip, addAutomation, setProjectProps. Os args são iguais aos das ferramentas correspondentes (addNotes usa {pattern, channel, notes:[{note,start,length,velocity}]}). Canais/patterns criados no mesmo lote podem ser referenciados pelo nome.',
   { actions: z.array(z.object({ name: z.string(), args: z.record(z.string(), z.any()) })), label: z.string().optional() },
   async ({ actions, label }) => (await api('POST', '/api/actions', { actions, origin: 'mcp', label: label ?? `${actions.length} edições` })).results,
 );

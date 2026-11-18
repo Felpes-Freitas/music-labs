@@ -141,7 +141,7 @@ export function Mixer() {
                   {m.name}
                 </div>
                 <div class="strip-fx">{m.effects.length ? `${m.effects.length} fx` : ''}</div>
-                <Knob size={24} value={m.pan} min={-1} max={1} def={0} bipolar format={panFmt} onInput={(v) => previewEdit([set(['mixer', i, 'pan'], v)])} onCommit={(v) => setIns(i, 'pan', v)} />
+                <Knob size={24} value={m.pan} min={-1} max={1} def={0} bipolar format={panFmt} auto={{ path: ['mixer', i, 'pan'], label: `${m.name} · pan` }} onInput={(v) => previewEdit([set(['mixer', i, 'pan'], v)])} onCommit={(v) => setIns(i, 'pan', v)} />
                 <div class="strip-mid">
                   <canvas ref={(el) => void (meters.current[i] = el)} width={12} height={150} class="meter" />
                   <Fader value={m.volume} onInput={(v) => previewEdit([set(['mixer', i, 'volume'], v)])} onCommit={(v) => setIns(i, 'volume', v)} />
@@ -249,6 +249,7 @@ export function Mixer() {
               <ParamGrid
                 defs={EFFECTS[curFx.type].params}
                 values={curFx.params}
+                auto={{ prefix: ['mixer', s.insert, 'effects', curFx.id, 'params'], label: `${p.mixer[s.insert]?.name ?? 'Insert'} · ${EFFECTS[curFx.type].label}` }}
                 onInput={(k, v) => previewEdit([set(['mixer', s.insert, 'effects', curFx.id, 'params', k], v)])}
                 onCommit={(k, v) => edit([set(['mixer', s.insert, 'effects', curFx.id, 'params', k], v)])}
                 mixerSize={p.mixer.length}

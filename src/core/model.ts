@@ -53,9 +53,53 @@ export interface Clip {
   track: number;
   pos: number; // ticks
   len: number; // ticks
-  patternId: string;
+  patternId: string; // '' em clipes de áudio e de automação
   offset: number; // ticks dentro do pattern
   muted?: boolean;
+  /** pattern (padrão), audio (arquivo tocado no tempo) ou auto (automação de um parâmetro). */
+  kind?: 'pattern' | 'audio' | 'auto';
+  // clipe de áudio
+  sample?: string;
+  startSec?: number; // ponto do arquivo onde o clipe começa
+  gain?: number;
+  insert?: number; // insert do mixer para onde o áudio vai
+  // clipe de automação
+  target?: AutoTarget;
+  points?: AutoPoint[];
+}
+
+/** Parâmetro automatizado: caminho no projeto e faixa de valores. */
+export interface AutoTarget {
+  path: (string | number)[];
+  min: number;
+  max: number;
+  log?: boolean;
+  label: string;
+}
+
+/** Ponto de automação: t em ticks desde o início do clipe, v normalizado 0..1. */
+export interface AutoPoint {
+  t: number;
+  v: number;
+}
+
+export const isPatternClip = (c: Clip) => !c.kind || c.kind === 'pattern';
+
+/** Valor da automação num instante (ticks desde o início do clipe), já na escala do parâmetro. */
+export function autoValue(c: Clip, t: number): number | null {
+  const pts = c.points;
+  const tg = c.target;
+  if (!pts?.length || !tg) return null;
+  let v = pts[0].v;
+  if (t >= pts[pts.length - 1].t) v = pts[pts.length - 1].v;
+  else
+    for (let i = 1; i < pts.length; i++)
+      if (t < pts[i].t) {
+        const a = pts[i - 1], b = pts[i];
+        v = b.t > a.t ? a.v + ((b.v - a.v) * (t - a.t)) / (b.t - a.t) : b.v;
+        break;
+      }
+  return tg.log && tg.min > 0 ? tg.min * Math.pow(tg.max / tg.min, v) : tg.min + v * (tg.max - tg.min);
 }
 
 export interface Track {
@@ -180,6 +224,7 @@ export function patternLength(p: Project, pat: Pattern): number {
 }
 
 export function songLength(p: Project): number {
+  // (clipes de qualquer tipo contam)
   let end = 0;
   for (const c of p.clips) end = Math.max(end, c.pos + c.len);
   return end;

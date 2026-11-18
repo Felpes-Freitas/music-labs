@@ -28,8 +28,12 @@ export async function renderProject(p: Project, o: RenderOptions = {}): Promise<
   const sr = o.sampleRate ?? 44100;
   const eng = new Engine(sr);
   const missing: string[] = [];
-  for (const ch of p.channels) {
-    const s = ch.type === 'sampler' ? String(ch.params.sample ?? '') : '';
+  // samples dos canais e dos clipes de áudio da playlist
+  const sources = [
+    ...p.channels.map((ch) => (ch.type === 'sampler' ? String(ch.params.sample ?? '') : '')),
+    ...p.clips.map((c) => (c.kind === 'audio' ? c.sample ?? '' : '')),
+  ];
+  for (const s of sources) {
     if (!s || eng.hasSample(s)) continue;
     try {
       const dir = setFolder(s);

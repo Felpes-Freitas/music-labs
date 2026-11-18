@@ -2,7 +2,7 @@
 // Cada ação lê o projeto e devolve Ops; quem chama aplica e sincroniza.
 // O MCP expõe estas ações quase 1:1, e a interface reaproveita várias.
 
-import type { Channel, Clip, Effect, EffectType, InstrumentType, Note, Params, Pattern, Project } from './model.js';
+import type { AutoTarget, Channel, Clip, Effect, EffectType, InstrumentType, Note, Params, Pattern, Project } from './model.js';
 import { MIXER_SIZE, PPQ, STEP, color, findChannel, findPattern, makeInsert, noteName as noteNameOf, parseNote, patternLength, ticksPerBar, uid } from './model.js';
 import { EFFECTS, INSTRUMENTS, defaults, presetParams, sanitizeParams } from './registry.js';
 import { chordNotes, romanChord, voiceLead } from './theory.js';
@@ -409,6 +409,117 @@ export function updateTrack(p: Project, a: { track: number; name?: string; mute?
   return { ops };
 }
 
+// ------------------------------------------------------------ clipes de áudio e automação
+
+/** Primeira track sem clipes no intervalo [pos, pos+len). */
+function freeTrack(p: Project, pos: number, len: number): number {
+  for (let t = 0; t < p.tracks.length; t++) if (!p.clips.some((c) => c.track === t && c.pos < pos + len && c.pos + c.len > pos)) return t;
+  return p.tracks.length;
+}
+
+function trackOps(p: Project, track: number): Op[] {
+  const ops: Op[] = [];
+  for (let t = p.tracks.length; t <= track; t++) ops.push(ins(['tracks'], { id: uid('t'), name: `Track ${t + 1}`, color: color(t), mute: false }));
+  return ops;
+}
+
+export function addAudioClip(
+  p: Project,
+  a: { sample: string; bar?: number; beat?: number; track?: number; bars?: number; lengthSec?: number; startSec?: number; gain?: number; insert?: number | string },
+): ActionResult {
+  const bar = ticksPerBar(p);
+  const pos = Math.round(((a.bar ?? 1) - 1) * bar + (a.beat ?? 0) * PPQ);
+  const secPerTick = 60 / (p.bpm * PPQ);
+  const len = a.bars ? Math.round(a.bars * bar) : Math.max(1, Math.round((a.lengthSec ?? 4 * bar * secPerTick) / secPerTick));
+  const track = a.track !== undefined ? a.track - 1 : freeTrack(p, pos, len);
+  const clip: Clip = {
+    id: uid('k'),
+    kind: 'audio',
+    track,
+    pos,
+    len,
+    patternId: '',
+    offset: 0,
+    sample: a.sample,
+    startSec: a.startSec ?? 0,
+    gain: a.gain ?? 1,
+    insert: a.insert !== undefined ? insertRef(p, a.insert) : 0,
+  };
+  return { ops: [...trackOps(p, track), ins(['clips'], clip)], result: { clip: clip.id, track: track + 1 } };
+}
+
+export interface AutoDescriptor {
+  channel?: string;
+  insert?: number | string;
+  effect?: string | number; // id, tipo ou posição do efeito (no canal ou no insert)
+  param: string; // 'volume', 'pan' ou um parâmetro do instrumento/efeito
+}
+
+/** Monta o alvo da automação a partir de uma descrição ("corte do canal Pad"). */
+export function autoTarget(p: Project, d: AutoDescriptor): AutoTarget {
+  const vp = (path: (string | number)[], label: string, param: string): AutoTarget =>
+    param === 'volume' ? { path: [...path, 'volume'], min: 0, max: 1.25, label: `${label} · volume` } : { path: [...path, 'pan'], min: -1, max: 1, label: `${label} · pan` };
+  const fromDef = (path: (string | number)[], defs: { key: string; kind: string; min?: number; max?: number; curve?: string; label: string }[], param: string, label: string): AutoTarget => {
+    const def = defs.find((x) => x.key === param);
+    if (!def || def.kind !== 'num') throw new Error(`"${param}" não é um parâmetro numérico. Opções: ${defs.filter((x) => x.kind === 'num').map((x) => x.key).join(', ')}`);
+    return { path: [...path, param], min: def.min!, max: def.max!, log: def.curve === 'log' && def.min! > 0, label: `${label} · ${def.label}` };
+  };
+  if (d.channel) {
+    const ch = channelRef(p, d.channel);
+    if (d.effect !== undefined) {
+      const fx = channelEffectRef(p, ch.id, d.effect);
+      return fromDef(['channels', ch.id, 'effects', fx.id, 'params'], EFFECTS[fx.type].params, d.param, `${ch.name} · ${EFFECTS[fx.type].label}`);
+    }
+    if (d.param === 'volume' || d.param === 'pan') return vp(['channels', ch.id], ch.name, d.param);
+    return fromDef(['channels', ch.id, 'params'], INSTRUMENTS[ch.type].params, d.param, ch.name);
+  }
+  if (d.insert !== undefined) {
+    const i = insertRef(p, d.insert);
+    const m = p.mixer[i];
+    if (d.effect !== undefined) {
+      const fx = effectRef(p, i, d.effect);
+      return fromDef(['mixer', i, 'effects', fx.id, 'params'], EFFECTS[fx.type].params, d.param, `${m.name} · ${EFFECTS[fx.type].label}`);
+    }
+    if (d.param === 'volume' || d.param === 'pan') return vp(['mixer', i], m.name, d.param);
+  }
+  throw new Error('Informe channel (e opcionalmente effect) ou insert, e o param');
+}
+
+/** Valor atual do parâmetro, normalizado 0..1 na faixa do alvo. */
+export function normalizedNow(p: Project, t: AutoTarget): number {
+  let cur: any = p;
+  for (const seg of t.path) {
+    if (Array.isArray(cur)) cur = typeof seg === 'number' ? cur[seg] : cur.find((x: any) => x?.id === seg) ?? cur[Number(seg)];
+    else cur = cur?.[seg];
+  }
+  const v = typeof cur === 'number' ? cur : t.min;
+  return toNorm(t, v);
+}
+
+export const toNorm = (t: AutoTarget, v: number) =>
+  Math.max(0, Math.min(1, t.log && t.min > 0 ? Math.log(v / t.min) / Math.log(t.max / t.min) : (v - t.min) / (t.max - t.min)));
+
+export function addAutomation(
+  p: Project,
+  a: AutoDescriptor & { target?: AutoTarget; bar?: number; bars?: number; track?: number; points?: { beat: number; value: number }[] },
+): ActionResult {
+  const target = a.target ?? autoTarget(p, a);
+  const bar = ticksPerBar(p);
+  const pos = Math.round(((a.bar ?? 1) - 1) * bar);
+  const song = p.clips.reduce((m, c) => Math.max(m, c.pos + c.len), 0);
+  const len = a.bars ? Math.round(a.bars * bar) : Math.max(4 * bar, song - pos);
+  const track = a.track !== undefined ? a.track - 1 : freeTrack(p, pos, len);
+  const now = normalizedNow(p, target);
+  const points = a.points?.length
+    ? a.points.map((x) => ({ t: Math.max(0, Math.min(len, Math.round(x.beat * PPQ))), v: toNorm(target, x.value) })).sort((x, y) => x.t - y.t)
+    : [
+        { t: 0, v: now },
+        { t: len, v: now },
+      ];
+  const clip: Clip = { id: uid('k'), kind: 'auto', track, pos, len, patternId: '', offset: 0, target, points };
+  return { ops: [...trackOps(p, track), ins(['clips'], clip)], result: { clip: clip.id, track: track + 1, target: target.label } };
+}
+
 // ------------------------------------------------------------ mixer
 
 export function updateInsert(p: Project, a: { insert: number | string; name?: string; volumeDb?: number; pan?: number; mute?: boolean; solo?: boolean; output?: number | string }): ActionResult {
@@ -562,7 +673,14 @@ export function describe(p: Project) {
     playlist: p.clips
       .slice()
       .sort((a, b) => a.pos - b.pos || a.track - b.track)
-      .map((c) => ({ id: c.id, track: c.track + 1, bar: c.pos / bar + 1, bars: c.len / bar, pattern: p.patterns.find((x) => x.id === c.patternId)?.name, muted: c.muted || undefined })),
+      .map((c) => ({
+        id: c.id,
+        track: c.track + 1,
+        bar: c.pos / bar + 1,
+        bars: c.len / bar,
+        ...(c.kind === 'audio' ? { audio: c.sample?.split(/[\\/]/).pop(), insert: c.insert ?? 0 } : c.kind === 'auto' ? { automation: c.target?.label, points: c.points?.length } : { pattern: p.patterns.find((x) => x.id === c.patternId)?.name }),
+        muted: c.muted || undefined,
+      })),
     mixer: p.mixer
       .map((m, i) => ({ i, name: m.name, volumeDb: Math.round(20 * Math.log10(Math.max(1e-6, m.volume)) * 10) / 10, pan: m.pan, mute: m.mute || undefined, output: i > 0 && m.output > 0 ? m.output : undefined, effects: m.effects.map((e) => `${e.type}${e.enabled ? '' : ' (off)'}#${e.id}`) }))
       .filter((m, i) => i === 0 || p.channels.some((c) => c.insert === i) || m.effects.length || !/^Insert \d+$/.test(m.name)),

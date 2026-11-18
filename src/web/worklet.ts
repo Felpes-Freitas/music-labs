@@ -82,3 +82,13 @@ class MusicLabsProcessor extends AudioWorkletProcessor {
 }
 
 registerProcessor('musiclabs', MusicLabsProcessor);
+
+/** Gravador: repassa os blocos de entrada (microfone) para a interface. */
+class RecorderProcessor extends AudioWorkletProcessor {
+  process(inputs: Float32Array[][]) {
+    const inp = inputs[0];
+    if (inp && inp.length) this.port.postMessage(inp.map((c) => c.slice()));
+    return true;
+  }
+}
+registerProcessor('ml-recorder', RecorderProcessor);

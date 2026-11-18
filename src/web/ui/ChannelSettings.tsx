@@ -170,6 +170,7 @@ export function ChannelSettings() {
                 <ParamGrid
                   defs={def.params}
                   values={ch.params}
+                  auto={{ prefix: ['channels', ch.id, 'params'], label: ch.name }}
                   onInput={(k, v) => previewEdit([set(['channels', ch.id, 'params', k], v)])}
                   onCommit={(k, v) => edit([set(['channels', ch.id, 'params', k], v)])}
                 />

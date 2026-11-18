@@ -6,6 +6,8 @@ import type { Project } from '../core/model';
 import { emptyProject, findPattern, findChannel, parseNote, PPQ, ticksPerBar } from '../core/model';
 import { applyOps, type Op } from '../core/ops';
 import type { ActionResult } from '../core/actions';
+import * as A from '../core/actions';
+import { encodeWav } from '../core/wav';
 import type { EngineStatus } from '../core/engine';
 import { audio } from './audio';
 
@@ -330,11 +332,45 @@ export function play(mode = state.mode) {
 export function stop() {
   audio.stop();
   playingFlag = false;
+  if (audio.recording) finishRecording();
   emit();
 }
 export function togglePlay() {
-  if (audio.status.playing) stop();
+  if (audio.status.playing || audio.recording) stop();
   else play();
+}
+
+/** Gravar: toca a música em modo song a partir da posição atual e captura o microfone. */
+export async function toggleRecord() {
+  if (audio.recording) return stop();
+  const start = audio.status.mode === 'song' ? Math.max(0, Math.floor(audio.status.tick)) : 0;
+  try {
+    await audio.startRecording(start);
+  } catch (e) {
+    toast(`Não consegui acessar o microfone: ${(e as Error).message}`);
+    return;
+  }
+  state.mode = 'song';
+  playingFlag = true;
+  audio.play('song', state.patternId, start);
+  toast('Gravando… (Espaço ou ■ para parar)');
+  emit();
+}
+
+async function finishRecording() {
+  const r = audio.stopRecording();
+  emit();
+  if (!r || r.L.length < r.sr * 0.1) return;
+  try {
+    const wav = encodeWav(r.L, r.R, r.sr, 24);
+    const res = await fetch(`/api/recording?name=${encodeURIComponent(state.project.name)}`, { method: 'POST', headers: { 'content-type': 'audio/wav' }, body: new Blob([wav as BlobPart], { type: 'audio/wav' }) });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error);
+    const result = act(A.addAudioClip, { sample: d.path, bar: 1, beat: r.startTick / PPQ, lengthSec: r.L.length / r.sr });
+    if (result) toast(`Gravação salva e colocada na track ${result.track} (${(r.L.length / r.sr).toFixed(1)} s)`);
+  } catch (e) {
+    toast(`Erro ao salvar a gravação: ${(e as Error).message}`);
+  }
 }
 export function setMode(mode: 'pattern' | 'song') {
   state.mode = mode;

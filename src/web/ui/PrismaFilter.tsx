@@ -406,6 +406,7 @@ function NodePanel(p: { ch: Channel; sel: number; setSel: (i: number) => void })
                 label={f === 'res' && n.type === 'peak' ? 'Largura' : FIELD_LABEL[f]}
                 format={fmtFor(d)}
                 title={`${d.label}: ${fmtFor(d)(v)}`}
+                auto={{ path: path(key), label: `${p.ch.name} · ${d.label}` }}
                 onInput={(x) => previewEdit([set(path(key), x)])}
                 onCommit={(x) => edit([set(path(key), x)])}
               />
