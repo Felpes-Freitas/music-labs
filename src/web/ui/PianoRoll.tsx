@@ -829,7 +829,7 @@ export function PianoRoll() {
       }
       minW={480}
       minH={260}
-      tools={
+      bar={
         <span class="pr-tools nodrag">
           <span class="tgroup">
             {toolBtn('draw', 'pencil', 'Lápis: cria, move e redimensiona notas; direito apaga; Ctrl+arrastar seleciona', 'Shift+P')}
@@ -871,9 +871,7 @@ export function PianoRoll() {
           <span class="tgroup">
             <IconBtn icon="ghost" on={ghost} hint="Ghost notes: mostrar as notas dos outros canais" onClick={() => setGhost(!ghost)} />
             <IconBtn icon="follow" on={s.followPlay} hint="Seguir a reprodução" onClick={() => ((state.followPlay = !state.followPlay), paint())} />
-            <button class="txtbtn" data-hint="Humanizar timing e velocity" onClick={() => pat && ch && act(A.transformNotes, { pattern: pat.id, channel: ch.id, humanizeTiming: 0.03, humanizeVelocity: 0.1, seed: Date.now() % 100000 })}>
-              Humanizar
-            </button>
+            <IconBtn icon="sparkle" hint="Humanizar: varia um pouco o tempo e a velocity das notas" onClick={() => pat && ch && act(A.transformNotes, { pattern: pat.id, channel: ch.id, humanizeTiming: 0.03, humanizeVelocity: 0.1, seed: Date.now() % 100000 })} />
           </span>
           <select class="chsel" value={s.channelId ?? ''} data-hint="Canal editado" onChange={(e) => selectChannel((e.target as HTMLSelectElement).value)}>
             {p.channels.map((c) => (
