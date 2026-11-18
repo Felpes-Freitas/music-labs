@@ -74,6 +74,9 @@ export const ACTIONS: Record<string, ActionFn> = {
   addEffect: A.addEffect,
   updateEffect: A.updateEffect,
   removeEffect: A.removeEffect,
+  addChannelEffect: A.addChannelEffect,
+  updateChannelEffect: A.updateChannelEffect,
+  removeChannelEffect: A.removeChannelEffect,
   setProjectProps: A.setProjectProps,
 };
 

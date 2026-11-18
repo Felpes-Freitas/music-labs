@@ -85,9 +85,11 @@ export const INSTRUMENTS: Record<InstrumentType, { label: string; description: s
       num('phaserRate', 'Phaser vel.', 0.02, 10, 0.25, 'Hz', 'log'),
       num('phaserSpacing', 'Phaser espaço', 0.25, 3, 1, 'oit'),
       num('phaserWidth', 'Phaser estreito', 0, 1, 0.5),
-      num('unison', 'Unison', 1, 8, 1, 'vozes', 'lin', 1),
+      num('unison', 'Vozes', 1, 9, 1, 'vozes', 'lin', 1),
       num('detune', 'Detune', 0, 80, 14, 'ct'),
       num('spread', 'Abertura', 0, 1, 0.8),
+      num('uniPhase', 'Fase', 0, 1, 1),
+      num('uniVary', 'Variação', 0, 1, 0),
       num('oct', 'Oitava acima', 0, 1, 0),
       num('sub', 'Oitava abaixo', 0, 1, 0),
       num('a', 'Ataque', 0.001, 6, 0.002, 's', 'log'),
@@ -177,6 +179,17 @@ export const INSTRUMENTS: Record<InstrumentType, { label: string; description: s
 };
 
 export const EFFECTS: Record<EffectType, { label: string; description: string; params: ParamDef[] }> = {
+  phaser: {
+    label: 'Phaser',
+    description: 'Phaser clássico: vales que varrem o espectro, com realimentação e estéreo.',
+    params: [
+      num('rate', 'Velocidade', 0.03, 8, 0.4, 'Hz', 'log'),
+      num('depth', 'Profund.', 0, 1, 0.8),
+      num('feedback', 'Realim.', 0, 0.9, 0.5),
+      num('center', 'Centro', 150, 5000, 900, 'Hz', 'log'),
+      en('stages', 'Estágios', ['4', '6', '8'], '6'),
+    ],
+  },
   eq: {
     label: 'EQ 4 bandas',
     description: 'Low shelf, dois peaks e high shelf, mais corte de graves (HPF).',

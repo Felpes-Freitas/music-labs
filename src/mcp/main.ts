@@ -244,13 +244,16 @@ tool(
 
 tool(
   'update_channel',
-  'Altera um canal: nome, volume (dB), pan, pitch (semitons), mute, insert do mixer, preset, tipo ou parâmetros do instrumento.',
+  'Altera um canal: nome, volume (dB), pan, nota raiz (root: a tecla que toca o som na altura original, ex. "D4"; equivale a transpor; em instrumentos multi-sample a troca de sample acompanha), ajuste fino em cents (fine, -100..100; no sampler, pitchMode "stretch" muda o tom sem mudar o andamento e "resample" reamostra), mute, insert do mixer, preset, tipo ou parâmetros do instrumento.',
   {
     channel: ref,
     name: z.string().optional(),
     volumeDb: z.number().optional(),
     pan: z.number().optional(),
-    pitch: z.number().optional(),
+    pitch: z.number().optional().describe('transposição em semitons (prefira root)'),
+    root: z.union([z.string(), z.number()]).optional(),
+    fine: z.number().min(-100).max(100).optional(),
+    pitchMode: z.enum(['stretch', 'resample']).optional(),
     mute: z.boolean().optional(),
     insert: z.union([z.number(), z.string()]).optional(),
     preset: z.string().optional(),
@@ -367,31 +370,48 @@ tool(
   (a) => act('updateInsert', a, `Mixer: insert ${a.insert}`),
 );
 
-const effectType = z.enum(['eq', 'filter', 'compressor', 'delay', 'reverb', 'chorus', 'distortion', 'bitcrusher', 'stereo', 'limiter']);
+const effectType = z.enum(['phaser', 'eq', 'filter', 'compressor', 'delay', 'reverb', 'chorus', 'distortion', 'bitcrusher', 'stereo', 'limiter']);
+
+const target = {
+  insert: z.union([z.number(), z.string()]).optional().describe('insert do mixer (0 = master)'),
+  channel: ref.optional().describe('ou: canal do rack (até 4 efeitos próprios, antes do mixer)'),
+};
+const where = (a: { insert?: unknown; channel?: string }) => {
+  if (a.channel) return { kind: 'channel' as const, label: `canal ${a.channel}` };
+  if (a.insert === undefined) throw new Error('Informe insert ou channel');
+  return { kind: 'insert' as const, label: `insert ${a.insert}` };
+};
 
 tool(
   'add_effect',
-  'Adiciona um efeito num insert. mix = dry/wet. Compressor aceita params.sidechain = número do insert que dispara o ducking (ex.: o do kick).',
-  { insert: z.union([z.number(), z.string()]), type: effectType, params: z.record(z.string(), z.any()).optional(), mix: z.number().min(0).max(1).optional(), index: z.number().optional() },
-  (a) => act('addEffect', a, `Efeito ${a.type} no insert ${a.insert}`),
+  'Adiciona um efeito num insert do mixer ou direto num canal (channel: até 4 efeitos por canal). mix = dry/wet. Compressor no mixer aceita params.sidechain = número do insert que dispara o ducking (ex.: o do kick).',
+  { ...target, type: effectType, params: z.record(z.string(), z.any()).optional(), mix: z.number().min(0).max(1).optional(), index: z.number().optional() },
+  (a) => {
+    const w = where(a);
+    return w.kind === 'channel' ? act('addChannelEffect', { ...a, insert: undefined }, `Efeito ${a.type} no ${w.label}`) : act('addEffect', { ...a, channel: undefined }, `Efeito ${a.type} no ${w.label}`);
+  },
 );
 
 tool(
   'update_effect',
-  'Altera um efeito (por id, tipo ou posição no insert): parâmetros, mix, ligado/desligado.',
-  { insert: z.union([z.number(), z.string()]), effect: z.union([z.string(), z.number()]), params: z.record(z.string(), z.any()).optional(), mix: z.number().optional(), enabled: z.boolean().optional() },
-  (a) => act('updateEffect', a, `Efeito ajustado no insert ${a.insert}`),
+  'Altera um efeito (por id, tipo ou posição) de um insert ou de um canal: parâmetros, mix, ligado/desligado (no canal, também pode trocar o tipo).',
+  { ...target, effect: z.union([z.string(), z.number()]), type: effectType.optional(), params: z.record(z.string(), z.any()).optional(), mix: z.number().optional(), enabled: z.boolean().optional() },
+  (a) => {
+    const w = where(a);
+    return w.kind === 'channel' ? act('updateChannelEffect', { ...a, insert: undefined }, `Efeito ajustado no ${w.label}`) : act('updateEffect', { ...a, channel: undefined, type: undefined }, `Efeito ajustado no ${w.label}`);
+  },
 );
 
-tool('remove_effect', 'Remove um efeito de um insert.', { insert: z.union([z.number(), z.string()]), effect: z.union([z.string(), z.number()]) }, (a) =>
-  act('removeEffect', a, `Efeito removido do insert ${a.insert}`),
-);
+tool('remove_effect', 'Remove um efeito de um insert ou de um canal.', { ...target, effect: z.union([z.string(), z.number()]) }, (a) => {
+  const w = where(a);
+  return w.kind === 'channel' ? act('removeChannelEffect', { ...a, insert: undefined }, `Efeito removido do ${w.label}`) : act('removeEffect', { ...a, channel: undefined }, `Efeito removido do ${w.label}`);
+});
 
 // ------------------------------------------------------------ lote
 
 tool(
   'batch',
-  'Executa várias ações de uma vez, atomicamente (um passo de undo). Nomes: addChannel, updateChannel, removeChannel, addPattern, updatePattern, removePattern, duplicatePattern, addNotes, setSteps, addChords, clearNotes, transformNotes, placePattern, removeClips, updateTrack, updateInsert, addEffect, updateEffect, removeEffect, setProjectProps. Os args são iguais aos das ferramentas correspondentes (addNotes usa {pattern, channel, notes:[{note,start,length,velocity}]}). Canais/patterns criados no mesmo lote podem ser referenciados pelo nome.',
+  'Executa várias ações de uma vez, atomicamente (um passo de undo). Nomes: addChannel, updateChannel, removeChannel, addPattern, updatePattern, removePattern, duplicatePattern, addNotes, setSteps, addChords, clearNotes, transformNotes, placePattern, removeClips, updateTrack, updateInsert, addEffect, updateEffect, removeEffect, addChannelEffect, updateChannelEffect, removeChannelEffect, setProjectProps. Os args são iguais aos das ferramentas correspondentes (addNotes usa {pattern, channel, notes:[{note,start,length,velocity}]}). Canais/patterns criados no mesmo lote podem ser referenciados pelo nome.',
   { actions: z.array(z.object({ name: z.string(), args: z.record(z.string(), z.any()) })), label: z.string().optional() },
   async ({ actions, label }) => (await api('POST', '/api/actions', { actions, origin: 'mcp', label: label ?? `${actions.length} edições` })).results,
 );

@@ -8,6 +8,10 @@ import * as A from '../../core/actions';
 import { Win, useCanvas } from './widgets';
 import { ParamGrid } from './ParamGrid';
 import { PrismaPanel } from './PrismaPanel';
+import { ChannelFx } from './ChannelFx';
+import { ChannelPiano } from './ChannelPiano';
+import { GearTab } from './GearTab';
+import { Icon } from './icons';
 import { decodeWav } from '../../core/wav';
 
 function Waveform(p: { path: string }) {
@@ -83,92 +87,98 @@ function SourceBox(p: { path: string; oneshot: boolean; loop: boolean }) {
   );
 }
 
-function MiniKeys(p: { channel: string }) {
-  const keys = Array.from({ length: 25 }, (_, i) => 48 + i);
-  return (
-    <div class="minikeys">
-      {keys.map((k) => {
-        const black = [1, 3, 6, 8, 10].includes(k % 12);
-        return (
-          <div
-            class={`mk ${black ? 'b' : 'w'}`}
-            onPointerDown={() => audio.liveOn(p.channel, k, 0.85)}
-            onPointerUp={() => audio.liveOff(p.channel, k)}
-            onPointerLeave={() => audio.liveOff(p.channel, k)}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
 export function ChannelSettings() {
   const s = useApp();
   const p = s.project;
   const ch = p.channels.find((c) => c.id === s.channelId);
+  const [tab, setTab] = useState<'inst' | 'gear'>('inst');
+  const open = s.windows.channel.open;
+  // A engine acende as teclas do canal aberto na tela.
+  useEffect(() => {
+    audio.watch(open && ch ? ch.id : null);
+  }, [open, ch?.id]);
   if (!ch) return null;
   const def = INSTRUMENTS[ch.type];
-  // O Prisma precisa de mais espaço: a janela cresce na primeira vez.
+  // A janela cresce até um tamanho útil (o Prisma pede mais espaço).
   const w = s.windows.channel;
-  if (ch.type === 'prisma' && w.open && (w.w < 780 || w.h < 640)) {
+  const [minW, minH] = ch.type === 'prisma' ? [860, 760] : [660, 640];
+  if (w.open && (w.w < minW || w.h < minH)) {
     const ws = document.querySelector('.workspace') as HTMLElement | null;
-    w.w = Math.max(w.w, Math.min(860, ws?.clientWidth ?? 860));
-    w.h = Math.max(w.h, Math.min(700, (ws?.clientHeight ?? 700) - 10));
-    w.x = Math.max(0, Math.min(w.x, (ws?.clientWidth ?? 1200) - w.w));
-    w.y = Math.max(0, Math.min(w.y, (ws?.clientHeight ?? 800) - w.h));
+    const W = ws?.clientWidth ?? 1200, H = ws?.clientHeight ?? 800;
+    w.w = Math.max(w.w, Math.min(minW, W));
+    w.h = Math.max(w.h, Math.min(minH, H - 10));
+    w.x = Math.max(0, Math.min(w.x, W - w.w));
+    w.y = Math.max(0, Math.min(w.y, H - w.h));
   }
   return (
-    <Win id="channel" title={`Canal · ${ch.name}`} minW={360} minH={260}>
-      <div class="chset">
-        <div class="chset-row">
-          <input value={ch.name} onChange={(e) => edit([set(['channels', ch.id, 'name'], (e.target as HTMLInputElement).value)])} />
-          <select value={ch.type} title="Tipo de instrumento" onChange={(e) => act(A.updateChannel, { channel: ch.id, type: (e.target as HTMLSelectElement).value as InstrumentType })}>
+    <Win id="channel" icon="settings" title={<>Canal <span class="dim">· {ch.name}</span></>} minW={420} minH={300}>
+      <div class="chwin">
+        <div class="chset-head">
+          <input class="ch-title" value={ch.name} onChange={(e) => edit([set(['channels', ch.id, 'name'], (e.target as HTMLInputElement).value)])} />
+          <select value={ch.type} data-hint="Tipo de instrumento" onChange={(e) => act(A.updateChannel, { channel: ch.id, type: (e.target as HTMLSelectElement).value as InstrumentType })}>
             {(Object.keys(INSTRUMENTS) as InstrumentType[]).map((t) => (
               <option value={t}>{INSTRUMENTS[t].label}</option>
             ))}
           </select>
-          {ch.type !== 'prisma' && <select value="" title="Carregar preset" onChange={(e) => {
-            const v = (e.target as HTMLSelectElement).value;
-            if (v) act(A.updateChannel, { channel: ch.id, preset: v });
-          }}>
-            <option value="">preset…</option>
-            {Object.entries(PRESETS)
-              .filter(([, v]) => v.type === ch.type || true)
-              .map(([k, v]) => (
+          {ch.type !== 'prisma' && (
+            <select
+              value=""
+              data-hint="Carregar preset"
+              onChange={(e) => {
+                const v = (e.target as HTMLSelectElement).value;
+                if (v) act(A.updateChannel, { channel: ch.id, preset: v });
+              }}
+            >
+              <option value="">preset…</option>
+              {Object.entries(PRESETS).map(([k, v]) => (
                 <option value={k}>
                   {k} ({v.type})
                 </option>
               ))}
-          </select>}
-          <label title="Afinação do canal em semitons">
-            pitch
-            <input type="number" value={ch.pitch} min={-48} max={48} onChange={(e) => edit([set(['channels', ch.id, 'pitch'], Number((e.target as HTMLInputElement).value))])} />
-          </label>
-          <label title="Insert do mixer">
+            </select>
+          )}
+          <label data-hint="Insert do mixer para onde o canal vai">
             insert
             <input type="number" value={ch.insert} min={0} max={p.mixer.length - 1} onChange={(e) => edit([set(['channels', ch.id, 'insert'], Number((e.target as HTMLInputElement).value))])} />
           </label>
-        </div>
-        {ch.type !== 'prisma' && <div class="hint">{def.description}</div>}
-        {ch.type === 'sampler' && (
-          <div class="sample-box">
-            <div class="sample-path" title={String(ch.params.sample)}>
-              {String(ch.params.sample || 'Nenhum sample: dê duplo clique num áudio do navegador com este canal selecionado.')}
-            </div>
-            <SourceBox path={String(ch.params.sample ?? '')} oneshot={ch.params.oneshot === true} loop={ch.params.loop === true} />
+          <div class="tabs">
+            <button class={tab === 'inst' ? 'on' : ''} onClick={() => setTab('inst')} data-hint="Controles do instrumento">
+              Instrumento
+            </button>
+            <button class={`gear-btn ${tab === 'gear' ? 'on' : ''}`} onClick={() => setTab('gear')} data-hint="Configurações: nota raiz, ajuste fino e reprodução do áudio">
+              <Icon name="settings" size={13} />
+            </button>
           </div>
-        )}
-        {ch.type === 'prisma' ? (
-          <PrismaPanel ch={ch} />
-        ) : (
-          <ParamGrid
-            defs={def.params}
-            values={ch.params}
-            onInput={(k, v) => previewEdit([set(['channels', ch.id, 'params', k], v)])}
-            onCommit={(k, v) => edit([set(['channels', ch.id, 'params', k], v)])}
-          />
-        )}
-        <MiniKeys channel={ch.id} />
+        </div>
+        <div class="chset">
+          {tab === 'gear' ? (
+            <GearTab ch={ch} />
+          ) : (
+            <>
+              {ch.type !== 'prisma' && <div class="hint">{def.description}</div>}
+              {ch.type === 'sampler' && (
+                <div class="sample-box">
+                  <div class="sample-path" title={String(ch.params.sample)}>
+                    {String(ch.params.sample || 'Nenhum sample: dê duplo clique num áudio do navegador com este canal selecionado.')}
+                  </div>
+                  <SourceBox path={String(ch.params.sample ?? '')} oneshot={ch.params.oneshot === true} loop={ch.params.loop === true} />
+                </div>
+              )}
+              {ch.type === 'prisma' ? (
+                <PrismaPanel ch={ch} />
+              ) : (
+                <ParamGrid
+                  defs={def.params}
+                  values={ch.params}
+                  onInput={(k, v) => previewEdit([set(['channels', ch.id, 'params', k], v)])}
+                  onCommit={(k, v) => edit([set(['channels', ch.id, 'params', k], v)])}
+                />
+              )}
+            </>
+          )}
+        </div>
+        <ChannelFx ch={ch} />
+        <ChannelPiano ch={ch} />
       </div>
     </Win>
   );

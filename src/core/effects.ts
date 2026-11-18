@@ -367,6 +367,51 @@ class Limiter extends Fx {
   }
 }
 
+/** Phaser clássico: cascata de allpass de 1ª ordem varrida por LFO, com realimentação. */
+class Phaser extends Fx {
+  private sl = new Float64Array(8);
+  private sr2 = new Float64Array(8);
+  private fbl = 0;
+  private fbr = 0;
+  private ph = 0;
+  process(L: Float32Array, R: Float32Array, n: number) {
+    const rate = num(this.p, 'rate', 0.4);
+    const depth = num(this.p, 'depth', 0.8);
+    const fb = num(this.p, 'feedback', 0.5);
+    const center = num(this.p, 'center', 900);
+    const stages = Number(str(this.p, 'stages', '6')) || 6;
+    const span = 2.5 * depth; // oitavas para cada lado
+    let al = 0, ar = 0;
+    for (let i = 0; i < n; i++) {
+      if ((i & 15) === 0) {
+        this.ph += (rate * 16) / this.sr;
+        if (this.ph >= 1) this.ph -= 1;
+        const fl = center * Math.pow(2, span * Math.sin(TAU * this.ph));
+        const fr = center * Math.pow(2, span * Math.sin(TAU * (this.ph + 0.25)));
+        const tl = Math.tan((Math.PI * clamp(fl, 30, this.sr * 0.45)) / this.sr);
+        const tr = Math.tan((Math.PI * clamp(fr, 30, this.sr * 0.45)) / this.sr);
+        al = (tl - 1) / (tl + 1);
+        ar = (tr - 1) / (tr + 1);
+      }
+      let xl = L[i] + this.fbl * fb;
+      let xr = R[i] + this.fbr * fb;
+      for (let k = 0; k < stages; k++) {
+        const yl = al * xl + this.sl[k];
+        this.sl[k] = xl - al * yl;
+        xl = yl;
+        const yr = ar * xr + this.sr2[k];
+        this.sr2[k] = xr - ar * yr;
+        xr = yr;
+      }
+      this.fbl = xl;
+      this.fbr = xr;
+      // soma com o seco: é isso que cria os vales do phaser
+      L[i] = (L[i] + xl) * 0.5;
+      R[i] = (R[i] + xr) * 0.5;
+    }
+  }
+}
+
 export function createEffect(sr: number, type: EffectType, params: Params): Fx {
   const fx = makeEffect(sr, type, params);
   fx.setParams(params); // update() só depois que os campos da subclasse existem
@@ -375,6 +420,7 @@ export function createEffect(sr: number, type: EffectType, params: Params): Fx {
 
 function makeEffect(sr: number, type: EffectType, params: Params): Fx {
   switch (type) {
+    case 'phaser': return new Phaser(sr, type, params);
     case 'eq': return new Eq(sr, type, params);
     case 'filter': return new FilterFx(sr, type, params);
     case 'compressor': return new Compressor(sr, type, params);

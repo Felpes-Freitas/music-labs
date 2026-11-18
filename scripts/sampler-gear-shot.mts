@@ -1,0 +1,16 @@
+import { chromium } from 'playwright-core';
+const B = process.argv[2] ?? 'http://127.0.0.1:7799';
+const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: true });
+const page = await browser.newPage({ viewport: { width: 1500, height: 900 }, deviceScaleFactor: 1 });
+const errs: string[] = [];
+page.on('pageerror', (e) => errs.push(String(e)));
+await page.goto(B);
+await page.waitForTimeout(900);
+await page.click('.audio-hint');
+await page.dblclick('.rack-row:has-text("Strings Section") .ch-name');
+await page.waitForTimeout(500);
+await page.click('.gear-btn');
+await page.waitForTimeout(400);
+await page.screenshot({ path: '/tmp/ch-sampler-gear.png' });
+console.log('erros:', errs.join('\n') || 'nenhum');
+await browser.close();
