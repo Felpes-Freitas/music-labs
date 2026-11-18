@@ -5,6 +5,7 @@ import { PPQ, patternLength, songLength, ticksPerBar, uid, type Clip } from '../
 import { set, ins, rem } from '../../core/ops';
 import * as A from '../../core/actions';
 import { Win, IconBtn, useCanvas } from './widgets';
+import { askText } from './Dialog';
 
 const HEADW = 120;
 const RULER = 22;
@@ -220,8 +221,7 @@ export function Playlist() {
       const tr = p.tracks[t];
       if (!tr) return;
       if (e.button === 2 || e.detail === 2) {
-        const n = prompt('Nome da track:', tr.name);
-        if (n) edit([set(['tracks', tr.id, 'name'], n)]);
+        askText({ title: 'Renomear track', label: 'Nome', value: tr.name, ok: 'Renomear' }).then((n) => n && edit([set(['tracks', tr.id, 'name'], n)]));
       } else edit([set(['tracks', tr.id, 'mute'], !tr.mute)]);
       return;
     }
@@ -366,8 +366,8 @@ export function Playlist() {
               class={`pk ${pt.id === s.patternId ? 'on' : ''}`}
               style={{ borderLeftColor: pt.color }}
               onClick={() => selectPattern(pt.id)}
-              onDblClick={() => {
-                const n = prompt('Nome do pattern:', pt.name);
+              onDblClick={async () => {
+                const n = await askText({ title: 'Renomear pattern', label: 'Nome', value: pt.name, ok: 'Renomear' });
                 if (n) act(A.updatePattern, { pattern: pt.id, name: n });
               }}
             >

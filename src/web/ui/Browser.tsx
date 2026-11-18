@@ -6,6 +6,7 @@ import { set } from '../../core/ops';
 import { INSTRUMENTS, PRESETS } from '../../core/registry';
 import type { InstrumentType } from '../../core/model';
 import { Icon } from './icons';
+import { askConfirm } from './Dialog';
 
 interface Entry {
   name: string;
@@ -59,7 +60,7 @@ function addPreset(name: string) {
 }
 
 async function openFile(e: Entry) {
-  if (state.dirty && !confirm(`Abrir ${e.name}? Alterações não salvas serão perdidas.`)) return;
+  if (state.dirty && !(await askConfirm({ title: `Abrir ${e.name}?`, message: 'As alterações não salvas do projeto atual serão perdidas.', ok: 'Abrir', danger: true }))) return;
   try {
     const r = await api('POST', '/api/open', { path: e.path });
     if (r.imported) {

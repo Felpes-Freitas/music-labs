@@ -6,6 +6,7 @@ import { set } from '../../core/ops';
 import * as A from '../../core/actions';
 import { Knob, Win, dbFmt, panFmt } from './widgets';
 import { ParamGrid } from './ParamGrid';
+import { askText } from './Dialog';
 
 function Fader(p: { value: number; onInput: (v: number) => void; onCommit: (v: number) => void }) {
   // curva: posição 0..1 -> ganho com 0 dB em ~0.8 e +4.4 dB no topo
@@ -132,8 +133,8 @@ export function Mixer() {
                   class="strip-name"
                   style={{ borderTopColor: m.color }}
                   title={`${m.name}${chans.length ? '\nCanais: ' + chans.map((c) => c.name).join(', ') : ''}\nDuplo clique: renomear`}
-                  onDblClick={() => {
-                    const n = prompt('Nome do insert:', m.name);
+                  onDblClick={async () => {
+                    const n = await askText({ title: 'Renomear insert', label: 'Nome', value: m.name, ok: 'Renomear' });
                     if (n) setIns(i, 'name', n);
                   }}
                 >
