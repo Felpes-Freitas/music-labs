@@ -23,6 +23,24 @@ const bool = (key: string, label: string, def: boolean): ParamDef => ({ key, lab
 
 const WAVES = ['saw', 'square', 'sine', 'triangle', 'noise'];
 
+/** Nós 2 a 6 do filtro do Prisma (o nó 1 usa ftype/cutoff/res/slope/keytrack/velCutoff). */
+function filterNodeParams(): ParamDef[] {
+  const freqs = [0, 120, 400, 1200, 3500, 9000];
+  const out: ParamDef[] = [];
+  for (let i = 2; i <= 6; i++)
+    out.push(
+      en(`f${i}_type`, `Nó ${i} tipo`, ['lowpass', 'highpass', 'bandpass', 'peak', 'notch', 'lowshelf', 'highshelf', 'point', 'off'], 'off'),
+      num(`f${i}_freq`, `Nó ${i} frequência`, 20, 20000, freqs[i - 1], 'Hz', 'log'),
+      num(`f${i}_res`, `Nó ${i} ressonância`, 0, 1, 0.3),
+      num(`f${i}_slope`, `Nó ${i} curva`, 6, 96, 24, 'dB/oit'),
+      num(`f${i}_key`, `Nó ${i} tecla`, 0, 1, 0),
+      num(`f${i}_vel`, `Nó ${i} velocity`, 0, 4, 0, 'oit'),
+      num(`f${i}_gain`, `Nó ${i} ganho`, -36, 24, 0, 'dB'),
+      num(`f${i}_amt`, `Nó ${i} intensidade`, 0, 2, 1),
+    );
+  return out;
+}
+
 export const INSTRUMENTS: Record<InstrumentType, { label: string; description: string; params: ParamDef[] }> = {
   synth: {
     label: 'Synth',
@@ -61,19 +79,22 @@ export const INSTRUMENTS: Record<InstrumentType, { label: string; description: s
   },
   prisma: {
     label: 'Prisma',
-    description: 'Sintetizador aditivo espectral: cada harmônico é calculado e filtrado individualmente (filtro harmônico sem aliasing, pluck que apaga os agudos primeiro, phaser no espectro), com unison, camadas de oitava, envelopes, LFO, glide e ensemble.',
+    description: 'Sintetizador aditivo espectral: cada harmônico é calculado e filtrado individualmente (filtro de até 6 nós sem aliasing, pluck que apaga os agudos primeiro, phaser no espectro), com unison, camadas de oitava, envelopes, LFO, glide e ensemble. Filtro: o nó 1 usa ftype/cutoff/res/slope/keytrack/velCutoff/f1_gain/f1_amt; os nós 2-6 usem f{n}_type, f{n}_freq, f{n}_res, f{n}_slope, f{n}_key, f{n}_vel, f{n}_gain, f{n}_amt. Tipos: lowpass (corta à direita), highpass (corta à esquerda), bandpass, peak (pico/vale com ganho), notch, lowshelf, highshelf, point (ponto de uma linha desenhada pelos pontos), off.',
     params: [
       num('tilt', 'Inclinação', -0.9, 2, 0, '', 'lin'),
       num('even', 'Pares', 0, 1, 1),
       num('sine', 'Seno', 0, 1, 0),
       num('harmonics', 'Harmônicos', 1, 128, 128, '', 'lin', 1),
-      en('ftype', 'Tipo de filtro', ['lowpass', 'bandpass', 'highpass', 'notch', 'off'], 'lowpass'),
+      en('ftype', 'Nó 1 tipo', ['lowpass', 'highpass', 'bandpass', 'peak', 'notch', 'lowshelf', 'highshelf', 'point', 'off'], 'lowpass'),
       num('cutoff', 'Corte', 20, 20000, 2500, 'Hz', 'log'),
       num('res', 'Ressonância', 0, 1, 0.2),
       num('slope', 'Inclinação filtro', 6, 96, 24, 'dB/oit'),
       num('keytrack', 'Acompanha tecla', 0, 1, 0.5),
       num('fenv', 'Envelope → corte', -8, 8, 3, 'oit'),
       num('velCutoff', 'Velocity → corte', 0, 4, 1, 'oit'),
+      num('f1_gain', 'Nó 1 ganho', -36, 24, 0, 'dB'),
+      num('f1_amt', 'Nó 1 intensidade', 0, 2, 1),
+      ...filterNodeParams(),
       num('fa', 'F ataque', 0.001, 4, 0.002, 's', 'log'),
       num('fd', 'F decay', 0.005, 6, 0.4, 's', 'log'),
       num('fs', 'F sustain', 0, 1, 0.2),
