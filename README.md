@@ -61,7 +61,15 @@ git push --follow-tags
   velocity, snap (inclusive tercinas), destaque de escala, ghost notes dos outros
   canais, quantizar e humanizar.
 - **Playlist**: pintar patterns, mover, duplicar (Shift+arrastar), redimensionar (o
-  pattern repete dentro do clip), região de loop, tracks com mute.
+  pattern repete dentro do clip), fatiar, região de loop, tracks com mute.
+- **Clips de áudio**: arraste um áudio do navegador para a playlist; a forma de onda
+  aparece no clip, que pode ser movido, cortado e fatiado e vai para o insert escolhido.
+- **Gravação**: o botão vermelho grava do microfone/interface a partir da posição
+  atual, com compensação de latência; o arquivo vai para `~/MusicLabs/Gravações` e
+  vira um clip de áudio.
+- **Automação**: botão direito em qualquer knob → "Criar clipe de automação". No clip,
+  clique para criar pontos, arraste para mover e use o botão direito para apagar.
+  Funciona com volume/pan de canais e do mixer e com parâmetros de instrumentos e efeitos.
 - **Mixer**: 16 inserts + master, fader, pan, mute/solo, medidores, roteamento entre
   inserts (buses), até 10 efeitos por insert com dry/wet.
 - **Instrumentos nativos**: Prisma (sintetizador aditivo espectral: filtro harmônico
@@ -139,6 +147,6 @@ lidos localmente da sua instalação; nada é redistribuído.
 ## Limitações atuais
 
 - Sem hospedagem de plugins VST/LV2/CLAP (próximo passo: ponte via Carla/yabridge).
-- Sem gravação de áudio, clips de áudio na playlist ou automação.
+- Automação é linear entre pontos (sem curvas) e só toca no modo song.
 - Plugins do FL no import são aproximados por instrumentos nativos; efeitos do mixer
   do FL não são importados.

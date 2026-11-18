@@ -400,3 +400,7 @@ button.danger { background: linear-gradient(#ff7b7b, var(--bad)); color: #fff; b
 /* faixa de ferramentas dentro da janela (quebra linha quando estreita) */
 .win-bar { display: flex; flex-wrap: wrap; gap: 3px 0; align-items: center; padding: 3px 6px; background: #252c30; border-bottom: 1px solid var(--line2); flex-shrink: 0; }
 .win-bar .pr-tools { flex-wrap: wrap; row-gap: 3px; }
+
+.tbig.rec { color: #e05252; }
+.tbig.rec.on { background: linear-gradient(#ff7b7b, #e04848); color: #fff; border-color: #8a2a2a; animation: recpulse 1s ease-in-out infinite; }
+@keyframes recpulse { 50% { filter: brightness(1.25); } }

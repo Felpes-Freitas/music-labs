@@ -15,7 +15,8 @@ import { importFlp } from '../core/flp.js';
 import { encodeWav } from '../core/wav.js';
 import { analyzeMix } from '../core/analysis.js';
 import { emptyProject } from '../core/model.js';
-import { Store, listProjects, RENDERS_DIR, SAMPLES_DIR, PROJECTS_DIR, STATE_DIR, safeName } from './store.js';
+import { Store, listProjects, RENDERS_DIR, SAMPLES_DIR, PROJECTS_DIR, RECORDINGS_DIR, STATE_DIR, safeName } from './store.js';
+import { loadSample } from './samples.js';
 import { initLibrary, library, libraryStatus, rescanLibrary, searchLibrary } from './library.js';
 import { AUDIO_EXT, FL_DIR, resolveFlPath, wavFor } from './samples.js';
 import { renderProject } from './render.js';
@@ -76,6 +77,8 @@ export const ACTIONS: Record<string, ActionFn> = {
   updateEffect: A.updateEffect,
   removeEffect: A.removeEffect,
   addChannelEffect: A.addChannelEffect,
+  addAudioClip: A.addAudioClip,
+  addAutomation: A.addAutomation,
   updateChannelEffect: A.updateChannelEffect,
   removeChannelEffect: A.removeChannelEffect,
   setProjectProps: A.setProjectProps,
@@ -264,6 +267,35 @@ async function doRender(args: any) {
 
 // ---------------------------------------------------------------- HTTP
 
+async function rawBody(req: IncomingMessage, limit = 1024 * 1024 * 1024): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const c of req) {
+    size += (c as Buffer).length;
+    if (size > limit) throw new Error('Arquivo grande demais');
+    chunks.push(c as Buffer);
+  }
+  return Buffer.concat(chunks);
+}
+
+/** Contorno da forma de onda (máximo absoluto por faixa) para desenhar clipes. */
+async function peaksOf(path: string, n: number) {
+  const d = await loadSample(path);
+  const ch = d.ch[0];
+  const per = Math.max(1, Math.floor(ch.length / n));
+  const peaks: number[] = [];
+  for (let i = 0; i < n; i++) {
+    let m = 0;
+    const end = Math.min(ch.length, (i + 1) * per);
+    for (let k = i * per; k < end; k++) {
+      const a = Math.abs(ch[k]);
+      if (a > m) m = a;
+    }
+    peaks.push(Math.round(m * 1000) / 1000);
+  }
+  return { duration: ch.length / d.sr, peaks };
+}
+
 async function body(req: IncomingMessage): Promise<any> {
   const chunks: Buffer[] = [];
   for await (const c of req) chunks.push(c as Buffer);
@@ -318,6 +350,13 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       case 'POST /api/actions': {
         const b = await body(req);
         await enrichSampler(b.actions);
+        // clipe de áudio sem tamanho: usa a duração do arquivo
+        for (const a of b.actions)
+          if (a.name === 'addAudioClip' && a.args?.sample && !a.args.bars && !a.args.lengthSec) {
+            a.args.sample = resolveFlPath(String(a.args.sample));
+            const d = await loadSample(a.args.sample);
+            a.args.lengthSec = d.ch[0].length / d.sr - (a.args.startSec ?? 0);
+          }
         const results = runActions(b.actions, b.origin ?? 'mcp', b.label);
         return json(res, 200, { results, rev: store.rev });
       }
@@ -361,6 +400,19 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         const wav = await zoneWav(q('path'), Number(q('i')));
         res.writeHead(200, { 'content-type': 'audio/wav', 'cache-control': 'max-age=3600' });
         return res.end(Buffer.from(wav.buffer, wav.byteOffset, wav.byteLength));
+      }
+      case 'GET /api/peaks':
+        return json(res, 200, await peaksOf(resolveFlPath(q('path')), Math.min(4000, Number(q('n') || 1000))));
+      case 'POST /api/recording': {
+        // WAV gravado pela interface: salva em ~/MusicLabs/Gravações
+        const buf = await rawBody(req);
+        if (buf.length < 44 || buf.toString('latin1', 0, 4) !== 'RIFF') throw new Error('Gravação inválida');
+        const d = new Date();
+        const z = (n: number) => String(n).padStart(2, '0');
+        const stamp = `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}h${z(d.getMinutes())}m${z(d.getSeconds())}s`;
+        const file = join(RECORDINGS_DIR, `${safeName(q('name') || 'Gravação')} ${stamp}.wav`);
+        writeFileSync(file, buf);
+        return json(res, 200, { path: file });
       }
       case 'GET /api/sample': {
         const path = resolveFlPath(q('path'));

@@ -5,7 +5,7 @@ import * as A from '../../core/actions';
 import { PRESETS, INSTRUMENTS } from '../../core/registry';
 import { STEP, patternLength, uid, type Channel, type Note, type InstrumentType } from '../../core/model';
 import { set } from '../../core/ops';
-import { Knob, Win, dbFmt, panFmt } from './widgets';
+import { Knob, Win, dbFmt, panFmt, ContextMenu } from './widgets';
 import { Icon } from './icons';
 import { askConfirm, askText } from './Dialog';
 
@@ -144,8 +144,8 @@ export function ChannelRack() {
                     edit(p.channels.map((c) => set(['channels', c.id, 'mute'], solo ? false : c.id !== ch.id)));
                   }}
                 />
-                <Knob size={22} value={ch.pan} min={-1} max={1} def={0} bipolar format={panFmt} onInput={(v) => previewEdit([set(['channels', ch.id, 'pan'], v)])} onCommit={(v) => edit([set(['channels', ch.id, 'pan'], v)])} title={`Pan ${panFmt(ch.pan)}`} />
-                <Knob size={22} value={ch.volume} min={0} max={1.25} def={0.78} format={dbFmt} onInput={(v) => previewEdit([set(['channels', ch.id, 'volume'], v)])} onCommit={(v) => edit([set(['channels', ch.id, 'volume'], v)])} title={`Volume ${dbFmt(ch.volume)}`} />
+                <Knob size={22} value={ch.pan} min={-1} max={1} def={0} bipolar format={panFmt} auto={{ path: ['channels', ch.id, 'pan'], label: `${ch.name} · pan` }} onInput={(v) => previewEdit([set(['channels', ch.id, 'pan'], v)])} onCommit={(v) => edit([set(['channels', ch.id, 'pan'], v)])} title={`Pan ${panFmt(ch.pan)}`} />
+                <Knob size={22} value={ch.volume} min={0} max={1.25} def={0.78} format={dbFmt} auto={{ path: ['channels', ch.id, 'volume'], label: `${ch.name} · volume` }} onInput={(v) => previewEdit([set(['channels', ch.id, 'volume'], v)])} onCommit={(v) => edit([set(['channels', ch.id, 'volume'], v)])} title={`Volume ${dbFmt(ch.volume)}`} />
                 <input
                   class="ins-num"
                   type="number"
@@ -271,24 +271,3 @@ function MiniRoll(p: { notes: Note[]; steps: number; color: string; onOpen: () =
   );
 }
 
-export function ContextMenu(p: { x: number; y: number; items: [string, () => void][]; onClose: () => void }) {
-  useEffect(() => {
-    const close = () => p.onClose();
-    setTimeout(() => window.addEventListener('pointerdown', close, { once: true }), 0);
-    return () => window.removeEventListener('pointerdown', close);
-  }, []);
-  return (
-    <div class="ctx" style={{ left: `${p.x}px`, top: `${p.y}px` }} onPointerDown={(e) => e.stopPropagation()}>
-      {p.items.map(([label, fn]) => (
-        <button
-          onClick={() => {
-            fn();
-            p.onClose();
-          }}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}

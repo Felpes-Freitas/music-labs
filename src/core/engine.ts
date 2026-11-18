@@ -3,7 +3,7 @@
 // AudioWorklet do navegador e no Node (render offline e análise via MCP).
 
 import type { Channel, Insert, Project } from './model.js';
-import { PPQ, STEP, patternLength, songLength } from './model.js';
+import { PPQ, STEP, autoValue, isPatternClip, patternLength, songLength } from './model.js';
 import { Instrument, SampleBank, SampleData, SampleSet, createInstrument } from './instruments.js';
 import { Fx, FxContext, createEffect } from './effects.js';
 import { PitchShifter, panGains } from './dsp.js';
@@ -16,13 +16,14 @@ interface ChannelState {
   sig: string; // type + params serializados
   L: Float32Array;
   R: Float32Array;
-  fx: Map<string, { fx: Fx; sig: string }>;
+  fx: Map<string, { fx: Fx; sig: string; autoSig?: string }>;
   shifter: PitchShifter | null;
+  autoSig?: string;
   quiet: number; // amostras seguidas em silêncio (para parar de processar a cauda dos efeitos)
 }
 
 interface InsertState {
-  fx: Map<string, { fx: Fx; sig: string }>;
+  fx: Map<string, { fx: Fx; sig: string; autoSig?: string }>;
   L: Float32Array;
   R: Float32Array;
   peakL: number;
@@ -115,6 +116,7 @@ export class Engine {
       } else if (cur.sig !== sig) {
         cur.inst.setParams(ch.params);
         cur.sig = sig;
+        cur.autoSig = undefined;
       }
       const st = this.channels.get(ch.id)!;
       const keep = new Set<string>();
@@ -126,6 +128,7 @@ export class Engine {
         else if (ce.sig !== esig) {
           ce.fx.setParams(e.params);
           ce.sig = esig;
+          ce.autoSig = undefined;
         }
       }
       for (const id of [...st.fx.keys()]) if (!keep.has(id)) st.fx.delete(id);
@@ -146,6 +149,7 @@ export class Engine {
         else if (cur.sig !== sig) {
           cur.fx.setParams(e.params);
           cur.sig = sig;
+          cur.autoSig = undefined;
         }
       }
       for (const id of [...st.fx.keys()]) if (!keep.has(id)) st.fx.delete(id);
@@ -251,7 +255,7 @@ export class Engine {
       return;
     }
     for (const c of p.clips) {
-      if (c.muted) continue;
+      if (c.muted || !isPatternClip(c)) continue;
       if (p.tracks[c.track]?.mute) continue;
       const end = c.pos + c.len;
       if (end <= a || c.pos >= b) continue;
@@ -284,6 +288,8 @@ export class Engine {
     const tps = (p.bpm * PPQ) / (60 * this.sr); // ticks por amostra
     const events: Ev[] = [];
     const beatAtStart = this.tick / PPQ;
+    // trechos contínuos de tempo neste bloco (o loop pode quebrar o bloco em dois)
+    const segs: { f0: number; f1: number; t0: number }[] = [];
 
     if (this.playing) {
       const [ls, le] = this.loopRange();
@@ -295,6 +301,7 @@ export class Engine {
         const t1 = t0 + remain * tps;
         if (t1 <= le) {
           this.collect(t0, t1, (tk) => f0 + Math.floor((tk - t0) / tps), events);
+          segs.push({ f0, f1: n, t0 });
           t0 = t1;
           f0 = n;
         } else {
@@ -302,6 +309,7 @@ export class Engine {
           const ft = f0;
           const tt = t0;
           this.collect(t0, le, (tk) => ft + Math.floor((tk - tt) / tps), events);
+          segs.push({ f0: ft, f1: Math.min(n, ft + framesToEnd), t0: tt });
           f0 += framesToEnd;
           t0 = ls + (t0 + framesToEnd * tps - le);
           if (this.mode === 'song' && !p.loop) {
@@ -315,6 +323,18 @@ export class Engine {
       }
       if (this.playing) this.tick = t0;
     }
+
+    // Automação (song mode): valores do bloco, por caminho do parâmetro
+    const auto = new Map<string, number>();
+    if (this.playing && this.mode === 'song' && segs.length) {
+      const t = segs[0].t0;
+      for (const c of p.clips) {
+        if (c.kind !== 'auto' || c.muted || p.tracks[c.track]?.mute || t < c.pos || t >= c.pos + c.len || !c.target) continue;
+        const v = autoValue(c, t - c.pos);
+        if (v !== null) auto.set(c.target.path.join('/'), v);
+      }
+    }
+    this.auto = auto;
 
     // Instrumentos
     const byCh = new Map<string, Ev[]>();
@@ -343,6 +363,7 @@ export class Engine {
       const fine = ch.fine ?? 0;
       const stretch = ch.type === 'sampler' && (ch.pitchMode ?? 'stretch') === 'stretch' && Math.abs(fine) > 0.5;
       // Sem notas e sem voz soando: só continua se houver cauda de efeito por terminar.
+      this.applyChannelAuto(ch, st);
       if (!evs && !st.inst.busy && (!(fxOn || stretch) || st.quiet > this.sr * 4)) continue;
       st.L.fill(0, 0, n);
       st.R.fill(0, 0, n);
@@ -376,8 +397,10 @@ export class Engine {
       }
       for (const e of ch.effects ?? []) {
         if (!e.enabled) continue;
-        const fx = st.fx.get(e.id)?.fx;
-        if (!fx) continue;
+        const rec = st.fx.get(e.id);
+        if (!rec) continue;
+        this.applyFxAuto(['channels', ch.id, 'effects', e.id, 'params'], e.params, rec);
+        const fx = rec.fx;
         if (e.mix >= 0.999) fx.process(st.L, st.R, n, fxCtx);
         else {
           const dl = st.L.slice(0, n), dr = st.R.slice(0, n);
@@ -389,8 +412,8 @@ export class Engine {
         }
       }
       let peak = 0;
-      const [gl, gr] = panGains(ch.pan);
-      const vol = ch.mute ? 0 : ch.volume;
+      const [gl, gr] = panGains(this.av(['channels', ch.id, 'pan'], ch.pan));
+      const vol = ch.mute ? 0 : this.av(['channels', ch.id, 'volume'], ch.volume);
       const target = this.inserts[ch.insert] ?? this.inserts[0];
       for (let i = 0; i < n; i++) {
         const l = st.L[i], r = st.R[i];
@@ -409,6 +432,31 @@ export class Engine {
         else this.lit.set(k, left - n);
       }
 
+    // Clipes de áudio da playlist
+    if (this.playing && this.mode === 'song')
+      for (const c of p.clips) {
+        if (c.kind !== 'audio' || c.muted || p.tracks[c.track]?.mute || !c.sample) continue;
+        const data = this.samples.get(c.sample);
+        if (!data) continue;
+        const bus = this.inserts[c.insert ?? 0] ?? this.inserts[0];
+        const ch0 = data.ch[0], ch1 = data.ch[1] ?? ch0;
+        const len = ch0.length;
+        const g = c.gain ?? 1;
+        const secPerTick = 60 / (p.bpm * PPQ);
+        for (const sg of segs) {
+          for (let f = sg.f0; f < sg.f1; f++) {
+            const tk = sg.t0 + (f - sg.f0) * tps;
+            if (tk < c.pos || tk >= c.pos + c.len) continue;
+            const pos = ((tk - c.pos) * secPerTick + (c.startSec ?? 0)) * data.sr;
+            const i = pos | 0;
+            if (i < 0 || i >= len - 1) continue;
+            const fr = pos - i;
+            bus.L[f] += (ch0[i] + (ch0[i + 1] - ch0[i]) * fr) * g;
+            bus.R[f] += (ch1[i] + (ch1[i + 1] - ch1[i]) * fr) * g;
+          }
+        }
+      }
+
     // Mixer
     const anySolo = p.mixer.some((m, i) => i > 0 && m.solo);
     const ctx: FxContext = {
@@ -422,8 +470,10 @@ export class Engine {
       const st = this.inserts[idx];
       for (const e of m.effects) {
         if (!e.enabled) continue;
-        const fx = st.fx.get(e.id)?.fx;
-        if (!fx) continue;
+        const rec = st.fx.get(e.id);
+        if (!rec) continue;
+        this.applyFxAuto(['mixer', idx, 'effects', e.id, 'params'], e.params, rec);
+        const fx = rec.fx;
         if (e.mix >= 0.999) fx.process(st.L, st.R, n, ctx);
         else {
           const dl = st.L.slice(0, n), dr = st.R.slice(0, n);
@@ -437,9 +487,10 @@ export class Engine {
       }
       if (idx === 0) continue;
       const muted = m.mute || (anySolo && !m.solo);
-      const [gl, gr] = panGains(m.pan);
-      const vl = muted ? 0 : m.volume * gl;
-      const vr = muted ? 0 : m.volume * gr;
+      const [gl, gr] = panGains(this.av(['mixer', idx, 'pan'], m.pan));
+      const mvol = this.av(['mixer', idx, 'volume'], m.volume);
+      const vl = muted ? 0 : mvol * gl;
+      const vr = muted ? 0 : mvol * gr;
       const dest = this.inserts[m.output > 0 && m.output !== idx ? m.output : 0];
       let pl = 0, pr = 0;
       for (let i = 0; i < n; i++) {
@@ -456,7 +507,7 @@ export class Engine {
       if (collectStats) st.peakAll = Math.max(st.peakAll, pl, pr);
     }
     const master = this.inserts[0];
-    const mv = p.mixer[0]?.mute ? 0 : p.mixer[0]?.volume ?? 0.8;
+    const mv = p.mixer[0]?.mute ? 0 : this.av(['mixer', 0, 'volume'], p.mixer[0]?.volume ?? 0.8);
     let pl = 0, pr = 0;
     for (let i = 0; i < n; i++) {
       const l = master.L[i] * mv, r = master.R[i] * mv;
@@ -472,6 +523,39 @@ export class Engine {
       master.peakAll = Math.max(master.peakAll, pl, pr);
       this.statFrames += n;
     }
+  }
+
+  private auto = new Map<string, number>();
+
+  /** Valor automatizado (se houver) ou o salvo no projeto. */
+  private av(path: (string | number)[], base: number): number {
+    if (!this.auto.size) return base;
+    return this.auto.get(path.join('/')) ?? base;
+  }
+
+  /** Sobrepõe a automação nos parâmetros de um conjunto (instrumento ou efeito). */
+  private overrides(prefix: (string | number)[]): Record<string, number> {
+    const out: Record<string, number> = {};
+    if (!this.auto.size) return out;
+    const pre = prefix.join('/') + '/';
+    for (const [k, v] of this.auto) if (k.startsWith(pre) && !k.slice(pre.length).includes('/')) out[k.slice(pre.length)] = v;
+    return out;
+  }
+
+  private applyChannelAuto(ch: Channel, st: ChannelState) {
+    const ov = this.overrides(['channels', ch.id, 'params']);
+    const sig = JSON.stringify(ov);
+    if (sig === (st.autoSig ?? '{}')) return;
+    st.inst.setParams({ ...ch.params, ...ov });
+    st.autoSig = sig;
+  }
+
+  private applyFxAuto(prefix: (string | number)[], params: Record<string, unknown>, rec: { fx: Fx; autoSig?: string }) {
+    const ov = this.overrides(prefix);
+    const sig = JSON.stringify(ov);
+    if (sig === (rec.autoSig ?? '{}')) return;
+    rec.fx.setParams({ ...(params as any), ...ov });
+    rec.autoSig = sig;
   }
 
   /** Lê e zera medidores (picos desde a última leitura). */

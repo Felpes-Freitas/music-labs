@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
-import { state, focusWindow, closeWindow, emit, type WindowId } from '../state';
+import { state, focusWindow, closeWindow, emit, act, type WindowId } from '../state';
+import * as A from '../../core/actions';
 import { Icon } from './icons';
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -20,6 +21,8 @@ export interface KnobProps {
   onInput: (v: number) => void;
   onCommit: (v: number) => void;
   title?: string;
+  /** Permite criar um clipe de automação pelo botão direito. */
+  auto?: { path: (string | number)[]; label: string };
 }
 
 /** Knob: arraste vertical (Shift = fino), duplo clique volta ao padrão, roda do mouse ajusta. */
@@ -32,6 +35,7 @@ export function Knob(p: KnobProps) {
     return clamp(v, p.min, p.max);
   };
   const [drag, setDrag] = useState<number | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const shown = drag ?? p.value;
   const norm = clamp(toNorm(shown), 0, 1);
   const a0 = -135, a1 = 135;
@@ -76,7 +80,22 @@ export function Knob(p: KnobProps) {
   };
   const tip = `${p.label ? p.label + ': ' : ''}${p.format ? p.format(shown) : fmt(shown)} · arraste · duplo clique ou botão do meio: padrão`;
   return (
-    <div class="knob" data-hint={p.title ?? tip}>
+    <div
+      class="knob"
+      data-hint={p.title ? `${p.title}${p.auto ? ' · botão direito: automação' : ''}` : `${tip}${p.auto ? ' · botão direito: automação' : ''}`}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        if (p.auto) setMenu({ x: e.clientX, y: e.clientY });
+      }}
+    >
+      {menu && p.auto && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[['Criar clipe de automação', () => act(A.addAutomation, { param: '', target: { path: p.auto!.path, min: p.min, max: p.max, log: p.log, label: p.auto!.label } })]]}
+        />
+      )}
       <svg
         width={size}
         height={size}
@@ -269,5 +288,27 @@ export function Toggle(p: { on: boolean; onClick: () => void; children: Componen
     <button class={`tog ${p.on ? 'on' : ''} ${p.class ?? ''}`} title={p.title} onClick={p.onClick}>
       {p.children}
     </button>
+  );
+}
+
+export function ContextMenu(p: { x: number; y: number; items: [string, () => void][]; onClose: () => void }) {
+  useEffect(() => {
+    const close = () => p.onClose();
+    setTimeout(() => window.addEventListener('pointerdown', close, { once: true }), 0);
+    return () => window.removeEventListener('pointerdown', close);
+  }, []);
+  return (
+    <div class="ctx" style={{ left: `${p.x}px`, top: `${p.y}px` }} onPointerDown={(e) => e.stopPropagation()}>
+      {p.items.map(([label, fn]) => (
+        <button
+          onClick={() => {
+            fn();
+            p.onClose();
+          }}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
   );
 }

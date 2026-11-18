@@ -16,5 +16,3 @@
 ## Pendências maiores
 
 - Hospedar plugins VST/LV2/CLAP (ponte via Carla/yabridge).
-- Automação (clips de automação na playlist).
-- Clips de áudio na playlist e gravação.

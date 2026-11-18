@@ -3,7 +3,7 @@ import type { Params } from '../../core/model';
 import { noteName } from '../../core/model';
 import { Knob, fmt } from './widgets';
 
-export function ParamGrid(p: { defs: ParamDef[]; values: Params; onInput: (k: string, v: number | string | boolean) => void; onCommit: (k: string, v: number | string | boolean) => void; mixerSize?: number }) {
+export function ParamGrid(p: { defs: ParamDef[]; values: Params; onInput: (k: string, v: number | string | boolean) => void; onCommit: (k: string, v: number | string | boolean) => void; mixerSize?: number; auto?: { prefix: (string | number)[]; label: string } }) {
   return (
     <div class="params">
       {p.defs.map((d) => {
@@ -51,6 +51,7 @@ export function ParamGrid(p: { defs: ParamDef[]; values: Params; onInput: (k: st
             step={d.step}
             bipolar={d.min! < 0 && d.max! > 0}
             label={d.label}
+            auto={p.auto && { path: [...p.auto.prefix, d.key], label: `${p.auto.label} · ${d.label}` }}
             format={format}
             onInput={(x) => p.onInput(d.key, x)}
             onCommit={(x) => p.onCommit(d.key, x)}

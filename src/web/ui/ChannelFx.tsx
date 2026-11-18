@@ -98,6 +98,7 @@ function Slot(p: { ch: Channel; fx: Effect | undefined; index: number }) {
               bipolar={d.min! < 0 && d.max! > 0}
               label={d.label}
               format={fmtFor(d)}
+              auto={{ path: [...path, 'params', k], label: `${ch.name} · ${EFFECTS[fx.type].label} · ${d.label}` }}
               onInput={(x) => previewEdit([set([...path, 'params', k], x)])}
               onCommit={(x) => edit([set([...path, 'params', k], x)])}
             />

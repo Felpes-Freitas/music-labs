@@ -67,6 +67,10 @@ function createWindow() {
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
+  // microfone (gravação) e MIDI só para o próprio app
+  win.webContents.session.setPermissionRequestHandler((wc, permission, cb) => {
+    cb(['media', 'midi', 'midiSysex'].includes(permission) && wc.getURL().startsWith(URL));
+  });
   win.webContents.on('will-navigate', (e, url) => {
     if (!url.startsWith(URL)) e.preventDefault();
   });

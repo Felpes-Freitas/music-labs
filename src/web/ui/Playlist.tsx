@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { useApp, state, edit, previewEdit, onLive, selectPattern, openWindow, setMode, act } from '../state';
+import { useApp, state, edit, previewEdit, onLive, selectPattern, openWindow, setMode, act, setHint } from '../state';
 import { audio } from '../audio';
-import { PPQ, patternLength, songLength, ticksPerBar, uid, type Clip } from '../../core/model';
+import { PPQ, patternLength, songLength, ticksPerBar, uid, isPatternClip, type Clip, type AutoTarget } from '../../core/model';
 import { set, ins, rem } from '../../core/ops';
 import * as A from '../../core/actions';
 import { Win, IconBtn, useCanvas } from './widgets';
@@ -13,6 +13,7 @@ const RULER = 22;
 type Drag =
   | { kind: 'move'; id: string; x0: number; y0: number; orig: Clip; dup: boolean }
   | { kind: 'resize'; id: string; x0: number; orig: Clip }
+  | { kind: 'point'; id: string; idx: number; orig: Clip }
   | { kind: 'erase' }
   | { kind: 'seek' }
   | { kind: 'loop'; t0: number };
@@ -28,6 +29,10 @@ export function Playlist() {
   const bar = ticksPerBar(p);
   const snap = snapBeats ? PPQ : bar;
 
+  useEffect(() => {
+    repaintPeaks = () => paint();
+    return () => void (repaintPeaks = null);
+  });
   const { ref, paint, paintOverlay, size } = useCanvas(
     (ctx, w, h) => {
       const v = view.current;
@@ -61,20 +66,62 @@ export function Playlist() {
         ctx.fillRect(tx(p.loop.start), RULER, (p.loop.end - p.loop.start) * v.zx, h);
       }
       // clips
+      const secPerTick = 60 / (p.bpm * PPQ);
       for (const c of p.clips) {
-        const pat = p.patterns.find((x) => x.id === c.patternId);
+        const pat = isPatternClip(c) ? p.patterns.find((x) => x.id === c.patternId) : undefined;
         const x = tx(c.pos);
         const y = RULER + c.track * v.rowH - v.scrollY;
         const cw = c.len * v.zx;
         if (x + cw < HEADW || x > w || y + v.rowH < RULER || y > h) continue;
-        const col = pat?.color ?? '#888';
+        const col = c.kind === 'audio' ? '#4fb3d9' : c.kind === 'auto' ? '#b58cf0' : pat?.color ?? '#888';
         ctx.globalAlpha = c.muted || p.tracks[c.track]?.mute ? 0.35 : 1;
         ctx.fillStyle = col;
         ctx.fillRect(x, y + 1, cw - 1, 13);
         ctx.fillStyle = shade(col);
         ctx.fillRect(x, y + 14, cw - 1, v.rowH - 15);
-        // mini notas (com repetição dentro do clip)
-        if (pat) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(Math.max(HEADW, x), y, cw - 2, v.rowH);
+        ctx.clip();
+        if (c.kind === 'audio' && c.sample) {
+          // forma de onda do arquivo
+          const pk = peaksFor(c.sample);
+          if (pk) {
+            const mid = y + 14 + (v.rowH - 15) / 2;
+            const amp = (v.rowH - 17) / 2;
+            ctx.fillStyle = 'rgba(220,245,255,0.8)';
+            const x0 = Math.max(HEADW, x), x1 = Math.min(w, x + cw);
+            for (let px = x0; px < x1; px++) {
+              const sec = ((px - x) / v.zx) * secPerTick + (c.startSec ?? 0);
+              const i = Math.floor((sec / pk.duration) * pk.peaks.length);
+              if (i < 0 || i >= pk.peaks.length) continue;
+              const a = Math.min(1, (pk.peaks[i] / (pk.max ?? 1)) * Math.min(1, c.gain ?? 1)) * amp;
+              ctx.fillRect(px, mid - a, 1, Math.max(1, a * 2));
+            }
+          }
+        } else if (c.kind === 'auto' && c.points?.length) {
+          // curva da automação
+          const top = y + 16, hh = v.rowH - 19;
+          ctx.strokeStyle = '#efe4ff';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          c.points.forEach((pt, i) => {
+            const px = x + pt.t * v.zx, py = top + (1 - pt.v) * hh;
+            i ? ctx.lineTo(px, py) : ctx.moveTo(x, py);
+            if (!i && pt.t > 0) ctx.lineTo(px, py);
+          });
+          const last = c.points[c.points.length - 1];
+          ctx.lineTo(x + cw, top + (1 - last.v) * hh);
+          ctx.stroke();
+          ctx.lineWidth = 1;
+          ctx.fillStyle = '#fff';
+          for (const pt of c.points) {
+            ctx.beginPath();
+            ctx.arc(x + pt.t * v.zx, top + (1 - pt.v) * hh, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        } else if (pat) {
+          // mini notas (com repetição dentro do clip)
           const plen = patternLength(p, pat);
           const all = Object.values(pat.notes).flat();
           if (all.length) {
@@ -98,11 +145,8 @@ export function Playlist() {
         }
         ctx.fillStyle = '#111';
         ctx.font = '10px sans-serif';
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(x, y, cw - 2, v.rowH);
-        ctx.clip();
-        ctx.fillText(pat?.name ?? '?', x + 3, y + 11);
+        const label = c.kind === 'audio' ? `♫ ${(c.sample ?? '').split(/[\\/]/).pop()}` : c.kind === 'auto' ? `⤴ ${c.target?.label ?? 'automação'}` : pat?.name ?? '?';
+        ctx.fillText(label, x + 3, y + 11);
         ctx.restore();
         ctx.globalAlpha = 1;
       }
@@ -187,6 +231,7 @@ export function Playlist() {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     return [e.clientX - r.left, e.clientY - r.top];
   };
+  const tx = (t: number) => HEADW + (t - view.current.scrollX) * view.current.zx;
   const tickAt = (x: number) => view.current.scrollX + (x - HEADW) / view.current.zx;
   const trackAt = (y: number) => Math.floor((y - RULER + view.current.scrollY) / view.current.rowH);
   const hit = (x: number, y: number) => {
@@ -226,6 +271,31 @@ export function Playlist() {
       return;
     }
     const h = hit(x, y);
+    // edição de pontos no corpo de um clipe de automação
+    if (h && h.c.kind === 'auto' && !h.edge && tool === 'draw') {
+      const c = h.c;
+      const v = view.current;
+      const top = RULER + c.track * v.rowH - v.scrollY + 16;
+      const hh = v.rowH - 19;
+      if (y > top - 2) {
+        const pts = c.points ?? [];
+        const near = pts.findIndex((pt) => Math.hypot(tx(c.pos + pt.t) - x, top + (1 - pt.v) * hh - y) < 7);
+        if (e.button === 2) {
+          if (near >= 0 && pts.length > 1) edit([set(['clips', c.id, 'points'], pts.filter((_, i) => i !== near))]);
+          return;
+        }
+        let idx = near;
+        if (idx < 0) {
+          const t = Math.max(0, Math.min(c.len, Math.round((x - tx(c.pos)) / v.zx)));
+          const val = Math.max(0, Math.min(1, 1 - (y - top) / hh));
+          const next = [...pts, { t, v: val }].sort((a, b) => a.t - b.t);
+          idx = next.findIndex((pt) => pt.t === t && pt.v === val);
+          previewEdit([set(['clips', c.id, 'points'], next)]);
+        }
+        drag.current = { kind: 'point', id: c.id, idx, orig: { ...state.project.clips.find((q) => q.id === c.id)! } };
+        return;
+      }
+    }
     if (e.button === 2 || tool === 'erase') {
       drag.current = { kind: 'erase' };
       if (h) edit([rem(['clips', h.c.id])]);
@@ -240,15 +310,27 @@ export function Playlist() {
       const at = Math.round(tickAt(x) / snap) * snap;
       const c = h.c;
       if (at <= c.pos || at >= c.pos + c.len) return;
-      const pat = p.patterns.find((q) => q.id === c.patternId);
-      const plen = pat ? patternLength(p, pat) : c.len;
-      const second = { ...c, id: uid('k'), pos: at, len: c.pos + c.len - at, offset: (c.offset + at - c.pos) % plen };
-      edit([set(['clips', c.id, 'len'], at - c.pos), ins(['clips'], second)]);
+      const cut = at - c.pos;
+      if (c.kind === 'audio') {
+        const second = { ...c, id: uid('k'), pos: at, len: c.len - cut, startSec: (c.startSec ?? 0) + (cut * 60) / (p.bpm * PPQ) };
+        edit([set(['clips', c.id, 'len'], cut), ins(['clips'], second)]);
+      } else if (c.kind === 'auto') {
+        const pts = c.points ?? [];
+        const mid = autoNorm(c, cut);
+        const first = [...pts.filter((q) => q.t < cut), { t: cut, v: mid }];
+        const rest = [{ t: 0, v: mid }, ...pts.filter((q) => q.t > cut).map((q) => ({ t: q.t - cut, v: q.v }))];
+        edit([set(['clips', c.id, 'len'], cut), set(['clips', c.id, 'points'], first), ins(['clips'], { ...c, id: uid('k'), pos: at, len: c.len - cut, points: rest })]);
+      } else {
+        const pat = p.patterns.find((q) => q.id === c.patternId);
+        const plen = pat ? patternLength(p, pat) : c.len;
+        const second = { ...c, id: uid('k'), pos: at, len: c.len - cut, offset: (c.offset + cut) % plen };
+        edit([set(['clips', c.id, 'len'], cut), ins(['clips'], second)]);
+      }
       return;
     }
     if (h) {
-      selectPattern(h.c.patternId);
-      if (e.detail === 2) {
+      if (isPatternClip(h.c)) selectPattern(h.c.patternId);
+      if (e.detail === 2 && isPatternClip(h.c)) {
         openWindow('rack');
         return;
       }
@@ -289,6 +371,21 @@ export function Playlist() {
       return;
     }
     const v = view.current;
+    if (d.kind === 'point') {
+      const c = d.orig;
+      const pts = [...(state.project.clips.find((q) => q.id === d.id)?.points ?? [])];
+      const top = RULER + c.track * v.rowH - v.scrollY + 16;
+      const hh = v.rowH - 19;
+      const lo = d.idx > 0 ? pts[d.idx - 1].t : 0;
+      const hi = d.idx < pts.length - 1 ? pts[d.idx + 1].t : c.len;
+      const t = Math.max(lo, Math.min(hi, Math.round((x - HEADW) / v.zx + v.scrollX - c.pos)));
+      const val = Math.max(0, Math.min(1, 1 - (y - top) / hh));
+      pts[d.idx] = { t, v: val };
+      previewEdit([set(['clips', d.id, 'points'], pts)]);
+      const tg = c.target;
+      if (tg) setHint(`${tg.label}: ${fmtAuto(tg, val)}`);
+      return;
+    }
     if (d.kind === 'move') {
       const dt = Math.round((x - d.x0) / v.zx / snap) * snap;
       const dtr = Math.round((y - d.y0) / v.rowH);
@@ -312,6 +409,11 @@ export function Playlist() {
     const d = drag.current;
     drag.current = null;
     if (!d) return;
+    if (d.kind === 'point') {
+      const c = state.project.clips.find((x) => x.id === d.id);
+      if (c) edit([set(['clips', c.id, 'points'], c.points ?? [])]);
+      return;
+    }
     if (d.kind === 'move' || d.kind === 'resize') {
       const c = state.project.clips.find((x) => x.id === d.id);
       if (c) edit(clipOps(c));
@@ -386,7 +488,19 @@ export function Playlist() {
           onPointerUp={onUp}
           onWheel={onWheel as any}
           onContextMenu={(e) => e.preventDefault()}
-          data-hint="Régua: posicionar (Shift ou direito: loop) · Shift+arrastar clip: duplicar · duplo clique no clip: abrir no rack · Ctrl+roda: zoom · Alt+roda: altura"
+          onDragOver={(e) => e.dataTransfer?.types.includes('text/x-batuque-sample') && e.preventDefault()}
+          onDrop={async (e) => {
+            const path = e.dataTransfer?.getData('text/x-batuque-sample');
+            if (!path) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const [x, y] = local(e as any);
+            const track = Math.max(0, trackAt(y));
+            const tick = Math.max(0, Math.round(tickAt(x) / PPQ) * PPQ);
+            const pk = await loadPeaks(path);
+            act(A.addAudioClip, { sample: path, bar: 1, beat: tick / PPQ, track: track + 1, lengthSec: pk.duration });
+          }}
+          data-hint="Solte um áudio do navegador para criar um clipe · Régua: posicionar (Shift ou direito: loop) · Shift+arrastar clip: duplicar · duplo clique no clip: abrir no rack · Ctrl+roda: zoom · Alt+roda: altura"
         />
       </div>
     </Win>
@@ -397,4 +511,47 @@ function shade(hex: string) {
   const n = parseInt(hex.slice(1), 16);
   const r = ((n >> 16) & 255) * 0.45, g = ((n >> 8) & 255) * 0.45, b = (n & 255) * 0.45;
   return `rgb(${r | 0},${g | 0},${b | 0})`;
+}
+
+// ---------------------------------------------------------------- formas de onda e automação
+
+const peaksCache = new Map<string, { duration: number; peaks: number[]; max?: number } | 'carregando'>();
+let repaintPeaks: (() => void) | null = null;
+
+export async function loadPeaks(path: string): Promise<{ duration: number; peaks: number[] }> {
+  const hit = peaksCache.get(path);
+  if (hit && hit !== 'carregando') return hit;
+  peaksCache.set(path, 'carregando');
+  const r = await fetch(`/api/peaks?path=${encodeURIComponent(path)}&n=2000`);
+  const d = await r.json();
+  if (!r.ok) {
+    peaksCache.delete(path);
+    throw new Error(d.error);
+  }
+  d.max = Math.max(0.05, ...d.peaks);
+  peaksCache.set(path, d);
+  repaintPeaks?.();
+  return d;
+}
+
+/** Contorno do arquivo, se já carregado (senão começa a carregar e repinta depois). */
+function peaksFor(path: string) {
+  const hit = peaksCache.get(path);
+  if (hit === undefined) loadPeaks(path).catch(() => {});
+  return hit && hit !== 'carregando' ? hit : null;
+}
+
+/** Valor normalizado da automação num instante do clipe. */
+function autoNorm(c: Clip, t: number): number {
+  const pts = c.points ?? [];
+  if (!pts.length) return 0;
+  if (t <= pts[0].t) return pts[0].v;
+  for (let i = 1; i < pts.length; i++) if (t < pts[i].t) return pts[i - 1].v + ((pts[i].v - pts[i - 1].v) * (t - pts[i - 1].t)) / Math.max(1, pts[i].t - pts[i - 1].t);
+  return pts[pts.length - 1].v;
+}
+
+function fmtAuto(t: AutoTarget, v: number) {
+  const real = t.log && t.min > 0 ? t.min * Math.pow(t.max / t.min, v) : t.min + v * (t.max - t.min);
+  if (t.path[t.path.length - 1] === 'volume') return real <= 0.0001 ? '-∞ dB' : `${(20 * Math.log10(real)).toFixed(1)} dB`;
+  return Math.abs(real) >= 100 ? real.toFixed(0) : real.toFixed(2);
 }

@@ -85,6 +85,7 @@ function PK(p: { ch: Channel; k: string; size?: number; color?: string }) {
       label={SHORT[p.k] ?? d.label}
       format={formatFor(d)}
       title={`${d.label}: ${formatFor(d)(v)}`}
+      auto={{ path: ['channels', p.ch.id, 'params', p.k], label: `${p.ch.name} · ${d.label}` }}
       onInput={(x) => u.input(p.k, x)}
       onCommit={(x) => u.commit(p.k, x)}
     />

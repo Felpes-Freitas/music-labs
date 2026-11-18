@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { useApp, useHint, state, play, stop, setMode, selectPattern, act, edit, previewEdit, undo, redo, openWindow, api, toast, onLive, emit, type WindowId } from '../state';
+import { useApp, useHint, state, play, stop, toggleRecord, setMode, selectPattern, act, edit, previewEdit, undo, redo, openWindow, api, toast, onLive, emit, type WindowId } from '../state';
 import { audio } from '../audio';
 import * as A from '../../core/actions';
 import { INSTRUMENTS, PRESETS } from '../../core/registry';
@@ -405,6 +405,7 @@ export function Toolbar() {
         </div>
         <IconBtn icon={playing ? 'pause' : 'play'} class={`tbig play ${playing ? 'on' : ''}`} hint="Tocar / pausar (Espaço)" onClick={() => (playing ? stop() : play())} />
         <IconBtn icon="stop" class="tbig" hint="Parar e voltar ao início" onClick={() => stop()} />
+        <IconBtn icon="record" class={`tbig rec ${audio.recording ? 'on' : ''}`} hint={audio.recording ? 'Parar a gravação' : 'Gravar do microfone a partir da posição atual (vira um clipe de áudio na playlist)'} onClick={() => toggleRecord()} />
         <div class="lcdbox">
           <BpmControl />
           <span class="lcd-cap">BPM</span>
@@ -422,6 +423,7 @@ export function Toolbar() {
           max={1.25}
           def={0.8}
           label="Master"
+          auto={{ path: ['mixer', 0, 'volume'], label: 'Master · volume' }}
           format={dbFmt}
           onInput={(v) => previewEdit([set(['mixer', 0, 'volume'], v)])}
           onCommit={(v) => edit([set(['mixer', 0, 'volume'], v)])}

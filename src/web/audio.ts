@@ -81,6 +81,54 @@ export class Audio {
 
   private syncSamples(p: Project) {
     for (const ch of p.channels) if (ch.type === 'sampler' && ch.params.sample) this.loadSample(String(ch.params.sample));
+    for (const c of p.clips) if (c.kind === 'audio' && c.sample) this.loadSample(c.sample);
+  }
+
+  // ---------------------------------------------------------------- gravação
+  private rec: { stream: MediaStream; node: AudioWorkletNode; src: MediaStreamAudioSourceNode; chunks: Float32Array[][]; startTick: number } | null = null;
+
+  get recording() {
+    return !!this.rec;
+  }
+
+  /** Começa a capturar o microfone; startTick é a posição da música no início. */
+  async startRecording(startTick: number) {
+    await this.resume();
+    const ctx = this.ctx!;
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2 } });
+    const src = ctx.createMediaStreamSource(stream);
+    const node = new AudioWorkletNode(ctx, 'ml-recorder', { numberOfInputs: 1, numberOfOutputs: 0, channelCount: 2, channelCountMode: 'explicit' });
+    const chunks: Float32Array[][] = [];
+    node.port.onmessage = (e) => chunks.push(e.data as Float32Array[]);
+    src.connect(node);
+    this.rec = { stream, node, src, chunks, startTick };
+  }
+
+  /**
+   * Para a gravação e devolve o áudio (já compensando a latência de entrada e
+   * saída, para alinhar com o que estava tocando).
+   */
+  stopRecording(): { L: Float32Array; R: Float32Array; sr: number; startTick: number } | null {
+    const r = this.rec;
+    if (!r) return null;
+    this.rec = null;
+    r.src.disconnect();
+    r.node.port.onmessage = null;
+    r.stream.getTracks().forEach((t) => t.stop());
+    const total = r.chunks.reduce((n, c) => n + c[0].length, 0);
+    const ctx = this.ctx!;
+    const latency = Math.round(((ctx.baseLatency || 0) + ((ctx as any).outputLatency || 0)) * ctx.sampleRate);
+    const skip = Math.min(total, latency);
+    const L = new Float32Array(total - skip), R = new Float32Array(total - skip);
+    let w = -skip;
+    for (const c of r.chunks) {
+      for (let i = 0; i < c[0].length; i++, w++) {
+        if (w < 0) continue;
+        L[w] = c[0][i];
+        R[w] = (c[1] ?? c[0])[i];
+      }
+    }
+    return { L, R, sr: ctx.sampleRate, startTick: r.startTick };
   }
 
   /** Carrega um arquivo ou um instrumento multi-sample (pasta / .fst) na engine. */
