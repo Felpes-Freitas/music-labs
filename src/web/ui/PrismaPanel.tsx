@@ -5,14 +5,13 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Channel, Params } from '../../core/model';
 import { noteName } from '../../core/model';
 import { INSTRUMENTS, PRESETS, type ParamDef } from '../../core/registry';
-import { MAX_HARM, cutoffOct, filterGain, prismaSpectrum, type SpectrumState } from '../../core/prisma';
-import { mtof } from '../../core/dsp';
 import { set } from '../../core/ops';
 import * as A from '../../core/actions';
 import { act, edit, previewEdit, setHint } from '../state';
 import { usePref } from '../prefs';
 import { Icon } from './icons';
 import { Knob, fmt } from './widgets';
+import { PrismaFilter } from './PrismaFilter';
 
 const DEFS = INSTRUMENTS.prisma.params;
 const def = (k: string) => DEFS.find((d) => d.key === k)!;
@@ -90,138 +89,6 @@ function PK(p: { ch: Channel; k: string; size?: number; color?: string }) {
       onCommit={(x) => u.commit(p.k, x)}
     />
   );
-}
-
-// ---------------------------------------------------------------- visor de espectro
-
-const FMIN = 20, FMAX = 20000;
-const fx = (f: number, w: number) => (Math.log(f / FMIN) / Math.log(FMAX / FMIN)) * w;
-const xf = (x: number, w: number) => FMIN * Math.pow(FMAX / FMIN, x / w);
-
-function Spectrum(p: { ch: Channel; refKey: number }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  const params = p.ch.params;
-  const anim = Number(val(params, 'phaser')) > 0 || Number(val(params, 'lfoFilter')) > 0;
-  useEffect(() => {
-    let raf = 0;
-    let t0 = performance.now();
-    const attack = new Float32Array(MAX_HARM + 1);
-    const sustain = new Float32Array(MAX_HARM + 1);
-    const draw = () => {
-      const c = ref.current;
-      if (!c) return;
-      const dpr = window.devicePixelRatio || 1;
-      const r = c.getBoundingClientRect();
-      if (c.width !== Math.round(r.width * dpr)) {
-        c.width = Math.round(r.width * dpr);
-        c.height = Math.round(r.height * dpr);
-      }
-      const ctx = c.getContext('2d')!;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const w = r.width, h = r.height;
-      const pm = p.ch.params;
-      const now = (performance.now() - t0) / 1000;
-      const phase = (now * Number(val(pm, 'phaserRate'))) % 1;
-      const lfo = Math.sin(2 * Math.PI * now * Number(val(pm, 'lfoRate')));
-      const f0 = mtof(p.refKey);
-      const sAtk: SpectrumState = { t: 0, fenv: 1, vel: 0.8, lfo: anim ? lfo : 0, phaser: phase };
-      const sSus: SpectrumState = { t: 1.2, fenv: Number(val(pm, 'fs')), vel: 0.8, lfo: anim ? lfo : 0, phaser: phase };
-      const H = prismaSpectrum(pm, f0, 44100, sAtk, attack);
-      prismaSpectrum(pm, f0, 44100, sSus, sustain);
-      // fundo e grade
-      const g = ctx.createLinearGradient(0, 0, 0, h);
-      g.addColorStop(0, '#11171a');
-      g.addColorStop(1, '#0b0f11');
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, w, h);
-      ctx.font = '9px sans-serif';
-      for (const f of [50, 100, 200, 500, 1000, 2000, 5000, 10000]) {
-        const x = Math.round(fx(f, w)) + 0.5;
-        ctx.strokeStyle = '#1d282d';
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, h);
-        ctx.stroke();
-        ctx.fillStyle = '#4a5a62';
-        ctx.fillText(f >= 1000 ? `${f / 1000}k` : String(f), x + 2, h - 3);
-      }
-      const dbY = (a: number) => {
-        const db = 20 * Math.log10(Math.max(a, 1e-6));
-        return h - 12 - Math.max(0, Math.min(1, (db + 60) / 66)) * (h - 20);
-      };
-      // harmônicos: ataque (barras) e sustentação (traço)
-      for (let k = 1; k <= H; k++) {
-        const x = fx(k * f0, w);
-        if (x > w) break;
-        const ya = dbY(attack[k]);
-        const ys = dbY(sustain[k]);
-        ctx.fillStyle = 'rgba(242,169,59,0.85)';
-        ctx.fillRect(x - 1, ya, 2.2, h - 12 - ya);
-        ctx.fillStyle = '#7fd6f2';
-        ctx.fillRect(x - 3, ys - 1, 6, 2);
-      }
-      // curva do filtro (sustentação)
-      const co = cutoffOct(pm, f0, sSus);
-      ctx.strokeStyle = 'rgba(160,230,255,0.9)';
-      ctx.lineWidth = 1.6;
-      ctx.beginPath();
-      for (let x = 0; x <= w; x += 2) {
-        const y = dbY(filterGain(pm, xf(x, w), co) * 0.45);
-        x ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
-      }
-      ctx.stroke();
-      ctx.lineWidth = 1;
-      // marcador do corte
-      const cx = fx(Math.pow(2, co), w);
-      ctx.fillStyle = '#f2a93b';
-      ctx.beginPath();
-      ctx.arc(cx, dbY(0.45 * filterGain(pm, Math.pow(2, co), co)), 4, 0, Math.PI * 2);
-      ctx.fill();
-      // legenda
-      ctx.fillStyle = 'rgba(242,169,59,0.9)';
-      ctx.fillRect(8, 8, 8, 8);
-      ctx.fillStyle = '#c9d1d5';
-      ctx.fillText('ataque', 20, 15);
-      ctx.fillStyle = '#7fd6f2';
-      ctx.fillRect(66, 11, 8, 2);
-      ctx.fillStyle = '#c9d1d5';
-      ctx.fillText('sustentação', 78, 15);
-      ctx.fillStyle = 'rgba(160,230,255,0.9)';
-      ctx.fillRect(146, 11, 10, 2);
-      ctx.fillStyle = '#c9d1d5';
-      ctx.fillText(`filtro · nota ${noteName(p.refKey)} · ${H} harmônicos`, 160, 15);
-      if (anim) raf = requestAnimationFrame(draw);
-    };
-    draw();
-    return () => cancelAnimationFrame(raf);
-  }, [p.ch.params, p.refKey, anim]);
-
-  const u = useParam(p.ch);
-  const onDown = (e: PointerEvent) => {
-    const c = e.currentTarget as HTMLCanvasElement;
-    c.setPointerCapture(e.pointerId);
-    const r = c.getBoundingClientRect();
-    let last: Record<string, number> = {};
-    const at = (ev: PointerEvent) => {
-      const x = Math.max(0, Math.min(r.width, ev.clientX - r.left));
-      const y = Math.max(0, Math.min(r.height, ev.clientY - r.top));
-      const cutoff = Math.round(xf(x, r.width));
-      const res = Math.round((1 - y / r.height) * 100) / 100;
-      last = { cutoff: Math.max(20, Math.min(20000, cutoff)), res: Math.max(0, Math.min(1, res)) };
-      setHint(`Corte ${last.cutoff >= 1000 ? (last.cutoff / 1000).toFixed(2) + ' kHz' : last.cutoff + ' Hz'} · ressonância ${Math.round(last.res * 100)}%`);
-      u.many(last, false);
-    };
-    at(e);
-    const move = (ev: PointerEvent) => at(ev);
-    const up = () => {
-      c.removeEventListener('pointermove', move);
-      c.removeEventListener('pointerup', up);
-      u.many(last, true);
-    };
-    c.addEventListener('pointermove', move);
-    c.addEventListener('pointerup', up);
-  };
-  return <canvas ref={ref} class="pz-spectrum" onPointerDown={onDown as any} data-hint="Espectro da nota: barras = ataque, traços = sustentação, linha = filtro. Arraste: horizontal muda o corte, vertical muda a ressonância." />;
 }
 
 // ---------------------------------------------------------------- envelope arrastável
@@ -350,34 +217,9 @@ function Voices(p: { ch: Channel }) {
 
 // ---------------------------------------------------------------- painel
 
-const FTYPES: [string, string][] = [
-  ['lowpass', 'Passa-baixa'],
-  ['bandpass', 'Passa-banda'],
-  ['highpass', 'Passa-alta'],
-  ['notch', 'Notch'],
-  ['off', 'Desligado'],
-];
-
-function FilterIcon(p: { type: string }) {
-  const paths: Record<string, string> = {
-    lowpass: 'M1 5h7c3 0 4 2 5 6',
-    bandpass: 'M1 11c3-1 4-6 6.5-6S11 10 15 11',
-    highpass: 'M1 11c1-4 2-6 5-6h9',
-    notch: 'M1 5h5c1 0 1.5 6 2 6s1-6 2-6h5',
-    off: 'M1 8h14',
-  };
-  return (
-    <svg width="18" height="14" viewBox="0 0 16 14" fill="none" stroke="currentColor" stroke-width="1.6">
-      <path d={paths[p.type]} />
-    </svg>
-  );
-}
-
 export function PrismaPanel(p: { ch: Channel }) {
   const ch = p.ch;
-  const [refKey, setRefKey] = useState(60);
   const u = useParam(ch);
-  const ftype = String(val(ch.params, 'ftype'));
   const mono = val(ch.params, 'mono') === true;
   const prismaPresets = Object.entries(PRESETS).filter(([, v]) => v.type === 'prisma');
   return (
@@ -407,14 +249,6 @@ export function PrismaPanel(p: { ch: Channel }) {
             </option>
           ))}
         </select>
-        <label class="pz-ref" data-hint="Nota usada no visor de espectro">
-          visor em
-          <select value={refKey} onChange={(e) => setRefKey(Number((e.target as HTMLSelectElement).value))}>
-            {[36, 48, 60, 72, 84].map((k) => (
-              <option value={k}>{noteName(k)}</option>
-            ))}
-          </select>
-        </label>
         <Voices ch={ch} />
         <button class={`pz-toggle ${mono ? 'on' : ''}`} data-hint="Mono / legato: uma nota por vez, deslizando entre elas com o glide" onClick={() => u.commit('mono', !mono)}>
           MONO
@@ -422,8 +256,8 @@ export function PrismaPanel(p: { ch: Channel }) {
         <PK ch={ch} k="glide" size={26} />
         <PK ch={ch} k="gain" size={26} />
       </div>
-      <Fold id="spectrum" label="Espectro">
-        <Spectrum ch={ch} refKey={refKey} />
+      <Fold id="spectrum" label="Espectro e filtro">
+        <PrismaFilter ch={ch} />
       </Fold>
       <div class="pz-grid">
         <section class="pz-card">
@@ -433,23 +267,6 @@ export function PrismaPanel(p: { ch: Channel }) {
             <PK ch={ch} k="even" />
             <PK ch={ch} k="sine" />
             <PK ch={ch} k="harmonics" />
-          </div>
-        </section>
-        <section class="pz-card wide">
-          <h4>Filtro harmônico</h4>
-          <div class="pz-seg" data-hint="Tipo do filtro harmônico">
-            {FTYPES.map(([t, label]) => (
-              <button class={ftype === t ? 'on' : ''} data-hint={label} onClick={() => u.commit('ftype', t)}>
-                <FilterIcon type={t} />
-              </button>
-            ))}
-          </div>
-          <div class="pz-row">
-            <PK ch={ch} k="cutoff" size={40} color="#7fd6f2" />
-            <PK ch={ch} k="res" size={40} color="#7fd6f2" />
-            <PK ch={ch} k="slope" />
-            <PK ch={ch} k="keytrack" />
-            <PK ch={ch} k="velCutoff" />
           </div>
         </section>
         <section class="pz-card">

@@ -76,34 +76,156 @@ export interface SpectrumState {
 const softplus = (x: number) => (x > 6 ? x : Math.log1p(Math.exp(4 * x)) / 4);
 const LN2_4 = Math.log(2) / 4;
 
-/** Resposta (ganho linear) do filtro harmônico numa frequência. */
-export function filterGain(p: Params, f: number, cutoffOct: number): number {
-  const type = str(p, 'ftype', 'lowpass');
-  if (type === 'off') return 1;
-  const x = Math.log2(f) - cutoffOct;
-  const slope = num(p, 'slope', 24);
-  const res = num(p, 'res', 0.2);
-  let db = 0;
-  if (type === 'lowpass') db = -slope * softplus(x);
-  else if (type === 'highpass') db = -slope * softplus(-x);
-  else if (type === 'bandpass') db = -slope * (softplus(x) + softplus(-x) - 2 * LN2_4);
-  else if (type === 'notch') return 1 - Math.exp(-((x / 0.18) ** 2)) * (0.98 - res * 0.3);
-  if (res > 0) {
-    const w = 0.35 * (1 - res) + 0.05;
-    db += res * 26 * Math.exp(-((x / w) ** 2));
-  }
-  return Math.pow(10, db / 20);
+// ---------------------------------------------------------------- filtro de nós
+//
+// O filtro harmônico é uma curva (em dB) somada de até 6 nós. Cada nó tem um
+// tipo, uma frequência (que pode seguir a tecla, a velocity, o envelope e o
+// LFO), ressonância/largura, curva (inclinação), ganho e intensidade. O nó 1
+// usa os parâmetros históricos do filtro (ftype, cutoff, res, slope, keytrack,
+// velCutoff), então presets e projetos antigos soam igual.
+
+export type NodeType = 'lowpass' | 'highpass' | 'bandpass' | 'peak' | 'notch' | 'lowshelf' | 'highshelf' | 'point' | 'off';
+export const NODE_TYPES: NodeType[] = ['lowpass', 'highpass', 'bandpass', 'peak', 'notch', 'lowshelf', 'highshelf', 'point', 'off'];
+export const NODE_LABEL: Record<NodeType, string> = {
+  lowpass: 'Corta à direita (passa-baixa)',
+  highpass: 'Corta à esquerda (passa-alta)',
+  bandpass: 'Só uma faixa (passa-banda)',
+  peak: 'Pico / vale',
+  notch: 'Entalhe',
+  lowshelf: 'Prateleira grave',
+  highshelf: 'Prateleira aguda',
+  point: 'Ponto de linha (liga com os vizinhos)',
+  off: 'Desligado',
+};
+export const FILTER_NODES = 6;
+export type NodeField = 'type' | 'freq' | 'res' | 'slope' | 'key' | 'vel' | 'gain' | 'amt';
+const NODE1: Record<NodeField, string> = { type: 'ftype', freq: 'cutoff', res: 'res', slope: 'slope', key: 'keytrack', vel: 'velCutoff', gain: 'f1_gain', amt: 'f1_amt' };
+export const NODE_FREQ = [2500, 120, 400, 1200, 3500, 9000];
+
+/** Nome do parâmetro de um campo de um nó (o nó 1 usa os nomes históricos). */
+export function nodeKey(i: number, field: NodeField): string {
+  return i === 1 ? NODE1[field] : `f${i}_${field}`;
 }
 
-/** Oitava (log2 Hz) do corte efetivo para uma nota e um estado da voz. */
-export function cutoffOct(p: Params, f0: number, st: SpectrumState): number {
-  return (
-    Math.log2(num(p, 'cutoff', 2500)) +
-    num(p, 'keytrack', 0.5) * Math.log2(f0 / 261.63) +
-    num(p, 'fenv', 3) * st.fenv +
-    num(p, 'lfoFilter', 0) * st.lfo +
-    num(p, 'velCutoff', 1) * (st.vel - 0.75)
-  );
+/** No eixo vertical, o nó mexe no ganho (pico, prateleiras, linha) ou na ressonância (cortes). */
+export function nodeUsesGain(t: NodeType) {
+  return t === 'peak' || t === 'lowshelf' || t === 'highshelf' || t === 'point';
+}
+
+export interface FilterNode {
+  i: number;
+  type: NodeType;
+  freq: number;
+  res: number;
+  slope: number;
+  key: number;
+  vel: number;
+  gain: number;
+  amt: number;
+}
+
+export function readNodes(p: Params): FilterNode[] {
+  const out: FilterNode[] = [];
+  for (let i = 1; i <= FILTER_NODES; i++) {
+    const g = (f: NodeField, d: number) => num(p, nodeKey(i, f), d);
+    const t = str(p, nodeKey(i, 'type'), i === 1 ? 'lowpass' : 'off') as NodeType;
+    out.push({
+      i,
+      type: NODE_TYPES.includes(t) ? t : 'off',
+      freq: g('freq', NODE_FREQ[i - 1]),
+      res: g('res', i === 1 ? 0.2 : 0.3),
+      slope: g('slope', 24),
+      key: g('key', i === 1 ? 0.5 : 0),
+      vel: g('vel', i === 1 ? 1 : 0),
+      gain: g('gain', 0),
+      amt: g('amt', 1),
+    });
+  }
+  return out;
+}
+
+export interface ResolvedNode extends FilterNode {
+  oc: number; // log2 da frequência efetiva
+}
+
+/** Nós ativos com a frequência efetiva para uma nota e um estado da voz. */
+export function resolveNodes(p: Params, f0: number, st: SpectrumState, shift = 0): ResolvedNode[] {
+  const common = num(p, 'fenv', 3) * st.fenv + num(p, 'lfoFilter', 0) * st.lfo + shift;
+  const kt = Math.log2(f0 / 261.63);
+  const out: ResolvedNode[] = [];
+  for (const n of readNodes(p)) {
+    if (n.type === 'off') continue;
+    out.push({ ...n, oc: Math.log2(n.freq) + n.key * kt + n.vel * (st.vel - 0.75) + common });
+  }
+  // pontos de linha em ordem de frequência
+  out.sort((a, b) => (a.type === 'point' && b.type === 'point' ? a.oc - b.oc : 0));
+  return out;
+}
+
+const sigmoid = (x: number) => 1 / (1 + Math.exp(-x));
+
+/** Contribuição em dB de um nó (exceto pontos de linha) numa oitava lf. */
+export function nodeDb(n: ResolvedNode, lf: number): number {
+  const x = lf - n.oc;
+  let db = 0;
+  switch (n.type) {
+    case 'lowpass':
+    case 'highpass':
+    case 'bandpass': {
+      if (n.type === 'lowpass') db = -n.slope * softplus(x);
+      else if (n.type === 'highpass') db = -n.slope * softplus(-x);
+      else db = -n.slope * (softplus(x) + softplus(-x) - 2 * LN2_4);
+      if (n.res > 0) {
+        const w = 0.35 * (1 - n.res) + 0.05;
+        db += n.res * 26 * Math.exp(-((x / w) ** 2));
+      }
+      break;
+    }
+    case 'peak': {
+      const bw = 0.08 + (1 - n.res) * 1.2;
+      db = n.gain * Math.exp(-((x / bw) ** 2));
+      break;
+    }
+    case 'notch':
+      db = 20 * Math.log10(Math.max(1e-6, 1 - Math.exp(-((x / 0.18) ** 2)) * (0.98 - n.res * 0.3)));
+      break;
+    case 'lowshelf':
+      db = n.gain * (1 - sigmoid((x * n.slope) / 6));
+      break;
+    case 'highshelf':
+      db = n.gain * sigmoid((x * n.slope) / 6);
+      break;
+  }
+  return db * n.amt;
+}
+
+/** Curva total (dB) numa oitava lf: soma dos nós + linha pelos pontos. */
+export function curveDb(nodes: ResolvedNode[], lf: number): number {
+  let db = 0;
+  let first: ResolvedNode | null = null, last: ResolvedNode | null = null, prev: ResolvedNode | null = null, line = NaN;
+  for (const n of nodes) {
+    if (n.type !== 'point') {
+      db += nodeDb(n, lf);
+      continue;
+    }
+    if (!first) first = n;
+    if (prev && Number.isNaN(line) && lf >= prev.oc && lf <= n.oc) {
+      const t = n.oc > prev.oc ? (lf - prev.oc) / (n.oc - prev.oc) : 0;
+      line = (prev.gain * prev.amt) * (1 - t) + (n.gain * n.amt) * t;
+    }
+    prev = n;
+    last = n;
+  }
+  if (first && last) {
+    if (lf <= first.oc) line = first.gain * first.amt;
+    else if (lf >= last.oc) line = last.gain * last.amt;
+    if (!Number.isNaN(line)) db += line;
+  }
+  return db;
+}
+
+export function curveGain(nodes: ResolvedNode[], lf: number): number {
+  return Math.pow(10, Math.max(-120, Math.min(36, curveDb(nodes, lf))) / 20);
 }
 
 /**
@@ -127,7 +249,7 @@ export function prismaSpectrum(p: Params, f0: number, sr: number, st: SpectrumSt
   for (let k = H + 1; k < out.length; k++) out[k] = 0;
   // mesma energia para qualquer forma (o filtro é que tira volume)
   const norm = pow > 0 ? Math.sqrt(1.64 / pow) : 0;
-  const co = cutoffOct(p, f0, st) + cutoffShift;
+  const nodes = resolveNodes(p, f0, st, cutoffShift);
   const pluck = num(p, 'pluck', 0);
   const pt = num(p, 'pluckTime', 0.5);
   const pb = num(p, 'pluckBright', 0.5);
@@ -136,7 +258,7 @@ export function prismaSpectrum(p: Params, f0: number, sr: number, st: SpectrumSt
   const q = 1 + num(p, 'phaserWidth', 0.5) * 10;
   for (let k = 1; k <= H; k++) {
     const f = k * f0;
-    let a = out[k] * norm * filterGain(p, f, co);
+    let a = out[k] * norm * (nodes.length ? curveGain(nodes, Math.log2(f)) : 1);
     if (pluck > 0) a *= 1 - pluck + pluck * Math.exp((-st.t * (1 + (k - 1) * pb * 0.6)) / pt);
     if (ph > 0) {
       const pos = Math.log2(f / 110) / spacing - st.phaser;

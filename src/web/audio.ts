@@ -8,7 +8,7 @@ import type { EngineStatus } from '../core/engine';
 export class Audio {
   ctx: AudioContext | null = null;
   node: AudioWorkletNode | null = null;
-  status: EngineStatus = { playing: false, mode: 'pattern', patternId: null, tick: 0, meters: [], gr: [], activeChannels: [], lit: [] };
+  status: EngineStatus = { playing: false, mode: 'pattern', patternId: null, tick: 0, meters: [], gr: [], activeChannels: [], lit: [], spectrum: null };
   private watching: string | null = null;
   private loaded = new Set<string>();
   private loading = new Map<string, Promise<void>>();

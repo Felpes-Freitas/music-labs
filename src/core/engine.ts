@@ -7,6 +7,7 @@ import { PPQ, STEP, patternLength, songLength } from './model.js';
 import { Instrument, SampleBank, SampleData, SampleSet, createInstrument } from './instruments.js';
 import { Fx, FxContext, createEffect } from './effects.js';
 import { PitchShifter, panGains } from './dsp.js';
+import { ANALYZER_SIZE, analyzeSpectrum } from './analyzer.js';
 
 export const BLOCK = 128;
 
@@ -51,6 +52,8 @@ export interface EngineStatus {
   activeChannels: string[];
   /** Teclas soando agora no canal observado (watch), como foram tocadas. */
   lit: number[];
+  /** Espectro (dB por faixa) do som do canal observado; null se em silêncio. */
+  spectrum: number[] | null;
 }
 
 export interface InsertStats {
@@ -75,6 +78,9 @@ export class Engine {
   private flashes = new Set<string>();
   private watched: string | null = null;
   private lit = new Map<number, number>(); // tecla -> amostras restantes acesa
+  private scope = new Float32Array(ANALYZER_SIZE);
+  private scopeW = 0;
+  private scopeFresh = false;
   statFrames = 0;
 
   constructor(public sr: number) {}
@@ -359,6 +365,15 @@ export class Engine {
         if (!st.shifter) st.shifter = new PitchShifter(this.sr);
         st.shifter.process(st.L, st.R, 0, n, Math.pow(2, fine / 1200));
       } else st.shifter = null;
+      // Analisador do canal aberto na tela (som do instrumento, antes dos efeitos).
+      if (ch.id === this.watched) {
+        const mask = ANALYZER_SIZE - 1;
+        for (let i = 0; i < n; i++) {
+          this.scope[this.scopeW] = (st.L[i] + st.R[i]) * 0.5;
+          this.scopeW = (this.scopeW + 1) & mask;
+        }
+        this.scopeFresh = true;
+      }
       for (const e of ch.effects ?? []) {
         if (!e.enabled) continue;
         const fx = st.fx.get(e.id)?.fx;
@@ -473,7 +488,9 @@ export class Engine {
     });
     const active = [...this.flashes];
     this.flashes.clear();
-    return { playing: this.playing, mode: this.mode, patternId: this.patternId, tick: this.tick, meters, gr, activeChannels: active, lit: [...this.lit.keys()] };
+    const spectrum = this.watched && this.scopeFresh ? analyzeSpectrum(this.scope, this.scopeW, this.sr) : null;
+    this.scopeFresh = false;
+    return { playing: this.playing, mode: this.mode, patternId: this.patternId, tick: this.tick, meters, gr, activeChannels: active, lit: [...this.lit.keys()], spectrum };
   }
 
   insertStats(): InsertStats[] {
