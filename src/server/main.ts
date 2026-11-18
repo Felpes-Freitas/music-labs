@@ -15,7 +15,8 @@ import { importFlp } from '../core/flp.js';
 import { encodeWav } from '../core/wav.js';
 import { analyzeMix } from '../core/analysis.js';
 import { emptyProject } from '../core/model.js';
-import { Store, listProjects, RENDERS_DIR, SAMPLES_DIR, PROJECTS_DIR, safeName } from './store.js';
+import { Store, listProjects, RENDERS_DIR, SAMPLES_DIR, PROJECTS_DIR, STATE_DIR, safeName } from './store.js';
+import { initLibrary, library, libraryStatus, rescanLibrary, searchLibrary } from './library.js';
 import { AUDIO_EXT, FL_DIR, resolveFlPath, wavFor } from './samples.js';
 import { renderProject } from './render.js';
 import { localKit, localSample } from './localkit.js';
@@ -150,15 +151,19 @@ function browseRoots() {
   const roots: { name: string; path: string }[] = [];
   const add = (name: string, path: string) => existsSync(path) && roots.push({ name, path });
   add('Samples do Music Labs', SAMPLES_DIR);
-  add('Packs do FL Studio', join(FL_DIR, 'Data/Patches/Packs'));
+  const ix = library();
+  if (ix) for (const src of ix.sources) add(src.label, src.root);
+  else add('Packs do FL Studio', join(FL_DIR, 'Data/Patches/Packs'));
   add('Música', join(homedir(), 'Música'));
+  add('Music', join(homedir(), 'Music'));
   add('Músicas', join(homedir(), 'Músicas'));
   add('Downloads', join(homedir(), 'Downloads'));
   const wineDocs = join(homedir(), '.wine/drive_c/users');
   if (existsSync(wineDocs))
     for (const u of readdirSync(wineDocs)) add(`Projetos FL (${u})`, join(wineDocs, u, 'Documents/Image-Line/FL Studio/Projects'));
   add('Demos do FL Studio', join(FL_DIR, 'Data/Demo projects'));
-  return roots;
+  // sem duplicar a mesma pasta com dois nomes
+  return roots.filter((r, i) => roots.findIndex((x) => x.path === r.path) === i);
 }
 
 function browse(dir: string) {
@@ -183,6 +188,17 @@ function browse(dir: string) {
 }
 
 function searchSamples(query: string, limit = 40) {
+  if (library()) {
+    const hits = searchLibrary(query, limit);
+    // pastas pessoais não indexadas (Downloads, Música) entram depois
+    if (hits.length >= limit) return hits;
+    const extra = searchFolders(query, limit - hits.length, [join(homedir(), 'Downloads'), SAMPLES_DIR]);
+    return [...hits, ...extra.filter((e) => !hits.some((h) => h.path === e.path))];
+  }
+  return searchFolders(query, limit, browseRoots().filter((r) => !r.name.startsWith('Projetos') && !r.name.startsWith('Demos')).map((r) => r.path));
+}
+
+function searchFolders(query: string, limit: number, dirs: string[]) {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   const hits: { name: string; path: string }[] = [];
   const walk = (d: string, depth: number) => {
@@ -209,7 +225,7 @@ function searchSamples(query: string, limit = 40) {
       }
     }
   };
-  for (const r of browseRoots()) if (!r.name.startsWith('Projetos') && !r.name.startsWith('Demos')) walk(r.path, 0);
+  for (const d of dirs) if (existsSync(d)) walk(d, 0);
   return hits;
 }
 
@@ -331,6 +347,12 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         return json(res, 200, browseRoots());
       case 'GET /api/browse':
         return json(res, 200, browse(q('dir')));
+      case 'GET /api/library':
+        return json(res, 200, libraryStatus());
+      case 'POST /api/library/rescan': {
+        rescanLibrary(false, announceLibrary);
+        return json(res, 200, { scanning: true });
+      }
       case 'GET /api/search':
         return json(res, 200, searchSamples(q('q'), Number(q('limit') || 40)));
       case 'GET /api/source':
@@ -379,7 +401,20 @@ function serveStatic(pathname: string, res: ServerResponse) {
   res.end(readFileSync(file));
 }
 
+/** Avisa a tela quando a varredura termina. */
+function announceLibrary(ix: NonNullable<ReturnType<typeof library>>, first: boolean) {
+  const daws = [...new Set(ix.sources.map((s) => s.daw))].join(', ');
+  broadcast({
+    type: 'toast',
+    text: ix.files.length
+      ? `${first ? 'Biblioteca montada' : 'Biblioteca atualizada'}: ${ix.files.length} samples e ${ix.instruments.length} instrumentos de ${daws}.`
+      : 'Nenhuma biblioteca de outra DAW encontrada nesta máquina.',
+  });
+  broadcast({ type: 'library' });
+}
+
 export function startServer(port = PORT) {
+  initLibrary(STATE_DIR, announceLibrary);
   const server = createServer(handle);
   const wss = new WebSocketServer({ server, path: '/ws', verifyClient: ({ req }: { req: IncomingMessage }) => trusted(req) });
   wss.on('connection', (ws, req) => {

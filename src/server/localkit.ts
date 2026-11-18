@@ -4,6 +4,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { FL_DIR } from './samples.js';
+import { library } from './library.js';
 
 const DRUMS = join(FL_DIR, 'Data/Patches/Packs/Drums');
 
@@ -32,15 +33,38 @@ export interface LocalSample {
 }
 
 let cached: LocalSample[] | null = null;
+let cachedFor: string | null = null;
 
-/** Samples de bateria disponíveis na instalação local (vazio se não houver FL). */
+// Para máquinas sem FL: acha a peça pelo nome entre os samples de bateria indexados.
+const BY_NAME: Record<string, RegExp> = {
+  Kick: /\bkick\b|\bbd\b|bass ?drum/i,
+  Clap: /\bclap/i,
+  Hat: /closed ?hat|\bch\b|hi-?hat(?!.*open)|\bhat\b(?!.*open)/i,
+  Snare: /\bsnare|\bsd\b/i,
+  'Open Hat': /open ?hat|\boh\b/i,
+  Rim: /\brim/i,
+  Crash: /crash/i,
+  Ride: /\bride\b/i,
+  Tom: /\btom\b/i,
+};
+
+/** Bateria padrão: samples de fábrica do FL se houver; senão, da biblioteca indexada. */
 export function localKit(): LocalSample[] {
-  if (cached) return cached;
+  const ix = library();
+  const key = ix?.scannedAt ?? 'sem-indice';
+  if (cached && cachedFor === key) return cached;
+  cachedFor = key;
   cached = [];
   for (const [name, list] of Object.entries(CANDIDATES)) {
     const hit = list.map((r) => join(DRUMS, r)).find((p) => existsSync(p));
     if (hit) cached.push({ name, path: hit, cut: /hat/i.test(name) ? 1 : undefined });
   }
+  if (ix)
+    for (const [name, re] of Object.entries(BY_NAME)) {
+      if (cached.some((c) => c.name === name)) continue;
+      const f = ix.files.find((x) => x.c === 'drum' && re.test(x.p.split(/[\\/]/).pop()!));
+      if (f) cached.push({ name, path: f.p, cut: /hat/i.test(name) ? 1 : undefined });
+    }
   return cached;
 }
 

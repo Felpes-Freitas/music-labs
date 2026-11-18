@@ -58,6 +58,8 @@ export const state = {
   hint: '' as string,
   /** Incrementa a cada mudança no projeto: os canvas usam isso para repintar. */
   version: 0,
+  /** Muda quando a biblioteca de samples é (re)varrida. */
+  libraryVersion: 0,
   followPlay: true,
   windows: defaultLayout(),
 };
@@ -151,6 +153,10 @@ function connect() {
         break;
       case 'toast':
         toast(m.text, m.from);
+        break;
+      case 'library':
+        state.libraryVersion++;
+        emit();
         break;
       case 'error':
         toast(`Erro: ${m.error}`);
