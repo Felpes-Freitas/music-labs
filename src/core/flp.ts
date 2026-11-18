@@ -112,6 +112,8 @@ export interface FlpImportOptions {
   resolveSample?: (flPath: string) => string;
   /** Diz se o sample resolvido existe; se não, o canal vira um instrumento sintetizado. */
   exists?: (path: string) => boolean;
+  /** Instrumento multi-sample local com o mesmo nome do canal (ex.: "Strings Section"). */
+  instrumentFor?: (channelName: string) => { path: string; loop: boolean } | undefined;
 }
 
 /** Heurística: escolhe um instrumento nativo do Music Labs para plugins do FL. */
@@ -313,6 +315,11 @@ export function importFlp(buf: Uint8Array, name: string, opts: FlpImportOptions 
       const path = resolved;
       type = 'sampler';
       params = { ...defaults(INSTRUMENTS.sampler.params), sample: path, keytrack: true, oneshot: true };
+    } else if (!c.sample && opts.instrumentFor?.(nameRaw)) {
+      const li = opts.instrumentFor(nameRaw)!;
+      type = 'sampler';
+      params = { ...defaults(INSTRUMENTS.sampler.params), sample: li.path, oneshot: false, loop: li.loop, keytrack: true, a: 0.002, d: 8, s: 1, r: /string|choir|brass|woodwind/i.test(nameRaw) ? 0.45 : 0.35 };
+      report.substituted.push({ channel: nameRaw, plugin: c.plugin || '(nativo)', as: 'sampler:instrumento local' });
     } else {
       const g = guessInstrument(nameRaw, c.plugin);
       type = g.type;

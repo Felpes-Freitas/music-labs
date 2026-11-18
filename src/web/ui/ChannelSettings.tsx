@@ -2,7 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { useApp, edit, previewEdit, act } from '../state';
 import { audio } from '../audio';
 import { INSTRUMENTS, PRESETS } from '../../core/registry';
-import type { InstrumentType } from '../../core/model';
+import { noteName, type InstrumentType } from '../../core/model';
 import { set } from '../../core/ops';
 import * as A from '../../core/actions';
 import { Win, useCanvas } from './widgets';
@@ -50,6 +50,36 @@ function Waveform(p: { path: string }) {
     [peaks],
   );
   return <canvas ref={ref} class="wave" />;
+}
+
+function SourceBox(p: { path: string; oneshot: boolean; loop: boolean }) {
+  const [info, setInfo] = useState<any>(null);
+  useEffect(() => {
+    setInfo(null);
+    if (p.path) fetch(`/api/source?path=${encodeURIComponent(p.path)}`).then((r) => r.json()).then(setInfo).catch(() => setInfo(null));
+  }, [p.path]);
+  const mode = p.oneshot && !p.loop ? 'One-shot: toca o arquivo inteiro, ignora soltar a tecla' : `Segura enquanto a tecla estiver pressionada e solta com o release${p.loop ? ', com loop de sustentação' : ''}`;
+  if (info?.kind === 'set') {
+    const roots = info.zones.map((z: any) => z.root);
+    return (
+      <div class="set-info">
+        <b>Instrumento multi-sample</b> · {info.zones.length} samples, de {noteName(Math.round(Math.min(...roots)))} a {noteName(Math.round(Math.max(...roots)))} · raízes por {info.rootSource}
+        {info.hasLoop ? ' · com pontos de loop' : ''}
+        <div class="set-keys">
+          {info.zones.map((z: any) => (
+            <span style={{ left: `${(z.lo / 128) * 100}%`, width: `${((z.hi - z.lo + 1) / 128) * 100}%` }} data-hint={`${z.file}: ${noteName(z.lo)}–${noteName(z.hi)}, raiz ${noteName(Math.round(z.root))}`} />
+          ))}
+        </div>
+        <div class="dim">{mode}</div>
+      </div>
+    );
+  }
+  return (
+    <>
+      <Waveform path={p.path} />
+      <div class="dim">{mode}</div>
+    </>
+  );
 }
 
 function MiniKeys(p: { channel: string }) {
@@ -115,7 +145,7 @@ export function ChannelSettings() {
             <div class="sample-path" title={String(ch.params.sample)}>
               {String(ch.params.sample || 'Nenhum sample: dê duplo clique num áudio do navegador com este canal selecionado.')}
             </div>
-            <Waveform path={String(ch.params.sample ?? '')} />
+            <SourceBox path={String(ch.params.sample ?? '')} oneshot={ch.params.oneshot === true} loop={ch.params.loop === true} />
           </div>
         )}
         <ParamGrid

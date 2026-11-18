@@ -4,6 +4,7 @@ import type { Project } from '../core/model.js';
 import { patternLength, songLength, findPattern } from '../core/model.js';
 import { BLOCK, Engine, InsertStats } from '../core/engine.js';
 import { loadSample } from './samples.js';
+import { getSet, setFolder } from './sampleset.js';
 
 export interface RenderOptions {
   mode?: 'song' | 'pattern';
@@ -31,7 +32,13 @@ export async function renderProject(p: Project, o: RenderOptions = {}): Promise<
     const s = ch.type === 'sampler' ? String(ch.params.sample ?? '') : '';
     if (!s || eng.hasSample(s)) continue;
     try {
-      eng.setSample(s, await loadSample(s));
+      const dir = setFolder(s);
+      if (dir) {
+        const b = await getSet(dir);
+        b.data.forEach((d, i) => eng.setSample(`${dir}#${i}`, d));
+        // a chave do conjunto é o caminho guardado no canal (pasta ou .fst)
+        eng.setSampleSet(s, b.set);
+      } else eng.setSample(s, await loadSample(s));
     } catch {
       missing.push(s);
     }

@@ -87,6 +87,7 @@ export function onLive(fn: (s: EngineStatus) => void) {
   liveListeners.add(fn);
   return () => void liveListeners.delete(fn);
 }
+audio.onLoading = (msg) => toast(msg);
 audio.onStatus = (s) => {
   for (const l of liveListeners) l(s);
   if (!s.playing && playingFlag) {

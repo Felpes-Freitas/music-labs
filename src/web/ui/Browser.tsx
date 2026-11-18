@@ -10,16 +10,46 @@ import { Icon } from './icons';
 interface Entry {
   name: string;
   path: string;
-  kind: 'dir' | 'audio' | 'flp' | 'project';
+  kind: 'dir' | 'audio' | 'flp' | 'project' | 'instrument';
 }
 
-export function addSampleChannel(path: string, name?: string) {
-  const nm = name ?? path.split('/').pop()!.replace(/\.[^.]+$/, '');
-  const r = act(A.addChannel, { name: nm, type: 'sampler', params: { sample: path, keytrack: true, oneshot: true, root: 60 } });
-  if (r) {
-    selectChannel(r.id);
-    audio.loadSample(path);
-    toast(`Sampler: ${nm}`);
+interface Source {
+  kind: 'file' | 'set';
+  path: string;
+  name: string;
+  category: string;
+  suggest: { oneshot: boolean; loop: boolean; keytrack: boolean; root?: number; a?: number; r?: number };
+  zones?: unknown[];
+}
+
+/** Parâmetros do sampler sugeridos pelo servidor para o arquivo/instrumento. */
+async function samplerParams(path: string) {
+  const info: Source = await api('GET', `/api/source?path=${encodeURIComponent(path)}`);
+  const sg = info.suggest;
+  const params: Record<string, unknown> = { sample: info.kind === 'set' ? info.path : path, oneshot: sg.oneshot, loop: sg.loop, keytrack: sg.keytrack, root: sg.root ?? 60 };
+  if (sg.a !== undefined) params.a = sg.a;
+  if (sg.r !== undefined) params.r = sg.r;
+  if (!sg.oneshot) Object.assign(params, { d: 8, s: 1 });
+  return { info, params };
+}
+
+function modeLabel(info: Source) {
+  if (info.kind === 'set') return `instrumento com ${info.zones?.length ?? 0} samples · segura enquanto a tecla estiver pressionada${info.suggest.loop ? ' (com loop)' : ''}`;
+  return info.suggest.oneshot ? 'one-shot (toca o arquivo inteiro)' : `segura enquanto a tecla estiver pressionada${info.suggest.loop ? ' (com loop)' : ''}`;
+}
+
+export async function addSampleChannel(path: string, name?: string) {
+  try {
+    const { info, params } = await samplerParams(path);
+    const nm = name ?? info.name;
+    const r = act(A.addChannel, { name: nm, type: 'sampler', params });
+    if (r) {
+      selectChannel(r.id);
+      audio.loadSample(String(params.sample));
+      toast(`${nm}: ${modeLabel(info)}`);
+    }
+  } catch (e) {
+    toast(`Erro: ${(e as Error).message}`);
   }
 }
 
@@ -41,15 +71,17 @@ async function openFile(e: Entry) {
   }
 }
 
-function useInChannel(e: Entry) {
+async function useInChannel(e: Entry) {
   const ch = state.project.channels.find((c) => c.id === state.channelId);
   if (ch && ch.type === 'sampler') {
-    edit([set(['channels', ch.id, 'params', 'sample'], e.path), set(['channels', ch.id, 'name'], e.name.replace(/\.[^.]+$/, ''))]);
-    audio.loadSample(e.path);
+    const { info, params } = await samplerParams(e.path);
+    edit([set(['channels', ch.id, 'params'], { ...ch.params, ...params }), set(['channels', ch.id, 'name'], info.name)]);
+    audio.loadSample(String(params.sample));
+    toast(`${info.name}: ${modeLabel(info)}`);
   } else addSampleChannel(e.path);
 }
 
-const ICON: Record<string, string> = { dir: 'folder', audio: 'wave', flp: 'flp', project: 'project' };
+const ICON: Record<string, string> = { dir: 'folder', audio: 'wave', flp: 'flp', project: 'project', instrument: 'piano' };
 
 function Folder(p: { entry: Entry; depth: number; root?: boolean }) {
   const [open, setOpen] = useState(false);
@@ -59,7 +91,13 @@ function Folder(p: { entry: Entry; depth: number; root?: boolean }) {
   }, [open]);
   return (
     <>
-      <div class={`node k-dir ${p.root ? 'k-root' : ''}`} style={{ paddingLeft: `${4 + p.depth * 12}px` }} onClick={() => setOpen(!open)} data-hint={p.entry.path}>
+      <div
+        class={`node k-dir ${p.root ? 'k-root' : ''}`}
+        style={{ paddingLeft: `${4 + p.depth * 12}px` }}
+        onClick={() => setOpen(!open)}
+        onDblClick={() => !p.root && addSampleChannel(p.entry.path)}
+        data-hint={`${p.entry.path} · duplo clique: usar a pasta como instrumento multi-sample`}
+      >
         <Icon name="chevron" size={10} class={`tw ${open ? 'open' : ''}`} />
         <Icon name="folder" size={13} />
         <span class="nm">{p.entry.name}</span>
@@ -77,7 +115,9 @@ function FileNode(p: { entry: Entry; depth: number }) {
       ? 'Clique: ouvir · duplo clique: usar no sampler selecionado (ou criar um) · arraste para o rack'
       : e.kind === 'flp'
         ? 'Duplo clique: importar projeto do FL Studio'
-        : 'Duplo clique: abrir projeto';
+        : e.kind === 'instrument'
+          ? 'Instrumento multi-sample · duplo clique: novo canal (segura enquanto a tecla estiver pressionada)'
+          : 'Duplo clique: abrir projeto';
   return (
     <div
       class={`node k-${e.kind}`}
@@ -85,7 +125,7 @@ function FileNode(p: { entry: Entry; depth: number }) {
       draggable={e.kind === 'audio'}
       onDragStart={(ev) => ev.dataTransfer?.setData('text/x-batuque-sample', e.path)}
       onClick={() => e.kind === 'audio' && audio.previewFile(e.path)}
-      onDblClick={() => (e.kind === 'audio' ? useInChannel(e) : openFile(e))}
+      onDblClick={() => (e.kind === 'audio' ? useInChannel(e) : e.kind === 'instrument' ? addSampleChannel(e.path, e.name) : openFile(e))}
       data-hint={hint}
     >
       <Icon name={ICON[e.kind]} size={13} />
@@ -102,10 +142,14 @@ export function Browser() {
   const [hits, setHits] = useState<Entry[]>([]);
   const [projects, setProjects] = useState<{ name: string; path: string }[]>([]);
   const [local, setLocal] = useState<{ name: string; path: string }[]>([]);
+  const [insts, setInsts] = useState<{ name: string; category: string; path: string }[]>([]);
 
   useEffect(() => {
     api('GET', '/api/roots').then(setRoots);
-    api('GET', '/api/registry').then((r) => setLocal(r.localSamples ?? []));
+    api('GET', '/api/registry').then((r) => {
+      setLocal(r.localSamples ?? []);
+      setInsts(r.localInstruments ?? []);
+    });
   }, []);
   useEffect(() => {
     api('GET', '/api/projects').then((r) => setProjects(r.projects));
@@ -140,7 +184,15 @@ export function Browser() {
           roots.map((r) => <Folder entry={{ ...r, kind: 'dir' }} depth={0} root />)
         ) : tab === 'sounds' ? (
           <>
-            {local.length > 0 && <div class="empty">Samples da sua instalação do FL</div>}
+            {insts.length > 0 && <div class="empty">Instrumentos da sua instalação do FL</div>}
+            {insts.map((it) => (
+              <div class="node k-instrument" style={{ paddingLeft: '16px' }} onDblClick={() => addSampleChannel(it.path, it.name)} data-hint={`${it.category} · multi-sample · duplo clique: novo canal (segura enquanto a tecla estiver pressionada)`}>
+                <Icon name="piano" size={13} />
+                <span class="nm">{it.name}</span>
+                <span class="dim" style={{ marginLeft: 'auto', fontSize: '10px' }}>{it.category}</span>
+              </div>
+            ))}
+            {local.length > 0 && <div class="empty">Bateria da sua instalação do FL</div>}
             {local.map((l) => (
               <div class="node k-audio" style={{ paddingLeft: '16px' }} onClick={() => audio.previewFile(l.path)} onDblClick={() => addSampleChannel(l.path, l.name)} data-hint="Clique: ouvir · duplo clique: novo canal">
                 <Icon name="wave" size={13} />
