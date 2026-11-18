@@ -7,7 +7,7 @@ import type { Project } from '../core/model.js';
 import { emptyProject } from '../core/model.js';
 import { History, Op, applyOps } from '../core/ops.js';
 
-export const HOME_DIR = process.env.MUSICLABS_HOME ?? join(homedir(), 'Music Labs');
+export const HOME_DIR = process.env.MUSICLABS_HOME ?? join(homedir(), 'MusicLabs');
 export const PROJECTS_DIR = join(HOME_DIR, 'Projetos');
 export const RENDERS_DIR = join(HOME_DIR, 'Renders');
 export const SAMPLES_DIR = join(HOME_DIR, 'Samples');
