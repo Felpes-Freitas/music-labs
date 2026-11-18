@@ -3,7 +3,7 @@ import { chromium } from 'playwright-core';
 const url = process.argv[2] ?? 'http://127.0.0.1:7717';
 const out = process.argv[3] ?? '/tmp/musiclabs.png';
 const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--autoplay-policy=no-user-gesture-required'] });
-const page = await browser.newPage({ viewport: { width: 1500, height: 860 }, deviceScaleFactor: 1 });
+const page = await browser.newPage({ viewport: { width: 1500, height: 860 }, deviceScaleFactor: Number(process.env.DSF ?? 1) });
 const errors: string[] = [];
 page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
 page.on('pageerror', (e) => errors.push(String(e)));
