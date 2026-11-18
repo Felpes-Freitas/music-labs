@@ -1,7 +1,7 @@
 {
   "name": "music-labs",
   "version": "0.1.0",
-  "description": "DAW open source para Linux, com fluxo de trabalho de rack de canais, piano roll e playlist, e servidor MCP embutido.",
+  "description": "DAW open source com rack de canais, piano roll, playlist, mixer, sintetizador espectral e servidor MCP para produzir junto com o Claude.",
   "license": "GPL-3.0-or-later",
   "type": "module",
   "private": true,
@@ -17,12 +17,13 @@
     "test": "tsx --test test/*.test.ts",
     "build:node": "esbuild src/server/main.ts --bundle --platform=node --format=esm --packages=external --outfile=build/server.mjs && esbuild src/mcp/main.ts --bundle --platform=node --format=esm --packages=external --outfile=build/mcp.mjs",
     "dev:server": "tsx watch src/server/main.ts",
-    "app": "electron desktop/main.cjs"
+    "app": "electron desktop/main.cjs",
+    "dist": "npm run build && electron-builder --publish never",
+    "dist:dir": "npm run build && electron-builder --dir --publish never"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
-    "preact": "^11.2.0",
-    "tsx": "^4.23.15",
+    "ffmpeg-static": "^5.3.0",
     "ws": "^8.23.0",
     "zod": "^4.6.7"
   },
@@ -31,12 +32,78 @@
     "@types/node": "^26.6.6",
     "@types/ws": "^8.18.2",
     "electron": "^45.3.4",
+    "electron-builder": "^26.18.0",
     "playwright-core": "^1.65.1",
     "typescript": "^7.0.2",
-    "vite": "^8.3.8"
+    "vite": "^8.3.8",
+    "preact": "^11.2.0",
+    "tsx": "^4.23.15"
   },
   "bin": {
     "musiclabs": "bin/musiclabs"
   },
-  "main": "desktop/main.cjs"
+  "main": "desktop/main.cjs",
+  "productName": "Music Labs",
+  "author": {
+    "name": "Felipe Freitas"
+  },
+  "homepage": "https://github.com/Felpes-Freitas/music-labs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Felpes-Freitas/music-labs.git"
+  },
+  "build": {
+    "appId": "io.github.felpesfreitas.musiclabs",
+    "productName": "Music Labs",
+    "executableName": "music-labs",
+    "directories": {
+      "output": "release",
+      "buildResources": "build-resources"
+    },
+    "files": [
+      "desktop/**",
+      "build/**",
+      "dist/**",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**"
+    ],
+    "artifactName": "MusicLabs-${version}-${os}-${arch}.${ext}",
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "AudioVideo",
+      "icon": "build-resources/icon.png",
+      "synopsis": "DAW open source com MCP",
+      "maintainer": "Felipe Freitas"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build-resources/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.music",
+      "icon": "build-resources/icon.png",
+      "identity": null
+    },
+    "publish": null
+  }
 }

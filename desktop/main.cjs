@@ -3,7 +3,6 @@
 const { app, BrowserWindow, ipcMain, shell, screen } = require('electron');
 const path = require('node:path');
 const http = require('node:http');
-const { spawn } = require('node:child_process');
 
 const PORT = Number(process.env.BATUQUE_PORT || 7717);
 const URL = `http://127.0.0.1:${PORT}`;
@@ -24,19 +23,16 @@ function ping() {
   });
 }
 
+/** Sobe o servidor dentro do próprio app (a menos que já haja um rodando, ex.: iniciado pelo MCP). */
 async function ensureServer() {
   if (await ping()) return;
-  // o próprio Electron roda o servidor como Node
-  const child = spawn(process.execPath, [path.join(ROOT, 'build/server.mjs')], {
-    cwd: ROOT,
-    detached: true,
-    stdio: 'ignore',
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-  });
-  child.unref();
-  for (let i = 0; i < 60; i++) {
-    await new Promise((r) => setTimeout(r, 150));
-    if (await ping()) return;
+  const { pathToFileURL } = require('node:url');
+  const mod = await import(pathToFileURL(path.join(ROOT, 'build/server.mjs')).href);
+  try {
+    await mod.startServer(PORT);
+  } catch (e) {
+    // outro processo pegou a porta no meio do caminho: usa o dele
+    if (!(await ping())) throw e;
   }
 }
 
@@ -50,6 +46,7 @@ function createWindow() {
     frame: false,
     backgroundColor: '#121618',
     title: 'Music Labs',
+    icon: path.join(__dirname, 'icon.png'),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -80,7 +77,11 @@ function createWindow() {
       setTimeout(async () => {
         const img = await win.webContents.capturePage();
         require('node:fs').writeFileSync(process.env.MUSICLABS_SHOT, img.toPNG());
-        const info = await win.webContents.executeJavaScript(`JSON.stringify({ controles: !!document.querySelector('.wctl'), audio: document.querySelector('.loading') === null, largura: innerWidth })`);
+        const info = await win.webContents.executeJavaScript(`(async () => {
+          const hit = (await (await fetch('/api/search?q=kick&limit=1')).json())[0];
+          const smp = hit ? await fetch('/api/sample?path=' + encodeURIComponent(hit.path)) : null;
+          return JSON.stringify({ controles: !!document.querySelector('.wctl'), carregado: document.querySelector('.loading') === null, largura: innerWidth, sample: hit ? hit.name + ' -> HTTP ' + smp.status + ', ' + (await smp.arrayBuffer()).byteLength + ' bytes' : 'nenhum na biblioteca' });
+        })()`);
         console.log('verificação:', info);
         app.quit();
       }, 4000),

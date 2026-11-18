@@ -11,7 +11,13 @@ export const HOME_DIR = process.env.BATUQUE_HOME ?? join(homedir(), 'MusicLabs')
 export const PROJECTS_DIR = join(HOME_DIR, 'Projetos');
 export const RENDERS_DIR = join(HOME_DIR, 'Renders');
 export const SAMPLES_DIR = join(HOME_DIR, 'Samples');
-export const STATE_DIR = process.env.BATUQUE_STATE_DIR ?? join(homedir(), '.local/share/batuque');
+/** Pasta de estado (autosave, índice da biblioteca) no lugar padrão de cada sistema. */
+function defaultStateDir() {
+  if (process.platform === 'win32') return join(process.env.APPDATA ?? join(homedir(), 'AppData/Roaming'), 'MusicLabs');
+  if (process.platform === 'darwin') return join(homedir(), 'Library/Application Support/MusicLabs');
+  return join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local/share'), 'batuque');
+}
+export const STATE_DIR = process.env.BATUQUE_STATE_DIR ?? defaultStateDir();
 const AUTOSAVE = join(STATE_DIR, 'autosave.json');
 
 for (const d of [PROJECTS_DIR, RENDERS_DIR, SAMPLES_DIR, STATE_DIR]) mkdirSync(d, { recursive: true });
