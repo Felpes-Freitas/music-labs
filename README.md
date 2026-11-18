@@ -3,13 +3,13 @@
 DAW open source para Linux com o fluxo de trabalho de rack de canais, piano roll,
 playlist e mixer, e um **servidor MCP** embutido para produzir junto com o Claude.
 
-Roda no navegador (Chrome em modo app) com áudio em AudioWorklet. A mesma engine
+Roda como app desktop (Electron, janela com barra de título própria) ou no navegador, com áudio em AudioWorklet. A mesma engine
 roda no Node para render offline e análise de mix.
 
 ```bash
 npm install
 npm run build
-bin/musiclabs          # sobe o servidor (porta 7717) e abre a interface
+bin/musiclabs          # abre o app desktop (Electron); sobe o servidor na porta 7717
 ```
 
 Há um atalho no menu de aplicativos ("Music Labs") e o comando `musiclabs` em `~/.local/bin`.

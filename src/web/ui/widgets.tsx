@@ -114,7 +114,7 @@ export const dbFmt = (g: number) => (g <= 0.0001 ? '-∞ dB' : `${(20 * Math.log
 export const panFmt = (v: number) => (Math.abs(v) < 0.01 ? 'C' : v < 0 ? `${Math.round(-v * 100)}% E` : `${Math.round(v * 100)}% D`);
 
 /** Janela flutuante: arrastar pelo título, duplo clique maximiza, canto redimensiona. */
-export function Win(p: { id: WindowId; title: ComponentChildren; icon?: string; children: ComponentChildren; tools?: ComponentChildren; minW?: number; minH?: number }) {
+export function Win(p: { id: WindowId; title: ComponentChildren; icon?: string; children: ComponentChildren; tools?: ComponentChildren; bar?: ComponentChildren; minW?: number; minH?: number }) {
   const w = state.windows[p.id];
   if (!w.open) return null;
   const max = (w as any).max as { x: number; y: number; w: number; h: number } | undefined;
@@ -167,6 +167,7 @@ export function Win(p: { id: WindowId; title: ComponentChildren; icon?: string; 
           <Icon name="close" size={11} />
         </button>
       </div>
+      {p.bar && <div class="win-bar nodrag">{p.bar}</div>}
       <div class="win-body">{p.children}</div>
       <div class="win-resize" onPointerDown={(e) => startDrag(e as any, 'size')} />
     </div>

@@ -1,18 +1,32 @@
 #!/usr/bin/env bash
-# Abre o Music Labs: sobe o servidor (se preciso) e abre a interface como app.
+# Abre o Music Labs como app desktop (Electron, janela com barra de título própria).
+# Sem Electron instalado, cai para o Chrome em modo app.
 set -euo pipefail
 DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 PORT="${MUSICLABS_PORT:-7717}"
 URL="http://127.0.0.1:$PORT"
-NODE="$(command -v node)"
-# Node 22+ (nvm)
-for n in "$HOME"/.nvm/versions/node/v2[2-9]*/bin/node; do [ -x "$n" ] && NODE="$n"; done
-if ! curl -fs "$URL/api/status" >/dev/null 2>&1; then
-  mkdir -p "$HOME/.local/state"
-  nohup "$NODE" "$DIR/build/server.mjs" >"$HOME/.local/state/musiclabs.log" 2>&1 &
-  for _ in $(seq 1 50); do curl -fs "$URL/api/status" >/dev/null 2>&1 && break; sleep 0.1; done
+ELECTRON="$DIR/node_modules/.bin/electron"
+
+if [ "${1:-}" = "--server-only" ]; then
+  if ! curl -fs "$URL/api/status" >/dev/null 2>&1; then
+    NODE="$(command -v node || true)"
+    for n in "$HOME"/.nvm/versions/node/v2[2-9]*/bin/node; do [ -x "$n" ] && NODE="$n"; done
+    mkdir -p "$HOME/.local/state"
+    if [ -x "$ELECTRON" ]; then
+      ELECTRON_RUN_AS_NODE=1 nohup "$ELECTRON" "$DIR/build/server.mjs" >"$HOME/.local/state/musiclabs.log" 2>&1 &
+    else
+      nohup "$NODE" "$DIR/build/server.mjs" >"$HOME/.local/state/musiclabs.log" 2>&1 &
+    fi
+    for _ in $(seq 1 60); do curl -fs "$URL/api/status" >/dev/null 2>&1 && break; sleep 0.1; done
+  fi
+  exit 0
 fi
-[ "${1:-}" = "--server-only" ] && exit 0
+
+if [ -x "$ELECTRON" ]; then
+  exec "$ELECTRON" "$DIR/desktop/main.cjs" >/dev/null 2>&1
+fi
+
+"$0" --server-only
 for b in google-chrome chromium brave-browser; do
   if command -v "$b" >/dev/null; then exec "$b" --app="$URL" --class=MusicLabs --user-data-dir="$HOME/.local/share/musiclabs/chrome" --no-first-run --autoplay-policy=no-user-gesture-required >/dev/null 2>&1; fi
 done

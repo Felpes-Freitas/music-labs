@@ -309,19 +309,91 @@ function BpmControl() {
   );
 }
 
+declare global {
+  interface Window {
+    mlabsWindow?: {
+      minimize(): void;
+      toggleMaximize(): void;
+      close(): void;
+      isMaximized(): Promise<boolean>;
+      onState(cb: (max: boolean) => void): void;
+    };
+  }
+}
+
+/** Minimizar, maximizar e fechar (só no app desktop, onde a janela não tem borda nativa). */
+function WindowControls() {
+  const w = window.mlabsWindow;
+  const [max, setMax] = useState(true);
+  useEffect(() => {
+    if (!w) return;
+    w.isMaximized().then(setMax);
+    w.onState(setMax);
+  }, []);
+  if (!w) return null;
+  return (
+    <div class="wctl">
+      <button data-hint="Minimizar" onClick={() => w.minimize()}>
+        <svg width="10" height="10" viewBox="0 0 10 10">
+          <path d="M1 5.5h8" stroke="currentColor" stroke-width="1.2" />
+        </svg>
+      </button>
+      <button data-hint={max ? 'Restaurar' : 'Maximizar'} onClick={() => w.toggleMaximize()}>
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.1">
+          {max ? <path d="M2.5 3.5h5v5h-5zM3.5 1.5h5v5" /> : <path d="M1.5 1.5h7v7h-7z" />}
+        </svg>
+      </button>
+      <button class="close" data-hint="Fechar o Music Labs" onClick={() => w.close()}>
+        <svg width="10" height="10" viewBox="0 0 10 10">
+          <path d="M1.5 1.5l7 7M8.5 1.5l-7 7" stroke="currentColor" stroke-width="1.2" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+/** Barra de título: menus, nome do projeto, janelas e controles. Arrastar move a janela. */
+export function TitleBar() {
+  const s = useApp();
+  const p = s.project;
+  const winBtn = (id: WindowId, icon: string, label: string, key: string) => (
+    <IconBtn icon={icon} size={15} class="wbtn" on={s.windows[id].open} hint={`${label} (${key})`} onClick={() => openWindow(id, true)} />
+  );
+  return (
+    <div class={`titlebar ${window.mlabsWindow ? 'desktop' : ''}`} onDblClick={(e) => (e.target as Element).classList.contains('tb-drag') && window.mlabsWindow?.toggleMaximize()}>
+      <div class="logo" title="Music Labs">
+        <span class="logo-dot" />
+        <span class="logo-txt">MUSIC LABS</span>
+      </div>
+      <MenuBar />
+      <div class="tb-drag">
+        <span class="pname" data-hint={s.path ?? 'Projeto ainda não salvo'}>
+          {p.name}
+          {s.dirty ? ' •' : ''}
+        </span>
+      </div>
+      <div class="tb-wins">
+        {winBtn('playlist', 'playlist', 'Playlist', 'F5')}
+        {winBtn('rack', 'rack', 'Rack de canais', 'F6')}
+        {winBtn('piano', 'piano', 'Piano roll', 'F7')}
+        {winBtn('mixer', 'mixer', 'Mixer', 'F9')}
+        {winBtn('browser', 'browser', 'Navegador', 'Alt+F8')}
+      </div>
+      <div class={`conn ${s.connected ? 'ok' : ''}`} data-hint={s.connected ? 'Conectado: o Claude pode editar via MCP' : 'Sem conexão com o servidor'}>
+        <Icon name="sparkle" size={11} /> <span>{s.connected ? 'MCP' : 'offline'}</span>
+      </div>
+      <WindowControls />
+    </div>
+  );
+}
+
 export function Toolbar() {
   const s = useApp();
   const p = s.project;
   const playing = audio.status.playing;
-  const winBtn = (id: WindowId, icon: string, label: string, key: string) => (
-    <IconBtn icon={icon} size={16} class="wbtn" on={s.windows[id].open} hint={`${label} (${key})`} onClick={() => openWindow(id, true)} />
-  );
   return (
     <div class="toolbar">
-      <div class="tb-left">
-        <MenuBar />
-        <HintBar />
-      </div>
+      <HintBar />
       <div class="tb-panel transport">
         <div class="modepill" data-hint="Modo: pattern toca só o pattern atual; song toca a playlist (L)">
           <button class={s.mode === 'pattern' ? 'on pat' : ''} onClick={() => setMode('pattern')}>
@@ -382,22 +454,6 @@ export function Toolbar() {
         <IconBtn icon="undo" hint="Desfazer (Ctrl+Z)" onClick={undo} />
         <IconBtn icon="redo" hint="Refazer (Ctrl+Y)" onClick={redo} />
         <IconBtn icon="save" hint={`Salvar (Ctrl+S)${s.dirty ? ' · há alterações não salvas' : ''}`} class={s.dirty ? 'dirty' : ''} onClick={() => saveProject()} />
-      </div>
-      <div class="tb-panel windows">
-        {winBtn('playlist', 'playlist', 'Playlist', 'F5')}
-        {winBtn('rack', 'rack', 'Rack de canais', 'F6')}
-        {winBtn('piano', 'piano', 'Piano roll', 'F7')}
-        {winBtn('mixer', 'mixer', 'Mixer', 'F9')}
-        {winBtn('browser', 'browser', 'Navegador', 'Alt+F8')}
-      </div>
-      <div class="tb-right">
-        <div class="pname" data-hint={s.path ?? 'Projeto ainda não salvo'}>
-          {p.name}
-          {s.dirty ? ' •' : ''}
-        </div>
-        <div class={`conn ${s.connected ? 'ok' : ''}`} data-hint={s.connected ? 'Conectado: o Claude pode editar via MCP' : 'Sem conexão com o servidor'}>
-          <Icon name="sparkle" size={11} /> {s.connected ? 'MCP' : 'offline'}
-        </div>
       </div>
     </div>
   );

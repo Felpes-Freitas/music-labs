@@ -1,9 +1,9 @@
 import { render } from 'preact';
 import { useEffect } from 'preact/hooks';
 import './style.css';
-import { useApp, state, togglePlay, setMode, undo, redo, openWindow, cycleWindows, api, toast } from './state';
+import { useApp, state, togglePlay, setMode, undo, redo, openWindow, cycleWindows, fitWindows, api, toast } from './state';
 import { audio } from './audio';
-import { Toolbar } from './ui/Toolbar';
+import { TitleBar, Toolbar } from './ui/Toolbar';
 import { ChannelRack } from './ui/ChannelRack';
 import { PianoRoll } from './ui/PianoRoll';
 import { Playlist } from './ui/Playlist';
@@ -158,6 +158,13 @@ function LoadingScreen() {
 
 function App() {
   const s = useApp();
+  // as janelas acompanham o tamanho real da área de trabalho
+  useEffect(() => {
+    const ws = document.querySelector('.workspace') as HTMLElement;
+    const ro = new ResizeObserver(() => fitWindows(ws.clientWidth, ws.clientHeight));
+    ro.observe(ws);
+    return () => ro.disconnect();
+  }, []);
   useEffect(() => {
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
@@ -169,6 +176,7 @@ function App() {
   }, []);
   return (
     <div class="app">
+      <TitleBar />
       <Toolbar />
       <div class="main">
         <Browser />

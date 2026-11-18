@@ -87,7 +87,8 @@ function FilterGraph(p: { ch: Channel; sel: number; setSel: (i: number) => void 
       const c = ref.current;
       if (!c) return;
       const dpr = window.devicePixelRatio || 1;
-      const r = c.getBoundingClientRect();
+      // tamanho do conteúdo (sem a borda): senão o canvas cresce a cada quadro
+      const r = { width: c.clientWidth, height: c.clientHeight };
       if (!r.width) return;
       if (c.width !== Math.round(r.width * dpr) || c.height !== Math.round(r.height * dpr)) {
         c.width = Math.round(r.width * dpr);
@@ -232,13 +233,10 @@ function FilterGraph(p: { ch: Channel; sel: number; setSel: (i: number) => void 
     }
   };
 
-  const geo = (): Geo => {
-    const r = ref.current!.getBoundingClientRect();
-    return { w: r.width, h: r.height };
-  };
+  const geo = (): Geo => ({ w: ref.current!.clientWidth, h: ref.current!.clientHeight });
   const local = (e: PointerEvent | WheelEvent | MouseEvent) => {
     const r = ref.current!.getBoundingClientRect();
-    return [e.clientX - r.left, e.clientY - r.top];
+    return [e.clientX - r.left - ref.current!.clientLeft, e.clientY - r.top - ref.current!.clientTop];
   };
   const hit = (x: number, y: number) => {
     const g = geo();

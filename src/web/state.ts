@@ -31,7 +31,7 @@ export interface Toast {
 /** Layout inicial proporcional à tela (área de trabalho = janela - navegador - barra). */
 function defaultLayout(): Record<WindowId, WinState> {
   const W = Math.max(900, window.innerWidth - 240);
-  const H = Math.max(500, window.innerHeight - 46);
+  const H = Math.max(480, window.innerHeight - 80); // barra de título + ferramentas
   const rackH = Math.min(340, Math.round(H * 0.42));
   return {
     browser: { open: true, x: 0, y: 0, w: 240, h: 0, z: 1 },
@@ -295,13 +295,25 @@ export function cycleWindows(back = false) {
   focusWindow(next, true);
   setHint(`Janela: ${{ playlist: 'Playlist', rack: 'Rack de canais', piano: 'Piano roll', mixer: 'Mixer', channel: 'Canal' }[next as 'rack']}`);
 }
-// Janelas maximizadas acompanham o tamanho da área de trabalho.
-window.addEventListener('resize', () => {
-  const ws = document.querySelector('.workspace') as HTMLElement | null;
-  if (!ws) return;
-  for (const w of Object.values(state.windows)) if (w.max) Object.assign(w, { x: 0, y: 0, w: ws.clientWidth, h: ws.clientHeight });
+/**
+ * Encaixa as janelas na área de trabalho real: as maximizadas ocupam tudo e as
+ * outras são puxadas para dentro (e encolhidas) se ficarem fora. Chamado quando
+ * a área muda de tamanho (janela do app, navegador lateral aberto/fechado).
+ */
+export function fitWindows(W: number, H: number) {
+  if (!W || !H) return;
+  for (const w of Object.values(state.windows)) {
+    if (w.h === 0) continue; // navegador lateral não é janela flutuante
+    if (w.max) Object.assign(w, { x: 0, y: 0, w: W, h: H });
+    else {
+      w.w = Math.min(w.w, W);
+      w.h = Math.min(w.h, H);
+      w.x = Math.max(0, Math.min(w.x, W - w.w));
+      w.y = Math.max(0, Math.min(w.y, H - w.h));
+    }
+  }
   emit();
-});
+}
 export function closeWindow(id: WindowId) {
   state.windows[id].open = false;
   emit();
