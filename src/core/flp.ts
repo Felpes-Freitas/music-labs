@@ -121,6 +121,8 @@ export interface FlpImportOptions {
 function guessInstrument(name: string, plugin: string): { type: InstrumentType; params: Params } {
   const n = `${name} ${plugin}`.toLowerCase();
   const pick = (preset: string) => presetParams(preset)!;
+  // Sintetizadores aditivos/subtrativos do FL viram o Prisma (motor parecido).
+  if (/harmless|harmor/.test(n)) return pick(/pad|string/.test(n) ? 'Prisma Pad' : /bass/.test(n) ? 'Prisma Bass' : /pluck/.test(n) ? 'Prisma Pluck' : /lead/.test(n) ? 'Prisma Lead' : 'Prisma Init');
   if (/\bfpc\b|drum ?kit|drums\b|\bkit\b/.test(n)) return pick('Drum Kit');
   if (/808/.test(n)) return pick('808');
   if (/kick|bd\b|bass ?drum/.test(n)) return pick('Kick');

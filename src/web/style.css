@@ -247,3 +247,27 @@ input[type='checkbox'] { height: auto; accent-color: var(--acc); }
 .set-keys { position: relative; height: 14px; margin: 4px 0; background: #101416; border-radius: 2px; overflow: hidden; }
 .set-keys span { position: absolute; top: 2px; bottom: 2px; background: linear-gradient(#f5b858, #b97a1f); border-right: 1px solid #101416; }
 .set-keys span:nth-child(even) { background: linear-gradient(#7fd6f2, #2f8fb0); }
+
+/* ---------------------------------------------------------------- Prisma */
+.prisma { display: flex; flex-direction: column; gap: 8px; }
+.pz-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: linear-gradient(#262f34, #1d2427); border: 1px solid #0b0e10; border-radius: 6px; }
+.pz-logo { display: flex; align-items: center; gap: 7px; margin-right: auto; }
+.pz-logo b { letter-spacing: 3px; color: #f2a93b; font-size: 13px; }
+.pz-logo .dim { font-size: 10px; }
+.pz-ref { display: flex; align-items: center; gap: 4px; color: var(--dim); font-size: 10.5px; }
+.pz-toggle { font-weight: 700; font-size: 10px; letter-spacing: 1px; }
+.pz-spectrum { width: 100%; height: 170px; border-radius: 6px; border: 1px solid #0b0e10; cursor: crosshair; box-shadow: inset 0 0 20px rgba(0,0,0,.6); }
+.pz-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 8px; }
+.pz-card { background: linear-gradient(#262e33, #20272b); border: 1px solid #0f1315; border-radius: 6px; padding: 6px 8px 8px; position: relative; }
+.pz-card.wide { grid-column: span 2; }
+.pz-card h4 { margin: 0 0 6px; font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #9fb0b8; font-weight: 700; }
+.pz-card h4::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #f2a93b; margin-right: 6px; vertical-align: 1px; }
+.pz-row { display: flex; flex-wrap: wrap; gap: 4px 2px; align-items: flex-start; }
+.pz-row .knob { width: 50px; }
+.pz-env + .pz-row .knob { width: 44px; }
+.pz-row .knob-label { max-width: 52px; }
+.pz-env { width: 100%; height: 64px; border-radius: 4px; border: 1px solid #0b0e10; margin-bottom: 4px; cursor: grab; }
+.pz-seg { position: absolute; top: 4px; right: 8px; display: flex; border: 1px solid #0b0e10; border-radius: 4px; overflow: hidden; }
+.pz-seg button { border: none; border-radius: 0; height: 20px; padding: 0 5px; color: var(--dim); }
+.pz-seg button.on { color: #08161c; background: linear-gradient(#a6e6fa, #4fc3e8); }
+@media (max-width: 900px) { .pz-card.wide { grid-column: span 1; } }

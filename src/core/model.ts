@@ -18,7 +18,7 @@ export interface Note {
   mute?: boolean;
 }
 
-export type InstrumentType = 'synth' | 'sampler' | 'drum' | 'pluck' | 'fm';
+export type InstrumentType = 'synth' | 'prisma' | 'sampler' | 'drum' | 'pluck' | 'fm';
 
 export interface Channel {
   id: string;

@@ -224,7 +224,7 @@ tool('redo', 'Refaz.', {}, () => api('POST', '/api/redo'));
 
 // ------------------------------------------------------------ canais
 
-const instrumentType = z.enum(['synth', 'sampler', 'drum', 'pluck', 'fm']);
+const instrumentType = z.enum(['synth', 'prisma', 'sampler', 'drum', 'pluck', 'fm']);
 
 tool(
   'add_channel',
