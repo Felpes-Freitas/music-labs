@@ -12,6 +12,8 @@ import { audio } from './audio';
 export type WindowId = 'rack' | 'piano' | 'playlist' | 'mixer' | 'browser' | 'channel';
 
 export interface WinState {
+  /** Geometria anterior quando a janela está maximizada. */
+  max?: { x: number; y: number; w: number; h: number };
   open: boolean;
   x: number;
   y: number;
@@ -34,7 +36,8 @@ function defaultLayout(): Record<WindowId, WinState> {
   return {
     browser: { open: true, x: 0, y: 0, w: 240, h: 0, z: 1 },
     rack: { open: true, x: 8, y: 8, w: Math.min(720, W * 0.55), h: rackH, z: 3 },
-    playlist: { open: true, x: 8, y: rackH + 16, w: W - 16, h: H - rackH - 24, z: 2 },
+    // A playlist começa maximizada e no fundo; as outras janelas flutuam sobre ela.
+    playlist: { open: true, x: 0, y: 0, w: W, h: H, z: 0, max: { x: 8, y: rackH + 16, w: W - 16, h: H - rackH - 24 } } as WinState,
     piano: { open: false, x: 40, y: 40, w: W - 80, h: H - 80, z: 4 },
     mixer: { open: false, x: 30, y: Math.max(8, H - 470), w: Math.min(W - 60, 1200), h: 450, z: 5 },
     channel: { open: false, x: Math.min(W - 480, Math.min(720, W * 0.55) + 16), y: 8, w: 470, h: 440, z: 6 },
@@ -56,6 +59,10 @@ export const state = {
   scale: 'chromatic',
   toasts: [] as Toast[],
   hint: '' as string,
+  /** Tela de carregamento (samples do projeto); null quando pronto. */
+  loading: null as null | { done: number; total: number; label: string; pending: number },
+  /** O navegador bloqueou o som: falta um clique para ligar. */
+  needsClick: false,
   /** Incrementa a cada mudança no projeto: os canvas usam isso para repintar. */
   version: 0,
   /** Muda quando a biblioteca de samples é (re)varrida. */
@@ -91,7 +98,6 @@ export function onLive(fn: (s: EngineStatus) => void) {
   liveListeners.add(fn);
   return () => void liveListeners.delete(fn);
 }
-audio.onLoading = (msg) => toast(msg);
 audio.getProject = () => state.project;
 audio.onStatus = (s) => {
   for (const l of liveListeners) l(s);
@@ -129,7 +135,7 @@ function connect() {
         state.dirty = m.dirty;
         state.version++;
         fixSelection();
-        audio.setProject(state.project);
+        prepareAudio();
         emit();
         break;
       case 'ops':
@@ -257,21 +263,45 @@ export function toast(text: string, from?: string) {
 // ---------------------------------------------------------------- janelas
 
 let zTop = 10;
+/** Playlist maximizada funciona como fundo: clicar nela não a traz para a frente. */
+const isBackground = (id: WindowId) => id === 'playlist' && !!state.windows.playlist.max;
+
 export function openWindow(id: WindowId, toggle = false) {
   const w = state.windows[id];
-  if (toggle && w.open && w.z === zTop) w.open = false;
+  if (toggle && w.open && (w.z === zTop || isBackground(id))) w.open = false;
   else {
     w.open = true;
-    w.z = ++zTop;
+    if (!isBackground(id)) w.z = ++zTop;
   }
   emit();
 }
-export function focusWindow(id: WindowId) {
+export function focusWindow(id: WindowId, force = false) {
+  if (isBackground(id) && !force) return;
+  // a playlist maximizada volta para o fundo quando outra janela ganha o foco
+  if (id !== 'playlist' && isBackground('playlist') && state.windows.playlist.z !== 0) state.windows.playlist.z = 0;
   if (state.windows[id].z !== zTop) {
     state.windows[id].z = ++zTop;
     emit();
   }
 }
+/** Tab: traz para a frente a próxima janela aberta (Shift+Tab: a anterior). */
+export function cycleWindows(back = false) {
+  const order: WindowId[] = ['playlist', 'rack', 'piano', 'mixer', 'channel'];
+  const open = order.filter((id) => state.windows[id].open);
+  if (!open.length) return;
+  const top = open.reduce((a, b) => (state.windows[b].z > state.windows[a].z ? b : a));
+  const i = open.indexOf(top);
+  const next = open[(i + (back ? open.length - 1 : 1)) % open.length];
+  focusWindow(next, true);
+  setHint(`Janela: ${{ playlist: 'Playlist', rack: 'Rack de canais', piano: 'Piano roll', mixer: 'Mixer', channel: 'Canal' }[next as 'rack']}`);
+}
+// Janelas maximizadas acompanham o tamanho da área de trabalho.
+window.addEventListener('resize', () => {
+  const ws = document.querySelector('.workspace') as HTMLElement | null;
+  if (!ws) return;
+  for (const w of Object.values(state.windows)) if (w.max) Object.assign(w, { x: 0, y: 0, w: ws.clientWidth, h: ws.clientHeight });
+  emit();
+});
 export function closeWindow(id: WindowId) {
   state.windows[id].open = false;
   emit();
@@ -341,8 +371,48 @@ function remotePreview(m: { channel: string; notes: { note: string | number; sta
 }
 
 // Áudio só liga após gesto do usuário (política do navegador).
+/**
+ * Prepara a engine, carrega os samples do projeto atrás da tela de
+ * carregamento e liga o som no fim. Se o navegador exigir um clique para
+ * tocar, a tela pede esse clique uma vez.
+ */
+let preparing: Promise<void> | null = null;
+let firstLoad = true;
+async function prepareAudio() {
+  if (preparing) await preparing;
+  preparing = (async () => {
+    await audio.init();
+    audio.setProject(state.project);
+    // undo/redo e projetos sem samples novos não mostram a tela
+    if (audio.pending || firstLoad) {
+      audio.progress.done = audio.progress.total = 0;
+      state.loading = { done: 0, total: 0, label: '', pending: audio.pending };
+      emit();
+      await audio.idle();
+    }
+    firstLoad = false;
+    const ok = await audio.resume();
+    state.loading = null;
+    state.needsClick = !ok;
+    emit();
+  })();
+  await preparing;
+  preparing = null;
+}
+audio.onProgress = () => {
+  if (!state.loading) return;
+  state.loading = { ...audio.progress, pending: audio.pending };
+  emit();
+};
+
 const unlock = () => {
-  if (!audio.running) audio.start().then(emit);
+  if (audio.running) return;
+  audio.resume().then((ok) => {
+    if (ok && state.needsClick) {
+      state.needsClick = false;
+      emit();
+    }
+  });
 };
 window.addEventListener('pointerdown', unlock);
 window.addEventListener('keydown', unlock);

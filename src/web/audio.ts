@@ -16,11 +16,22 @@ export class Audio {
   onStatus: (s: EngineStatus) => void = () => {};
   analyser: AnalyserNode | null = null;
 
+  private initP: Promise<void> | null = null;
+  /** Prepara o contexto e a engine (pode ficar suspenso até ligar o som). */
+  init(): Promise<void> {
+    return (this.initP ??= this.doInit());
+  }
+  /** Liga o som. Devolve false se o navegador exigir um clique antes. */
+  async resume(): Promise<boolean> {
+    await this.init();
+    const ctx = this.ctx!;
+    if (ctx.state !== 'running') await Promise.race([ctx.resume().catch(() => {}), new Promise((r) => setTimeout(r, 400))]);
+    return ctx.state === 'running';
+  }
   async start() {
-    if (this.ctx) {
-      if (this.ctx.state !== 'running') await this.ctx.resume();
-      return;
-    }
+    await this.resume();
+  }
+  private async doInit() {
     const ctx = new AudioContext({ latencyHint: 'interactive' });
     await ctx.audioWorklet.addModule(workletUrl);
     const node = new AudioWorkletNode(ctx, 'batuque', { numberOfInputs: 0, outputChannelCount: [2] });
@@ -80,7 +91,7 @@ export class Audio {
     pr = (async () => {
       const info = await fetch(`/api/source?path=${encodeURIComponent(path)}`).then((r) => r.json());
       if (info.kind === 'set') {
-        this.onLoading(`Carregando ${info.name} (${info.zones.length} samples)…`);
+        this.step(info.zones.length, 0, info.name);
         // Cada zona vem do servidor já decodificada; a chave casa com a do conjunto.
         await Promise.all(
           info.zones.map(async (z: { i: number }) => {
@@ -88,6 +99,7 @@ export class Audio {
             if (!r.ok) throw new Error(`zona ${z.i}: ${r.status}`);
             const d = decodeWav(new Uint8Array(await r.arrayBuffer()));
             this.post({ type: 'sample', path: `${info.path}#${z.i}`, sr: d.sr, ch: d.ch, root: d.root, loop: d.loop });
+            this.step(0, 1);
           }),
         );
         const set = {
@@ -95,12 +107,14 @@ export class Audio {
           zones: info.zones.map((z: any) => ({ key: `${info.path}#${z.i}`, root: z.root, lo: z.lo, hi: z.hi, vlo: z.vlo, vhi: z.vhi })),
         };
         this.post({ type: 'sampleset', path, set });
-        this.onLoading(`${info.name} pronto`);
+
       } else {
+        this.step(1, 0, path.split('/').pop());
         const r = await fetch(`/api/sample?path=${encodeURIComponent(path)}`);
         if (!r.ok) throw new Error(`sample ${path}: ${r.status}`);
         const data = decodeWav(new Uint8Array(await r.arrayBuffer()));
         this.post({ type: 'sample', path, sr: data.sr, ch: data.ch, root: data.root, loop: data.loop });
+        this.step(0, 1);
       }
       this.loaded.add(path);
     })();
@@ -109,6 +123,22 @@ export class Audio {
     return pr;
   }
   onLoading: (msg: string) => void = () => {};
+  /** Progresso do carregamento de samples (unidades: arquivos ou zonas). */
+  progress = { done: 0, total: 0, label: '' };
+  onProgress: () => void = () => {};
+  private step(total: number, done: number, label?: string) {
+    this.progress.total += total;
+    this.progress.done += done;
+    if (label) this.progress.label = label;
+    this.onProgress();
+  }
+  /** Espera todos os carregamentos em andamento (inclusive os que começarem no meio). */
+  async idle() {
+    while (this.loading.size) await Promise.allSettled([...this.loading.values()]);
+  }
+  get pending() {
+    return this.loading.size;
+  }
 
   play(mode: 'pattern' | 'song', patternId: string | null, tick?: number) {
     this.start().then(() => this.post({ type: 'play', mode, patternId, tick }));

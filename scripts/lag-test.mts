@@ -12,7 +12,7 @@ const errs: string[] = [];
 page.on('pageerror', (e) => errs.push(String(e)));
 await page.goto(B);
 await page.waitForTimeout(1000);
-await page.click('.audio-hint');
+await page.waitForSelector('.loading', { state: 'detached', timeout: 30000 });
 // medidor de quadros
 await page.evaluate(`(() => {
   window.__ft = [];

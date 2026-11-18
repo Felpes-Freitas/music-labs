@@ -7,7 +7,7 @@ const errs: string[] = [];
 page.on('pageerror', (e) => errs.push(String(e)));
 await page.goto(B);
 await page.waitForTimeout(800);
-await page.click('.audio-hint');
+await page.waitForSelector('.loading', { state: 'detached', timeout: 30000 });
 await page.click(`.rack-row:has-text("${process.argv[2] ?? 'OSTR C1'}") .ch-name`);
 await page.waitForTimeout(1500); // tempo para carregar o sample
 const level = () =>

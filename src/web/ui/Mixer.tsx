@@ -13,6 +13,11 @@ function Fader(p: { value: number; onInput: (v: number) => void; onCommit: (v: n
   const toGain = (x: number) => 1.66 * x * x * x;
   const pos = Math.max(0, Math.min(1, toPos(p.value)));
   const onDown = (e: PointerEvent) => {
+    if (e.button === 1) {
+      e.preventDefault();
+      p.onCommit(0.8);
+      return;
+    }
     const track = (e.currentTarget as HTMLElement).getBoundingClientRect();
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     let last = p.value;

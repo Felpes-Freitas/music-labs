@@ -6,7 +6,7 @@ const errs: string[] = [];
 page.on('pageerror', (e) => errs.push(String(e)));
 await page.goto(B);
 await page.waitForTimeout(900);
-await page.click('.audio-hint');
+await page.waitForSelector('.loading', { state: 'detached', timeout: 30000 });
 await page.dblclick('.rack-row:has-text("Strings Section") .ch-name');
 await page.waitForTimeout(500);
 await page.click('.gear-btn');

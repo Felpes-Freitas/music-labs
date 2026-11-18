@@ -7,7 +7,7 @@ const errs: string[] = [];
 page.on('pageerror', (e) => errs.push(String(e)));
 await page.goto(B);
 await page.waitForTimeout(900);
-await page.click('.audio-hint');
+await page.waitForSelector('.loading', { state: 'detached', timeout: 30000 });
 await page.dblclick('.rack-row:has-text("Prisma") .ch-name');
 await page.waitForTimeout(600);
 const sum = (): Promise<number> =>

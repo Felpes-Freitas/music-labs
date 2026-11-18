@@ -342,3 +342,14 @@ input[type='checkbox'] { height: auto; accent-color: var(--acc); }
 .pz-activate { width: 100%; margin-top: 4px; }
 
 .br-lib { font-size: 10px; color: var(--dim2); padding: 3px 8px; border-bottom: 1px solid var(--line2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------------------------------------------------------------- tela de carregamento */
+.loading { position: fixed; inset: 0; z-index: 200000; background: rgba(10, 13, 15, 0.86); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; cursor: progress; }
+.loading-box { width: 380px; padding: 26px 28px; background: linear-gradient(#262e33, #1c2226); border: 1px solid #0b0e10; border-radius: 10px; box-shadow: 0 20px 60px rgba(0,0,0,.6); display: flex; flex-direction: column; gap: 10px; }
+.loading-box .logo { font-size: 15px; margin-bottom: 4px; }
+.loading-title { font-weight: 600; font-size: 13px; }
+.loading-bar { height: 8px; background: #0e1214; border-radius: 4px; overflow: hidden; border: 1px solid #000; }
+.loading-bar > div { height: 100%; background: linear-gradient(90deg, #f2a93b, #ffd08a); transition: width .2s; }
+.loading-bar > div.indeterminate { width: 30% !important; animation: slide 1.1s ease-in-out infinite; }
+@keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+.loading-label { font-size: 11px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

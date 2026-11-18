@@ -94,7 +94,7 @@ export function GearTab(p: { ch: Channel }) {
             max={100}
             step={1}
             value={fine}
-            data-hint="Ajuste fino entre meio tom abaixo e meio tom acima (duplo clique zera)"
+            data-hint="Ajuste fino entre meio tom abaixo e meio tom acima (duplo clique ou botão do meio zera)"
             onInput={(e) => {
               const v = Number((e.target as HTMLInputElement).value);
               previewEdit([set([...path, 'fine'], v)]);
@@ -102,6 +102,12 @@ export function GearTab(p: { ch: Channel }) {
             }}
             onChange={(e) => edit([set([...path, 'fine'], Number((e.target as HTMLInputElement).value))])}
             onDblClick={() => edit([set([...path, 'fine'], 0)])}
+            onPointerDown={(e) => {
+              if (e.button === 1) {
+                e.preventDefault();
+                edit([set([...path, 'fine'], 0)]);
+              }
+            }}
           />
           <span class="fine-end">+1 st</span>
           <span class="lcd fine-val">

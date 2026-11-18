@@ -15,7 +15,7 @@ const errs: string[] = [];
 page.on('pageerror', (e) => errs.push(String(e)));
 await page.goto(B);
 await page.waitForTimeout(800);
-await page.click('.audio-hint');
+await page.waitForSelector('.loading', { state: 'detached', timeout: 30000 });
 await page.click('.picker .pk:has-text("PRTest")');
 await page.click('.rack-row:has-text("Lead") .ch-name');
 await page.keyboard.press('F7');

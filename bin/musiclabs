@@ -14,6 +14,6 @@ if ! curl -fs "$URL/api/status" >/dev/null 2>&1; then
 fi
 [ "${1:-}" = "--server-only" ] && exit 0
 for b in google-chrome chromium brave-browser; do
-  if command -v "$b" >/dev/null; then exec "$b" --app="$URL" --class=MusicLabs >/dev/null 2>&1; fi
+  if command -v "$b" >/dev/null; then exec "$b" --app="$URL" --class=MusicLabs --user-data-dir="$HOME/.local/share/batuque/chrome" --no-first-run --autoplay-policy=no-user-gesture-required >/dev/null 2>&1; fi
 done
 xdg-open "$URL"
