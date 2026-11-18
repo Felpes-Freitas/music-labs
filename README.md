@@ -26,9 +26,11 @@ Há um atalho no menu de aplicativos ("Music Labs") e o comando `musiclabs` em `
   pattern repete dentro do clip), região de loop, tracks com mute.
 - **Mixer**: 16 inserts + master, fader, pan, mute/solo, medidores, roteamento entre
   inserts (buses), até 10 efeitos por insert com dry/wet.
-- **Instrumentos nativos**: Synth subtrativo (2 osc + sub, unison até 7, filtro com
-  envelope, LFO, glide/mono), Sampler (qualquer formato via ffmpeg, keytrack, loop,
-  reverse, grupos de corte), Drum Synth (kick, 808, snare, clap, hats, tom, rim,
+- **Instrumentos nativos**: Prisma (sintetizador aditivo espectral: filtro harmônico
+  sem aliasing, pluck, phaser no espectro, unison de 8 vozes, camadas de oitava,
+  envelopes arrastáveis, ensemble), Synth subtrativo (2 osc + sub, unison até 7, filtro com
+  envelope, LFO, glide/mono), Sampler (arquivos ou instrumentos multi-sample de pastas,
+  segura/solta com loop de sustentação, raiz detectada por afinação, grupos de corte), Drum Synth (kick, 808, snare, clap, hats, tom, rim,
   perc, e modo "kit" com mapa GM), Pluck (Karplus-Strong) e FM.
 - **Efeitos**: EQ 4 bandas + HPF, filtro com LFO sincronizado, compressor com
   **sidechain**, delay sincronizado (ping-pong), reverb, chorus, saturação, bitcrusher,

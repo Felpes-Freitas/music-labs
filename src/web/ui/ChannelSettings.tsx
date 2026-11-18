@@ -7,6 +7,7 @@ import { set } from '../../core/ops';
 import * as A from '../../core/actions';
 import { Win, useCanvas } from './widgets';
 import { ParamGrid } from './ParamGrid';
+import { PrismaPanel } from './PrismaPanel';
 import { decodeWav } from '../../core/wav';
 
 function Waveform(p: { path: string }) {
@@ -107,6 +108,15 @@ export function ChannelSettings() {
   const ch = p.channels.find((c) => c.id === s.channelId);
   if (!ch) return null;
   const def = INSTRUMENTS[ch.type];
+  // O Prisma precisa de mais espaço: a janela cresce na primeira vez.
+  const w = s.windows.channel;
+  if (ch.type === 'prisma' && w.open && (w.w < 780 || w.h < 640)) {
+    const ws = document.querySelector('.workspace') as HTMLElement | null;
+    w.w = Math.max(w.w, Math.min(860, ws?.clientWidth ?? 860));
+    w.h = Math.max(w.h, Math.min(700, (ws?.clientHeight ?? 700) - 10));
+    w.x = Math.max(0, Math.min(w.x, (ws?.clientWidth ?? 1200) - w.w));
+    w.y = Math.max(0, Math.min(w.y, (ws?.clientHeight ?? 800) - w.h));
+  }
   return (
     <Win id="channel" title={`Canal · ${ch.name}`} minW={360} minH={260}>
       <div class="chset">
@@ -117,7 +127,7 @@ export function ChannelSettings() {
               <option value={t}>{INSTRUMENTS[t].label}</option>
             ))}
           </select>
-          <select value="" title="Carregar preset" onChange={(e) => {
+          {ch.type !== 'prisma' && <select value="" title="Carregar preset" onChange={(e) => {
             const v = (e.target as HTMLSelectElement).value;
             if (v) act(A.updateChannel, { channel: ch.id, preset: v });
           }}>
@@ -129,7 +139,7 @@ export function ChannelSettings() {
                   {k} ({v.type})
                 </option>
               ))}
-          </select>
+          </select>}
           <label title="Afinação do canal em semitons">
             pitch
             <input type="number" value={ch.pitch} min={-48} max={48} onChange={(e) => edit([set(['channels', ch.id, 'pitch'], Number((e.target as HTMLInputElement).value))])} />
@@ -139,7 +149,7 @@ export function ChannelSettings() {
             <input type="number" value={ch.insert} min={0} max={p.mixer.length - 1} onChange={(e) => edit([set(['channels', ch.id, 'insert'], Number((e.target as HTMLInputElement).value))])} />
           </label>
         </div>
-        <div class="hint">{def.description}</div>
+        {ch.type !== 'prisma' && <div class="hint">{def.description}</div>}
         {ch.type === 'sampler' && (
           <div class="sample-box">
             <div class="sample-path" title={String(ch.params.sample)}>
@@ -148,12 +158,16 @@ export function ChannelSettings() {
             <SourceBox path={String(ch.params.sample ?? '')} oneshot={ch.params.oneshot === true} loop={ch.params.loop === true} />
           </div>
         )}
-        <ParamGrid
-          defs={def.params}
-          values={ch.params}
-          onInput={(k, v) => previewEdit([set(['channels', ch.id, 'params', k], v)])}
-          onCommit={(k, v) => edit([set(['channels', ch.id, 'params', k], v)])}
-        />
+        {ch.type === 'prisma' ? (
+          <PrismaPanel ch={ch} />
+        ) : (
+          <ParamGrid
+            defs={def.params}
+            values={ch.params}
+            onInput={(k, v) => previewEdit([set(['channels', ch.id, 'params', k], v)])}
+            onCommit={(k, v) => edit([set(['channels', ch.id, 'params', k], v)])}
+          />
+        )}
         <MiniKeys channel={ch.id} />
       </div>
     </Win>

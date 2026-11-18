@@ -4,6 +4,7 @@
 import type { InstrumentType, Params } from './model.js';
 import { Adsr, DelayLine, Osc, OnePole, Svf, TAU, Wave, clamp, dbToGain, mtof, panGains } from './dsp.js';
 import { INSTRUMENTS, defaults } from './registry.js';
+import { Ensemble, PrismaVoice } from './prisma.js';
 
 export interface SampleData {
   sr: number;
@@ -756,8 +757,63 @@ export class FmInstrument extends Instrument {
   }
 }
 
+// ---------------------------------------------------------------- Prisma
+
+export class PrismaInstrument extends Instrument {
+  maxVoices = 12;
+  private lastPitch = 60;
+  private ens: Ensemble;
+  private tl = new Float32Array(128);
+  private tr = new Float32Array(128);
+  constructor(sr: number, type: InstrumentType, params: Params, samples: SampleLookup) {
+    super(sr, type, params, samples);
+    this.ens = new Ensemble(sr);
+  }
+  protected makeVoice(n: NoteOn): Voice | null {
+    const mono = bool(this.p, 'mono');
+    const glide = num(this.p, 'glide') > 0 || n.slide;
+    if (mono) {
+      const live = this.voices.find((v) => !v.done) as unknown as PrismaVoice | undefined;
+      for (const v of this.voices) if ((v as unknown) !== live) v.kill();
+      if (live) {
+        live.legato(n);
+        this.lastPitch = n.key;
+        return null;
+      }
+    }
+    const v = new PrismaVoice(this.sr, this.p, n, glide ? this.lastPitch : n.key);
+    this.lastPitch = n.key;
+    return v as unknown as Voice;
+  }
+  setParams(params: Params) {
+    super.setParams(params);
+    for (const v of this.voices) {
+      (v as unknown as PrismaVoice).p = this.p;
+      (v as unknown as PrismaVoice).applyEnv();
+    }
+  }
+  render(L: Float32Array, R: Float32Array, from: number, to: number) {
+    const amount = num(this.p, 'ensemble', 0);
+    if (amount <= 0) return super.render(L, R, from, to);
+    if (this.tl.length < to) {
+      this.tl = new Float32Array(to);
+      this.tr = new Float32Array(to);
+    }
+    this.tl.fill(0, from, to);
+    this.tr.fill(0, from, to);
+    super.render(this.tl, this.tr, from, to);
+    this.ens.process(this.tl, this.tr, from, to, amount);
+    for (let i = from; i < to; i++) {
+      L[i] += this.tl[i];
+      R[i] += this.tr[i];
+    }
+  }
+}
+
 export function createInstrument(sr: number, type: InstrumentType, params: Params, samples: SampleLookup): Instrument {
   switch (type) {
+    case 'prisma':
+      return new PrismaInstrument(sr, type, params, samples);
     case 'synth':
       return new SynthInstrument(sr, type, params, samples);
     case 'sampler':
