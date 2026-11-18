@@ -8,9 +8,51 @@ import { INSTRUMENTS, defaults } from './registry.js';
 export interface SampleData {
   sr: number;
   ch: Float32Array[]; // 1 ou 2 canais
+  /** Nota raiz gravada no arquivo (bloco smpl), MIDI fracionário. */
+  root?: number;
+  /** Loop de sustentação [início, fim) em frames. */
+  loop?: [number, number];
 }
 
-export type SampleLookup = (path: string) => SampleData | undefined;
+/** Uma região de um instrumento multi-sample. */
+export interface SampleZone {
+  key: string; // chave do sample no banco
+  root: number; // MIDI fracionário (já inclui a afinação fina)
+  lo: number;
+  hi: number;
+  vlo: number; // 0..1
+  vhi: number;
+}
+
+export interface SampleSet {
+  name: string;
+  zones: SampleZone[];
+}
+
+/** Banco de samples da engine: arquivos soltos e instrumentos multi-sample. */
+export interface SampleBank {
+  get(path: string): SampleData | undefined;
+  set(path: string): SampleSet | undefined;
+}
+
+/** Compatibilidade: aceita uma função simples de busca de arquivo. */
+export type SampleLookup = SampleBank | ((path: string) => SampleData | undefined);
+
+function asBank(l: SampleLookup): SampleBank {
+  return typeof l === 'function' ? { get: l, set: () => undefined } : l;
+}
+
+/** Escolhe a zona pela tecla (raiz mais próxima dentro da faixa) e pela velocity. */
+export function pickZone(set: SampleSet, key: number, vel: number): SampleZone | undefined {
+  let cands = set.zones.filter((z) => key >= z.lo && key <= z.hi);
+  if (!cands.length) {
+    let best: SampleZone | undefined;
+    for (const z of set.zones) if (!best || Math.abs(z.root - key) < Math.abs(best.root - key)) best = z;
+    if (!best) return undefined;
+    cands = set.zones.filter((z) => z.lo === best!.lo && z.hi === best!.hi);
+  }
+  return cands.find((z) => vel >= z.vlo && vel <= z.vhi) ?? cands[cands.length - 1];
+}
 
 export interface NoteOn {
   key: number;
@@ -42,8 +84,10 @@ export abstract class Instrument {
   protected p: Params;
   protected maxVoices = 16;
   private ageCounter = 0;
-  constructor(protected sr: number, public type: InstrumentType, params: Params, protected samples: SampleLookup) {
+  protected samples: SampleBank;
+  constructor(protected sr: number, public type: InstrumentType, params: Params, samples: SampleLookup) {
     this.p = { ...defaults(INSTRUMENTS[type].params), ...params };
+    this.samples = asBank(samples);
   }
   setParams(params: Params) {
     this.p = { ...defaults(INSTRUMENTS[this.type].params), ...params };
@@ -294,18 +338,39 @@ class SamplerVoice implements Voice {
   private pr: number;
   private filt: [Svf, Svf] | null = null;
   private killRamp = -1;
-  constructor(sr: number, private p: Params, private s: SampleData, n: NoteOn) {
+  private loopS = -1;
+  private loopE = -1;
+  private xf = 0;
+  constructor(sr: number, private p: Params, private s: SampleData, n: NoteOn, root: number, forceKeytrack: boolean) {
     this.key = n.key;
-    this.gate = bool(p, 'oneshot') ? 0 : n.gate;
+    const oneshot = bool(p, 'oneshot');
     const len = s.ch[0].length;
     const reverse = bool(p, 'reverse');
-    const semis = bool(p, 'keytrack') ? n.key - num(p, 'root', 60) : 0;
-    this.inc = (Math.pow(2, semis / 12) * s.sr) / sr * (reverse ? -1 : 1);
+    const semis = forceKeytrack || bool(p, 'keytrack') ? n.key - root : 0;
+    this.inc = ((Math.pow(2, semis / 12) * s.sr) / sr) * (reverse ? -1 : 1);
     const st = num(p, 'start') * len;
     this.pos = reverse ? len - 1 - st : st;
+    // Loop de sustentação: usa os pontos do arquivo; sem eles, cria um com crossfade.
+    if (bool(p, 'loop') && !reverse && len > 256) {
+      if (s.loop) {
+        [this.loopS, this.loopE] = s.loop;
+        this.xf = Math.min(96, (this.loopE - this.loopS) / 4);
+      } else {
+        this.loopS = Math.floor(len * 0.35);
+        this.loopE = Math.floor(len * 0.92);
+        this.xf = Math.min(s.sr * 0.15, (this.loopE - this.loopS) / 2);
+      }
+      this.xf = Math.max(0, Math.min(this.xf, this.loopS));
+      if (this.loopE - this.loopS < 32 || this.loopS < 0) this.loopS = this.loopE = -1;
+    }
+    // One-shot toca o arquivo até o fim; com loop ligado precisa respeitar a nota.
+    this.gate = oneshot && this.loopE < 0 ? 0 : n.gate;
     this.env = new Adsr(sr);
-    this.env.a = num(p, 'a'); this.env.d = num(p, 'd'); this.env.s = num(p, 's'); this.env.r = num(p, 'r');
-    if (bool(p, 'oneshot')) this.env.s = this.env.d >= 7.9 ? 1 : this.env.s;
+    this.env.a = num(p, 'a');
+    this.env.d = num(p, 'd');
+    this.env.s = num(p, 's');
+    this.env.r = num(p, 'r');
+    if (oneshot) this.env.s = this.env.d >= 7.9 ? 1 : this.env.s;
     this.env.trigger();
     this.gain = velGain(n.vel, num(p, 'velSens', 0.7)) * num(p, 'gain', 1);
     [this.pl, this.pr] = panGains(n.pan);
@@ -326,10 +391,13 @@ class SamplerVoice implements Voice {
     const ch0 = this.s.ch[0];
     const ch1 = this.s.ch[1] ?? ch0;
     const len = ch0.length;
-    const loop = bool(this.p, 'loop');
+    const looping = this.loopE > 0;
+    const loopLen = this.loopE - this.loopS;
+    const wholeLoop = !looping && bool(this.p, 'loop');
     for (let i = from; i < to; i++) {
+      if (looping && this.pos >= this.loopE) this.pos -= loopLen;
       if (this.pos < 0 || this.pos >= len - 1) {
-        if (loop && len > 2) this.pos = this.inc > 0 ? 0 : len - 2;
+        if (wholeLoop && len > 2) this.pos = this.inc > 0 ? 0 : len - 2;
         else {
           this.done = true;
           return;
@@ -339,6 +407,18 @@ class SamplerVoice implements Voice {
       const f = this.pos - idx;
       let l = ch0[idx] + (ch0[idx + 1] - ch0[idx]) * f;
       let r = ch1[idx] + (ch1[idx + 1] - ch1[idx]) * f;
+      if (looping && this.xf > 0 && this.pos > this.loopE - this.xf) {
+        // crossfade de potência constante com o trecho antes do início do loop
+        const t = (this.pos - (this.loopE - this.xf)) / this.xf;
+        const ap = this.pos - loopLen;
+        const ai = ap | 0;
+        const af = ap - ai;
+        const al = ch0[ai] + (ch0[ai + 1] - ch0[ai]) * af;
+        const ar = ch1[ai] + (ch1[ai + 1] - ch1[ai]) * af;
+        const g1 = Math.cos((t * Math.PI) / 2), g2 = Math.sin((t * Math.PI) / 2);
+        l = l * g1 + al * g2;
+        r = r * g1 + ar * g2;
+      }
       this.pos += this.inc;
       if (this.filt) {
         l = this.filt[0].process(l, 0);
@@ -360,11 +440,19 @@ class SamplerVoice implements Voice {
 }
 
 export class SamplerInstrument extends Instrument {
-  maxVoices = 24;
+  maxVoices = 32;
   protected makeVoice(n: NoteOn): Voice | null {
-    const s = this.samples(str(this.p, 'sample'));
+    const path = str(this.p, 'sample');
+    const set = this.samples.set(path);
+    if (set) {
+      const z = pickZone(set, n.key, n.vel);
+      const data = z && this.samples.get(z.key);
+      if (!z || !data || data.ch[0].length < 2) return null;
+      return new SamplerVoice(this.sr, this.p, data, n, z.root, true);
+    }
+    const s = this.samples.get(path);
     if (!s || s.ch[0].length < 2) return null;
-    return new SamplerVoice(this.sr, this.p, s, n);
+    return new SamplerVoice(this.sr, this.p, s, n, num(this.p, 'root', 60), false);
   }
 }
 

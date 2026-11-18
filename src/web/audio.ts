@@ -56,21 +56,43 @@ export class Audio {
     }
   }
 
+  /** Carrega um arquivo ou um instrumento multi-sample (pasta / .fst) na engine. */
   loadSample(path: string): Promise<void> {
     if (this.loaded.has(path)) return Promise.resolve();
     let pr = this.loading.get(path);
     if (pr) return pr;
     pr = (async () => {
-      const r = await fetch(`/api/sample?path=${encodeURIComponent(path)}`);
-      if (!r.ok) throw new Error(`sample ${path}: ${r.status}`);
-      const data = decodeWav(new Uint8Array(await r.arrayBuffer()));
-      this.post({ type: 'sample', path, sr: data.sr, ch: data.ch });
+      const info = await fetch(`/api/source?path=${encodeURIComponent(path)}`).then((r) => r.json());
+      if (info.kind === 'set') {
+        this.onLoading(`Carregando ${info.name} (${info.zones.length} samples)…`);
+        // Cada zona vem do servidor já decodificada; a chave casa com a do conjunto.
+        await Promise.all(
+          info.zones.map(async (z: { i: number }) => {
+            const r = await fetch(`/api/zone?path=${encodeURIComponent(info.path)}&i=${z.i}`);
+            if (!r.ok) throw new Error(`zona ${z.i}: ${r.status}`);
+            const d = decodeWav(new Uint8Array(await r.arrayBuffer()));
+            this.post({ type: 'sample', path: `${info.path}#${z.i}`, sr: d.sr, ch: d.ch, root: d.root, loop: d.loop });
+          }),
+        );
+        const set = {
+          name: info.name,
+          zones: info.zones.map((z: any) => ({ key: `${info.path}#${z.i}`, root: z.root, lo: z.lo, hi: z.hi, vlo: z.vlo, vhi: z.vhi })),
+        };
+        this.post({ type: 'sampleset', path, set });
+        this.onLoading(`${info.name} pronto`);
+      } else {
+        const r = await fetch(`/api/sample?path=${encodeURIComponent(path)}`);
+        if (!r.ok) throw new Error(`sample ${path}: ${r.status}`);
+        const data = decodeWav(new Uint8Array(await r.arrayBuffer()));
+        this.post({ type: 'sample', path, sr: data.sr, ch: data.ch, root: data.root, loop: data.loop });
+      }
       this.loaded.add(path);
     })();
     this.loading.set(path, pr);
     pr.catch((e) => console.warn(e)).finally(() => this.loading.delete(path));
     return pr;
   }
+  onLoading: (msg: string) => void = () => {};
 
   play(mode: 'pattern' | 'song', patternId: string | null, tick?: number) {
     this.start().then(() => this.post({ type: 'play', mode, patternId, tick }));

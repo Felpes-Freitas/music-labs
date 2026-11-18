@@ -19,6 +19,7 @@ import { Store, listProjects, RENDERS_DIR, SAMPLES_DIR, PROJECTS_DIR, safeName }
 import { AUDIO_EXT, FL_DIR, resolveFlPath, wavFor } from './samples.js';
 import { renderProject } from './render.js';
 import { localKit, localSample } from './localkit.js';
+import { folderHasLoops, localInstrument, localInstruments, samplerParamsFor, setFolder, sourceInfo, zoneWav } from './sampleset.js';
 
 export const PORT = Number(process.env.MUSICLABS_PORT ?? 7717);
 /** Raiz do projeto: sobe até achar o package.json (funciona em src/ e em build/). */
@@ -79,10 +80,33 @@ export const ACTIONS: Record<string, ActionFn> = {
 /** "localSample": nome de um som do kit local (ex. "Kick") vira um sampler com o caminho. */
 function expandLocalSample(name: string, args: any) {
   if ((name !== 'addChannel' && name !== 'updateChannel') || !args?.localSample) return args;
-  const ls = localSample(String(args.localSample));
-  if (!ls) throw new Error(`Sample local "${args.localSample}" não encontrado. Disponíveis: ${localKit().map((x) => x.name).join(', ') || 'nenhum (FL Studio não instalado)'}`);
-  const { localSample: _, ...rest } = args;
-  return { name: ls.name, ...rest, type: 'sampler', preset: undefined, params: { sample: ls.path, keytrack: true, oneshot: true, ...(ls.cut ? { cut: ls.cut } : {}), ...(rest.params ?? {}) } };
+  const { localSample: wanted, ...rest } = args;
+  const ls = localSample(String(wanted));
+  if (ls) return { name: ls.name, ...rest, type: 'sampler', preset: undefined, params: { sample: ls.path, keytrack: true, oneshot: true, ...(ls.cut ? { cut: ls.cut } : {}), ...(rest.params ?? {}) } };
+  const li = localInstrument(String(wanted));
+  if (li) return { name: li.name, ...rest, type: 'sampler', preset: undefined, params: { sample: li.path, ...(rest.params ?? {}) } };
+  const all = [...localKit().map((x) => x.name), ...localInstruments().map((x) => x.name)];
+  throw new Error(`Som local "${wanted}" não encontrado. Disponíveis: ${all.join(', ') || 'nenhum (FL Studio não instalado)'}`);
+}
+
+/**
+ * Canais sampler criados pelo MCP ganham o modo certo para o som: bateria em
+ * one-shot; instrumento segurando enquanto a nota dura, com loop de sustentação
+ * e raiz detectada. Parâmetros passados explicitamente têm prioridade.
+ */
+async function enrichSampler(list: { name: string; args: any }[]) {
+  for (const a of list) {
+    if (a.name !== 'addChannel' && a.name !== 'updateChannel') continue;
+    const args = expandLocalSample(a.name, a.args ?? {});
+    a.args = args;
+    const sample = args?.params?.sample;
+    if (args?.preset || typeof sample !== 'string' || !sample) continue;
+    if (args.type && args.type !== 'sampler') continue;
+    const given = { ...args.params };
+    delete given.sample;
+    const { params } = await samplerParamsFor(resolveFlPath(sample), given);
+    a.args = { ...args, type: 'sampler', params };
+  }
 }
 
 /** Projeto novo: 4 canais de bateria (samples da instalação local, ou sintetizados). */
@@ -135,7 +159,7 @@ function browseRoots() {
 }
 
 function browse(dir: string) {
-  const out: { name: string; path: string; kind: 'dir' | 'audio' | 'flp' | 'project' }[] = [];
+  const out: { name: string; path: string; kind: 'dir' | 'audio' | 'flp' | 'project' | 'instrument' }[] = [];
   for (const e of readdirSync(dir)) {
     if (e.startsWith('.')) continue;
     const full = join(dir, e);
@@ -149,6 +173,7 @@ function browse(dir: string) {
     if (st.isDirectory()) out.push({ name: e, path: full, kind: 'dir' });
     else if (AUDIO_EXT.has(ext)) out.push({ name: e, path: full, kind: 'audio' });
     else if (ext === '.flp') out.push({ name: e, path: full, kind: 'flp' });
+    else if (ext === '.fst' && setFolder(full)) out.push({ name: e.replace(/\.fst$/i, ''), path: full, kind: 'instrument' });
     else if (ext === '.musiclabs') out.push({ name: e, path: full, kind: 'project' });
   }
   return out.sort((a, b) => (a.kind === 'dir' ? 0 : 1) - (b.kind === 'dir' ? 0 : 1) || a.name.localeCompare(b.name));
@@ -187,7 +212,16 @@ function searchSamples(query: string, limit = 40) {
 
 function importFlpFile(path: string) {
   const buf = new Uint8Array(readFileSync(path));
-  const { project, report } = importFlp(buf, basename(path, extname(path)), { resolveSample: resolveFlPath, exists: existsSync });
+  const { project, report } = importFlp(buf, basename(path, extname(path)), {
+    resolveSample: resolveFlPath,
+    exists: existsSync,
+    // Canais com o nome de um instrumento dos packs locais (ex.: "Strings Section")
+    // viram o instrumento multi-sample correspondente.
+    instrumentFor: (name) => {
+      const li = localInstrument(name.replace(/\s*#\d+$/, ''));
+      return li ? { path: li.path, loop: folderHasLoops(li.path) } : undefined;
+    },
+  });
   store.load(project, null);
   return report;
 }
@@ -254,7 +288,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       case 'GET /api/summary':
         return json(res, 200, { ...A.describe(store.project), file: store.path, unsaved: store.dirty, ui: uiStatus });
       case 'GET /api/registry':
-        return json(res, 200, { instruments: INSTRUMENTS, effects: EFFECTS, presets: PRESETS, scales: Object.keys(SCALES), localSamples: localKit() });
+        return json(res, 200, { instruments: INSTRUMENTS, effects: EFFECTS, presets: PRESETS, scales: Object.keys(SCALES), localSamples: localKit(), localInstruments: localInstruments() });
       case 'GET /api/status':
         return json(res, 200, uiStatus);
       case 'POST /api/ops': {
@@ -264,6 +298,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       }
       case 'POST /api/actions': {
         const b = await body(req);
+        await enrichSampler(b.actions);
         const results = runActions(b.actions, b.origin ?? 'mcp', b.label);
         return json(res, 200, { results, rev: store.rev });
       }
@@ -295,6 +330,13 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         return json(res, 200, browse(q('dir')));
       case 'GET /api/search':
         return json(res, 200, searchSamples(q('q'), Number(q('limit') || 40)));
+      case 'GET /api/source':
+        return json(res, 200, await sourceInfo(resolveFlPath(q('path'))));
+      case 'GET /api/zone': {
+        const wav = await zoneWav(q('path'), Number(q('i')));
+        res.writeHead(200, { 'content-type': 'audio/wav', 'cache-control': 'max-age=3600' });
+        return res.end(Buffer.from(wav.buffer, wav.byteOffset, wav.byteLength));
+      }
       case 'GET /api/sample': {
         const path = resolveFlPath(q('path'));
         const wav = await wavFor(path);

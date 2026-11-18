@@ -150,7 +150,7 @@ tool(
       if (!v) throw new Error(`Nada chamado ${name}`);
       return v;
     }
-    if (kind === 'samples') return r.localSamples;
+    if (kind === 'samples') return { bateria: r.localSamples.map((x: any) => x.name), instrumentos: r.localInstruments.map((x: any) => `${x.name} (${x.category})`) };
     if (kind === 'presets') return Object.fromEntries(Object.entries(r.presets).map(([k, v]: any) => [k, `${v.type}: ${v.description}`]));
     if (kind === 'instruments') return summarize(r.instruments);
     if (kind === 'effects') return summarize(r.effects);
@@ -159,6 +159,7 @@ tool(
       instruments: summarize(r.instruments),
       effects: summarize(r.effects),
       localSamples: r.localSamples.map((x: any) => x.name),
+      localInstruments: r.localInstruments.map((x: any) => x.name),
       scales: r.scales,
     };
   },
@@ -227,7 +228,7 @@ const instrumentType = z.enum(['synth', 'sampler', 'drum', 'pluck', 'fm']);
 
 tool(
   'add_channel',
-  'Adiciona um canal ao rack. Use preset (ver list_sounds), localSample (sample da instalação local do FL, ex. "Kick", "909 Snare"; ver list_sounds) ou type + params. Para outro arquivo: type "sampler", params {sample: "/caminho.wav"}. insert "auto" cria um insert próprio no mixer.',
+  'Adiciona um canal ao rack. Use preset (ver list_sounds), localSample (som da instalação local do FL: bateria como "Kick", "909 Snare", ou instrumento multi-sample como "Strings Section", "Rhodes", "Close Grand"; ver list_sounds kind "samples") ou type + params. Para outro arquivo ou pasta: type "sampler", params {sample: "/caminho.wav" ou "/pasta/de/samples"}. O modo é escolhido sozinho (bateria one-shot; instrumento segura enquanto a nota dura, com loop e raiz detectada), mas params explícitos (oneshot, loop, root, r...) têm prioridade. insert "auto" cria um insert próprio no mixer.',
   {
     name: z.string().optional(),
     localSample: z.string().optional(),

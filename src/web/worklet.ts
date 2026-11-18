@@ -20,7 +20,10 @@ class MusicLabsProcessor extends AudioWorkletProcessor {
           eng.setProject(m.project);
           break;
         case 'sample':
-          eng.setSample(m.path, { sr: m.sr, ch: m.ch });
+          eng.setSample(m.path, { sr: m.sr, ch: m.ch, root: m.root, loop: m.loop });
+          break;
+        case 'sampleset':
+          eng.setSampleSet(m.path, m.set);
           break;
         case 'play':
           eng.play(m.mode, m.patternId, m.tick);

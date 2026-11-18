@@ -55,6 +55,14 @@ function onKeyUp(e: KeyboardEvent) {
   }
 }
 
+// Se a janela perde o foco com teclas apertadas, solta todas (evita nota presa).
+window.addEventListener('blur', () => {
+  for (const [k, h] of held) {
+    audio.liveOff(h.ch, h.key);
+    held.delete(k);
+  }
+});
+
 // Teclado MIDI (Web MIDI) toca o canal selecionado.
 async function setupMidi() {
   if (!('requestMIDIAccess' in navigator)) return;

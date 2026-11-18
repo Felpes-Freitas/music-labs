@@ -4,7 +4,7 @@
 
 import type { Channel, Insert, Project } from './model.js';
 import { PPQ, STEP, patternLength, songLength } from './model.js';
-import { Instrument, SampleData, createInstrument } from './instruments.js';
+import { Instrument, SampleBank, SampleData, SampleSet, createInstrument } from './instruments.js';
 import { Fx, FxContext, createEffect } from './effects.js';
 import { panGains } from './dsp.js';
 
@@ -63,6 +63,8 @@ export class Engine {
   private channels = new Map<string, ChannelState>();
   private inserts: InsertState[] = [];
   private samples = new Map<string, SampleData>();
+  private sets = new Map<string, SampleSet>();
+  private bank: SampleBank = { get: (p) => this.samples.get(p), set: (p) => this.sets.get(p) };
   private order: number[] = [];
   private flashes = new Set<string>();
   statFrames = 0;
@@ -73,12 +75,14 @@ export class Engine {
     this.samples.set(path, data);
   }
   hasSample(path: string) {
-    return this.samples.has(path);
+    return this.samples.has(path) || this.sets.has(path);
+  }
+  setSampleSet(path: string, set: SampleSet) {
+    this.sets.set(path, set);
   }
 
   setProject(p: Project) {
     this.project = p;
-    const lookup = (path: string) => this.samples.get(path);
     const seen = new Set<string>();
     for (const ch of p.channels) {
       seen.add(ch.id);
@@ -86,7 +90,7 @@ export class Engine {
       const cur = this.channels.get(ch.id);
       if (!cur || cur.inst.type !== ch.type) {
         this.channels.set(ch.id, {
-          inst: createInstrument(this.sr, ch.type, ch.params, lookup),
+          inst: createInstrument(this.sr, ch.type, ch.params, this.bank),
           sig,
           L: new Float32Array(BLOCK),
           R: new Float32Array(BLOCK),

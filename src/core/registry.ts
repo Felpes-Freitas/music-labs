@@ -61,15 +61,15 @@ export const INSTRUMENTS: Record<InstrumentType, { label: string; description: s
   },
   sampler: {
     label: 'Sampler',
-    description: 'Toca um arquivo de áudio com afinação por tecla, envelope, loop e reverse.',
+    description: 'Toca um arquivo de áudio ou um instrumento multi-sample (pasta com um sample por região do teclado). One-shot toca o arquivo inteiro ao apertar (bateria); desligado, a nota dura enquanto a tecla estiver pressionada e solta com o release (instrumentos). Loop sustenta notas longas usando os pontos de loop do arquivo.',
     params: [
       { key: 'sample', label: 'Sample', kind: 'text', def: '' },
       num('root', 'Tom raiz', 0, 127, 60, '', 'lin', 1),
       bool('keytrack', 'Seguir tecla', true),
       num('start', 'Início', 0, 1, 0),
-      bool('loop', 'Loop', false),
+      bool('loop', 'Loop de sustentação', false),
       bool('reverse', 'Reverse', false),
-      bool('oneshot', 'One-shot', true),
+      bool('oneshot', 'One-shot (ignora soltar)', true),
       num('cut', 'Grupo de corte', 0, 16, 0, '', 'lin', 1),
       num('a', 'Ataque', 0.0005, 4, 0.001, 's', 'log'),
       num('d', 'Decay', 0.005, 8, 1, 's', 'log'),
