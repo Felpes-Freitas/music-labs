@@ -251,3 +251,51 @@ export function panGains(pan: number): [number, number] {
   const a = ((clamp(pan, -1, 1) + 1) * Math.PI) / 4;
   return [Math.cos(a) * Math.SQRT2, Math.sin(a) * Math.SQRT2];
 }
+
+/**
+ * Pitch shifter em tempo real que não muda o andamento: duas cabeças de
+ * leitura numa linha de atraso cuja distância varia (1 - razão) por amostra,
+ * com janelas sen² complementares (as cabeças "pulam" quando o ganho é zero).
+ * Feito para ajustes pequenos (até ±1 semitom); latência média de meia janela.
+ */
+export class PitchShifter {
+  private bl: Float32Array;
+  private br: Float32Array;
+  private w = 0;
+  private d = 0;
+  private size: number;
+  constructor(sr: number, windowMs = 40) {
+    this.size = Math.max(64, Math.round((sr * windowMs) / 1000));
+    this.bl = new Float32Array(this.size * 2 + 8);
+    this.br = new Float32Array(this.size * 2 + 8);
+  }
+  process(L: Float32Array, R: Float32Array, from: number, to: number, ratio: number) {
+    const W = this.size;
+    const len = this.bl.length;
+    const step = 1 - ratio;
+    for (let i = from; i < to; i++) {
+      this.bl[this.w] = L[i];
+      this.br[this.w] = R[i];
+      this.d += step;
+      if (this.d >= W) this.d -= W;
+      else if (this.d < 0) this.d += W;
+      let l = 0, r = 0;
+      for (let h = 0; h < 2; h++) {
+        let dd = this.d + h * W * 0.5;
+        if (dd >= W) dd -= W;
+        const g = Math.sin((Math.PI * dd) / W);
+        const gain = g * g;
+        let rp = this.w - dd - 1;
+        while (rp < 0) rp += len;
+        const ri = rp | 0;
+        const fr = rp - ri;
+        const rj = ri + 1 === len ? 0 : ri + 1;
+        l += (this.bl[ri] + (this.bl[rj] - this.bl[ri]) * fr) * gain;
+        r += (this.br[ri] + (this.br[rj] - this.br[ri]) * fr) * gain;
+      }
+      L[i] = l;
+      R[i] = r;
+      this.w = this.w + 1 === len ? 0 : this.w + 1;
+    }
+  }
+}

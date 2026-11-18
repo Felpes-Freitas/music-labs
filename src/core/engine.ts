@@ -6,7 +6,7 @@ import type { Channel, Insert, Project } from './model.js';
 import { PPQ, STEP, patternLength, songLength } from './model.js';
 import { Instrument, SampleBank, SampleData, SampleSet, createInstrument } from './instruments.js';
 import { Fx, FxContext, createEffect } from './effects.js';
-import { panGains } from './dsp.js';
+import { PitchShifter, panGains } from './dsp.js';
 
 export const BLOCK = 128;
 
@@ -15,6 +15,9 @@ interface ChannelState {
   sig: string; // type + params serializados
   L: Float32Array;
   R: Float32Array;
+  fx: Map<string, { fx: Fx; sig: string }>;
+  shifter: PitchShifter | null;
+  quiet: number; // amostras seguidas em silêncio (para parar de processar a cauda dos efeitos)
 }
 
 interface InsertState {
@@ -31,6 +34,7 @@ interface Ev {
   ch: string;
   frame: number;
   key: number;
+  played: number; // tecla tocada (antes da transposição), para o teclado da tela
   vel: number;
   gateTicks: number;
   pan: number;
@@ -45,6 +49,8 @@ export interface EngineStatus {
   meters: [number, number][];
   gr: number[];
   activeChannels: string[];
+  /** Teclas soando agora no canal observado (watch), como foram tocadas. */
+  lit: number[];
 }
 
 export interface InsertStats {
@@ -67,6 +73,8 @@ export class Engine {
   private bank: SampleBank = { get: (p) => this.samples.get(p), set: (p) => this.sets.get(p) };
   private order: number[] = [];
   private flashes = new Set<string>();
+  private watched: string | null = null;
+  private lit = new Map<number, number>(); // tecla -> amostras restantes acesa
   statFrames = 0;
 
   constructor(public sr: number) {}
@@ -94,11 +102,27 @@ export class Engine {
           sig,
           L: new Float32Array(BLOCK),
           R: new Float32Array(BLOCK),
+          fx: cur?.fx ?? new Map(),
+          shifter: null,
+          quiet: 0,
         });
       } else if (cur.sig !== sig) {
         cur.inst.setParams(ch.params);
         cur.sig = sig;
       }
+      const st = this.channels.get(ch.id)!;
+      const keep = new Set<string>();
+      for (const e of ch.effects ?? []) {
+        keep.add(e.id);
+        const esig = e.type + JSON.stringify(e.params);
+        const ce = st.fx.get(e.id);
+        if (!ce || ce.fx.type !== e.type) st.fx.set(e.id, { fx: createEffect(this.sr, e.type, e.params), sig: esig });
+        else if (ce.sig !== esig) {
+          ce.fx.setParams(e.params);
+          ce.sig = esig;
+        }
+      }
+      for (const id of [...st.fx.keys()]) if (!keep.has(id)) st.fx.delete(id);
     }
     for (const id of [...this.channels.keys()]) if (!seen.has(id)) this.channels.delete(id);
 
@@ -147,8 +171,16 @@ export class Engine {
     if (!c || !ch) return;
     this.choke(ch, c);
     const gate = gateTicks === null ? 1e12 : this.ticksToFrames(gateTicks);
-    c.inst.noteOn({ key: key + ch.pitch, vel, gate, pan: 0 });
+    c.inst.noteOn({ key: key + ch.pitch, vel, gate, pan: 0, detune: detuneFor(ch) });
+    c.quiet = 0;
     this.flashes.add(channelId);
+    if (channelId === this.watched) this.lit.set(key, gateTicks === null ? Infinity : gate);
+  }
+
+  /** Canal cujas teclas acesas vão no status (o que está aberto na tela). */
+  watch(channelId: string | null) {
+    this.watched = channelId;
+    this.lit.clear();
   }
   liveOff(channelId: string, key: number) {
     const c = this.channels.get(channelId);
@@ -158,6 +190,7 @@ export class Engine {
       v.gate = 0;
       v.release();
     }
+    if (channelId === this.watched) this.lit.delete(key);
   }
 
   private ticksToFrames(t: number) {
@@ -202,7 +235,7 @@ export class Engine {
           const t = swingTick(n.pos);
           if (t >= from && t < to) {
             const abs = base + t;
-            out.push({ ch: chId, frame: frameAt(abs), key: n.key + ch.pitch, vel: n.vel, gateTicks: Math.min(n.len, clipEnd - abs), pan: n.pan ?? 0, slide: n.slide });
+            out.push({ ch: chId, frame: frameAt(abs), key: n.key + ch.pitch, played: n.key, vel: n.vel, gateTicks: Math.min(n.len, clipEnd - abs), pan: n.pan ?? 0, slide: n.slide });
           }
         }
       }
@@ -290,11 +323,21 @@ export class Engine {
       ins.L.fill(0, 0, n);
       ins.R.fill(0, 0, n);
     }
+    const fxCtx: FxContext = {
+      sr: this.sr,
+      bpm: p.bpm,
+      beat: beatAtStart,
+      insertBus: (i) => (this.inserts[i] ? [this.inserts[i].L, this.inserts[i].R] : undefined),
+    };
     for (const ch of p.channels) {
       const st = this.channels.get(ch.id);
       if (!st) continue;
       const evs = byCh.get(ch.id);
-      if (!evs && !st.inst.busy) continue;
+      const fxOn = (ch.effects ?? []).some((e) => e.enabled);
+      const fine = ch.fine ?? 0;
+      const stretch = ch.type === 'sampler' && (ch.pitchMode ?? 'stretch') === 'stretch' && Math.abs(fine) > 0.5;
+      // Sem notas e sem voz soando: só continua se houver cauda de efeito por terminar.
+      if (!evs && !st.inst.busy && (!(fxOn || stretch) || st.quiet > this.sr * 4)) continue;
       st.L.fill(0, 0, n);
       st.R.fill(0, 0, n);
       let pos = 0;
@@ -304,19 +347,52 @@ export class Engine {
           if (e.frame > pos) st.inst.render(st.L, st.R, pos, e.frame);
           pos = e.frame;
           this.choke(ch, st);
-          st.inst.noteOn({ key: e.key, vel: e.vel, gate: Math.max(1, Math.round(e.gateTicks / tps)), pan: e.pan, slide: e.slide });
+          const gate = Math.max(1, Math.round(e.gateTicks / tps));
+          st.inst.noteOn({ key: e.key, vel: e.vel, gate, pan: e.pan, slide: e.slide, detune: detuneFor(ch) });
           this.flashes.add(ch.id);
+          if (ch.id === this.watched) this.lit.set(e.played, Math.max(this.lit.get(e.played) ?? 0, e.frame + gate));
         }
       }
       st.inst.render(st.L, st.R, pos, n);
+      // Ajuste fino do sampler sem mudar o andamento.
+      if (stretch) {
+        if (!st.shifter) st.shifter = new PitchShifter(this.sr);
+        st.shifter.process(st.L, st.R, 0, n, Math.pow(2, fine / 1200));
+      } else st.shifter = null;
+      for (const e of ch.effects ?? []) {
+        if (!e.enabled) continue;
+        const fx = st.fx.get(e.id)?.fx;
+        if (!fx) continue;
+        if (e.mix >= 0.999) fx.process(st.L, st.R, n, fxCtx);
+        else {
+          const dl = st.L.slice(0, n), dr = st.R.slice(0, n);
+          fx.process(st.L, st.R, n, fxCtx);
+          for (let i = 0; i < n; i++) {
+            st.L[i] = st.L[i] * e.mix + dl[i] * (1 - e.mix);
+            st.R[i] = st.R[i] * e.mix + dr[i] * (1 - e.mix);
+          }
+        }
+      }
+      let peak = 0;
       const [gl, gr] = panGains(ch.pan);
       const vol = ch.mute ? 0 : ch.volume;
       const target = this.inserts[ch.insert] ?? this.inserts[0];
       for (let i = 0; i < n; i++) {
-        target.L[i] += st.L[i] * vol * gl;
-        target.R[i] += st.R[i] * vol * gr;
+        const l = st.L[i], r = st.R[i];
+        target.L[i] += l * vol * gl;
+        target.R[i] += r * vol * gr;
+        const a = Math.abs(l) + Math.abs(r);
+        if (a > peak) peak = a;
       }
+      st.quiet = evs || st.inst.busy || peak > 1e-5 ? 0 : st.quiet + n;
     }
+    // teclas acesas: conta o tempo das notas da sequência
+    if (this.lit.size)
+      for (const [k, left] of this.lit) {
+        if (left === Infinity) continue;
+        if (left - n <= 0) this.lit.delete(k);
+        else this.lit.set(k, left - n);
+      }
 
     // Mixer
     const anySolo = p.mixer.some((m, i) => i > 0 && m.solo);
@@ -397,7 +473,7 @@ export class Engine {
     });
     const active = [...this.flashes];
     this.flashes.clear();
-    return { playing: this.playing, mode: this.mode, patternId: this.patternId, tick: this.tick, meters, gr, activeChannels: active };
+    return { playing: this.playing, mode: this.mode, patternId: this.patternId, tick: this.tick, meters, gr, activeChannels: active, lit: [...this.lit.keys()] };
   }
 
   insertStats(): InsertStats[] {
@@ -409,6 +485,12 @@ export class Engine {
       rmsDb: this.statFrames > 0 && s.sumSq > 0 ? 10 * Math.log10(s.sumSq / this.statFrames) : -Infinity,
     }));
   }
+}
+
+/** Afinação fina por nota: no sampler em modo "preservar andamento" quem afina é o pitch shifter do canal. */
+function detuneFor(ch: Channel): number {
+  if (ch.type === 'sampler' && (ch.pitchMode ?? 'stretch') === 'stretch') return 0;
+  return (ch.fine ?? 0) / 100;
 }
 
 /** Ordem de processamento: fontes de sidechain e inserts roteados antes do destino; master por último. */

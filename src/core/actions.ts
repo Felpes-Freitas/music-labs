@@ -3,7 +3,7 @@
 // O MCP expõe estas ações quase 1:1, e a interface reaproveita várias.
 
 import type { Channel, Clip, Effect, EffectType, InstrumentType, Note, Params, Pattern, Project } from './model.js';
-import { MIXER_SIZE, PPQ, STEP, color, findChannel, findPattern, makeInsert, parseNote, patternLength, ticksPerBar, uid } from './model.js';
+import { MIXER_SIZE, PPQ, STEP, color, findChannel, findPattern, makeInsert, noteName as noteNameOf, parseNote, patternLength, ticksPerBar, uid } from './model.js';
 import { EFFECTS, INSTRUMENTS, defaults, presetParams, sanitizeParams } from './registry.js';
 import { chordNotes, romanChord, voiceLead } from './theory.js';
 import { Op, ins, insMany, rem, set } from './ops.js';
@@ -85,11 +85,31 @@ export function addChannel(
 
 export function updateChannel(
   p: Project,
-  a: { channel: string; name?: string; volumeDb?: number; pan?: number; pitch?: number; mute?: boolean; insert?: number | string; params?: Record<string, unknown>; preset?: string; type?: InstrumentType; color?: string },
+  a: {
+    channel: string;
+    name?: string;
+    volumeDb?: number;
+    pan?: number;
+    pitch?: number;
+    /** Nota que toca o instrumento na altura original (ex.: "D4"); define a transposição. */
+    root?: number | string;
+    /** Ajuste fino em cents (-100..100). */
+    fine?: number;
+    pitchMode?: 'stretch' | 'resample';
+    mute?: boolean;
+    insert?: number | string;
+    params?: Record<string, unknown>;
+    preset?: string;
+    type?: InstrumentType;
+    color?: string;
+  },
 ): ActionResult {
   const ch = channelRef(p, a.channel);
   const ops: Op[] = [];
   const path = ['channels', ch.id];
+  if (a.root !== undefined) ops.push(set([...path, 'pitch'], 60 - parseNote(a.root)));
+  if (a.fine !== undefined) ops.push(set([...path, 'fine'], Math.max(-100, Math.min(100, Number(a.fine)))));
+  if (a.pitchMode !== undefined) ops.push(set([...path, 'pitchMode'], a.pitchMode));
   if (a.name !== undefined) ops.push(set([...path, 'name'], a.name));
   if (a.color !== undefined) ops.push(set([...path, 'color'], a.color));
   if (a.volumeDb !== undefined) ops.push(set([...path, 'volume'], dbToGain(a.volumeDb)));
@@ -438,6 +458,53 @@ export function updateEffect(p: Project, a: { insert: number | string; effect: s
   return { ops };
 }
 
+// ------------------------------------------------------------ efeitos do canal
+
+export const CHANNEL_FX_MAX = 4;
+
+export function addChannelEffect(p: Project, a: { channel: string; type: EffectType; params?: Record<string, unknown>; mix?: number; index?: number }): ActionResult {
+  const ch = channelRef(p, a.channel);
+  const def = need(EFFECTS[a.type], `Efeito ${a.type}`);
+  const list = ch.effects ?? [];
+  if (list.length >= CHANNEL_FX_MAX) throw new Error(`Máximo de ${CHANNEL_FX_MAX} efeitos por canal`);
+  const fx: Effect = {
+    id: uid('e'),
+    type: a.type,
+    enabled: true,
+    mix: a.mix ?? (a.type === 'reverb' || a.type === 'delay' ? 0.3 : a.type === 'chorus' ? 0.5 : 1),
+    params: { ...defaults(def.params), ...sanitizeParams(def.params, a.params ?? {}) },
+  };
+  const ops: Op[] = ch.effects ? [] : [set(['channels', ch.id, 'effects'], [])];
+  ops.push(ins(['channels', ch.id, 'effects'], fx, a.index));
+  return { ops, result: { id: fx.id, channel: ch.name } };
+}
+
+function channelEffectRef(p: Project, chId: string, ref: string | number): Effect {
+  const list = channelRef(p, chId).effects ?? [];
+  if (typeof ref === 'number' || /^\d+$/.test(String(ref))) return need(list[Number(ref)], `Efeito #${ref}`);
+  return need(list.find((e) => e.id === ref) ?? list.find((e) => e.type === ref), `Efeito ${ref}`);
+}
+
+export function updateChannelEffect(p: Project, a: { channel: string; effect: string | number; params?: Record<string, unknown>; mix?: number; enabled?: boolean; type?: EffectType }): ActionResult {
+  const ch = channelRef(p, a.channel);
+  const fx = channelEffectRef(p, a.channel, a.effect);
+  const path = ['channels', ch.id, 'effects', fx.id];
+  const ops: Op[] = [];
+  if (a.type && a.type !== fx.type) {
+    const def = need(EFFECTS[a.type], `Efeito ${a.type}`);
+    ops.push(set([...path, 'type'], a.type), set([...path, 'params'], { ...defaults(def.params), ...sanitizeParams(def.params, a.params ?? {}) }));
+  } else if (a.params) ops.push(set([...path, 'params'], { ...fx.params, ...sanitizeParams(EFFECTS[fx.type].params, a.params) }));
+  if (a.mix !== undefined) ops.push(set([...path, 'mix'], Math.max(0, Math.min(1, a.mix))));
+  if (a.enabled !== undefined) ops.push(set([...path, 'enabled'], a.enabled));
+  return { ops };
+}
+
+export function removeChannelEffect(p: Project, a: { channel: string; effect: string | number }): ActionResult {
+  const ch = channelRef(p, a.channel);
+  const fx = channelEffectRef(p, a.channel, a.effect);
+  return { ops: [rem(['channels', ch.id, 'effects', fx.id])] };
+}
+
 export function removeEffect(p: Project, a: { insert: number | string; effect: string | number }): ActionResult {
   const i = insertRef(p, a.insert);
   const fx = effectRef(p, i, a.effect);
@@ -481,6 +548,9 @@ export function describe(p: Project) {
       volumeDb: Math.round(20 * Math.log10(Math.max(1e-6, c.volume)) * 10) / 10,
       pan: c.pan,
       mute: c.mute,
+      ...(c.pitch ? { root: noteNameOf(60 - c.pitch) } : {}),
+      ...(c.fine ? { fineCents: c.fine } : {}),
+      ...(c.effects?.length ? { effects: c.effects.map((e) => `${e.type}${e.enabled ? '' : ' (off)'}#${e.id}`) } : {}),
       ...(c.type === 'sampler' ? { sample: c.params.sample } : {}),
     })),
     patterns: p.patterns.map((pt) => ({

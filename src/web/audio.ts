@@ -8,7 +8,8 @@ import type { EngineStatus } from '../core/engine';
 export class Audio {
   ctx: AudioContext | null = null;
   node: AudioWorkletNode | null = null;
-  status: EngineStatus = { playing: false, mode: 'pattern', patternId: null, tick: 0, meters: [], gr: [], activeChannels: [] };
+  status: EngineStatus = { playing: false, mode: 'pattern', patternId: null, tick: 0, meters: [], gr: [], activeChannels: [], lit: [] };
+  private watching: string | null = null;
   private loaded = new Set<string>();
   private loading = new Map<string, Promise<void>>();
   getProject: () => Project | null = () => null;
@@ -41,6 +42,7 @@ export class Audio {
     this.node = node;
     const p = this.getProject();
     if (p) this.setProject(p);
+    if (this.watching) this.post({ type: 'watch', channel: this.watching });
   }
 
   get running() {
@@ -119,6 +121,11 @@ export class Audio {
   }
   liveOn(channel: string, key: number, vel = 0.8, gate: number | null = null) {
     this.start().then(() => this.post({ type: 'liveOn', channel, key, vel, gate }));
+  }
+  /** Diz à engine qual canal está aberto na tela (para acender as teclas dele). */
+  watch(channel: string | null) {
+    this.watching = channel;
+    this.post({ type: 'watch', channel });
   }
   liveOff(channel: string, key: number) {
     this.post({ type: 'liveOff', channel, key });

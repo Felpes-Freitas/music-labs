@@ -28,9 +28,15 @@ export interface Channel {
   params: Params;
   volume: number; // ganho linear, 0.78 ≈ -2 dB (padrão)
   pan: number; // -1..1
-  pitch: number; // semitons
+  pitch: number; // transposição em semitons (nota raiz = C4 - pitch)
+  /** Ajuste fino em cents (-100..100). */
+  fine?: number;
+  /** Sampler: 'stretch' muda o tom sem mudar o andamento; 'resample' é a reamostragem clássica. */
+  pitchMode?: 'stretch' | 'resample';
   mute: boolean;
   insert: number; // índice do insert do mixer (0 = master)
+  /** Até 4 efeitos aplicados ao som do canal antes do mixer. */
+  effects?: Effect[];
 }
 
 export interface Pattern {
@@ -60,6 +66,7 @@ export interface Track {
 }
 
 export type EffectType =
+  | 'phaser'
   | 'eq'
   | 'filter'
   | 'compressor'

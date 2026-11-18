@@ -60,6 +60,9 @@ class MusicLabsProcessor extends AudioWorkletProcessor {
         case 'panic':
           eng.panic();
           break;
+        case 'watch':
+          eng.watch(m.channel);
+          break;
       }
     };
   }

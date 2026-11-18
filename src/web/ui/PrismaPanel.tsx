@@ -10,6 +10,8 @@ import { mtof } from '../../core/dsp';
 import { set } from '../../core/ops';
 import * as A from '../../core/actions';
 import { act, edit, previewEdit, setHint } from '../state';
+import { usePref } from '../prefs';
+import { Icon } from './icons';
 import { Knob, fmt } from './widgets';
 
 const DEFS = INSTRUMENTS.prisma.params;
@@ -62,6 +64,8 @@ const SHORT: Record<string, string> = {
   velSens: 'Velocity',
   harmonics: 'Harmôn.',
   res: 'Resson.',
+  uniPhase: 'Fase',
+  uniVary: 'Variação',
 };
 
 function PK(p: { ch: Channel; k: string; size?: number; color?: string }) {
@@ -315,6 +319,35 @@ function EnvGraph(p: { ch: Channel; keys: [string, string, string, string]; colo
   return <canvas ref={ref} class="pz-env" onPointerDown={onDown as any} data-hint="Arraste os pontos: ataque, decay/sustain e release" />;
 }
 
+/** Cabeçalho que recolhe/mostra um gráfico (a escolha fica salva). */
+function Fold(p: { id: string; label: string; children: any; def?: boolean }) {
+  const [open, setOpen] = usePref(`fold.${p.id}`, p.def ?? true);
+  return (
+    <div class={`pz-fold ${open ? '' : 'closed'}`}>
+      <button class="fold" data-hint={open ? `Recolher: ${p.label}` : `Mostrar: ${p.label}`} onClick={() => setOpen(!open)}>
+        <Icon name={open ? 'down' : 'chevron'} size={10} />
+        <span>{p.label}</span>
+      </button>
+      {open && p.children}
+    </div>
+  );
+}
+
+function Voices(p: { ch: Channel }) {
+  const u = useParam(p.ch);
+  const n = Math.round(Number(val(p.ch.params, 'unison')));
+  return (
+    <div class="pz-voices" data-hint="Vozes (unison): cópias do som tocando juntas, levemente desafinadas e abertas no estéreo, para um som mais cheio">
+      <span>Vozes</span>
+      {Array.from({ length: 9 }, (_, i) => (
+        <button class={n === i + 1 ? 'on' : n > i + 1 ? 'in' : ''} onClick={() => u.commit('unison', i + 1)}>
+          {i + 1}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- painel
 
 const FTYPES: [string, string][] = [
@@ -382,13 +415,16 @@ export function PrismaPanel(p: { ch: Channel }) {
             ))}
           </select>
         </label>
+        <Voices ch={ch} />
         <button class={`pz-toggle ${mono ? 'on' : ''}`} data-hint="Mono / legato: uma nota por vez, deslizando entre elas com o glide" onClick={() => u.commit('mono', !mono)}>
           MONO
         </button>
         <PK ch={ch} k="glide" size={26} />
         <PK ch={ch} k="gain" size={26} />
       </div>
-      <Spectrum ch={ch} refKey={refKey} />
+      <Fold id="spectrum" label="Espectro">
+        <Spectrum ch={ch} refKey={refKey} />
+      </Fold>
       <div class="pz-grid">
         <section class="pz-card">
           <h4>Timbre</h4>
@@ -418,7 +454,9 @@ export function PrismaPanel(p: { ch: Channel }) {
         </section>
         <section class="pz-card">
           <h4>Envelope do filtro</h4>
-          <EnvGraph ch={ch} keys={['fa', 'fd', 'fs', 'fr']} color="#7fd6f2" />
+          <Fold id="envFilter" label="gráfico">
+            <EnvGraph ch={ch} keys={['fa', 'fd', 'fs', 'fr']} color="#7fd6f2" />
+          </Fold>
           <div class="pz-row">
             <PK ch={ch} k="fenv" color="#7fd6f2" />
             <PK ch={ch} k="fa" size={26} />
@@ -429,7 +467,9 @@ export function PrismaPanel(p: { ch: Channel }) {
         </section>
         <section class="pz-card">
           <h4>Volume</h4>
-          <EnvGraph ch={ch} keys={['a', 'd', 's', 'r']} color="#f2a93b" />
+          <Fold id="envAmp" label="gráfico">
+            <EnvGraph ch={ch} keys={['a', 'd', 's', 'r']} color="#f2a93b" />
+          </Fold>
           <div class="pz-row">
             <PK ch={ch} k="a" size={26} />
             <PK ch={ch} k="d" size={26} />
@@ -458,9 +498,10 @@ export function PrismaPanel(p: { ch: Channel }) {
         <section class="pz-card">
           <h4>Unison e camadas</h4>
           <div class="pz-row">
-            <PK ch={ch} k="unison" color="#6fdc8c" />
-            <PK ch={ch} k="detune" />
+            <PK ch={ch} k="detune" color="#6fdc8c" />
             <PK ch={ch} k="spread" />
+            <PK ch={ch} k="uniPhase" />
+            <PK ch={ch} k="uniVary" />
             <PK ch={ch} k="oct" />
             <PK ch={ch} k="sub" />
           </div>

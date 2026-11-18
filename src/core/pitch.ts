@@ -62,10 +62,10 @@ export function detectPitch(x: Float32Array, sr: number, minF = 25, maxF = 5200)
         best = tau;
       }
   }
-  // interpolação parabólica
+  // interpolação parabólica na função de diferença crua (sem o viés da normalização)
   let t = best;
   if (best > tauMin && best < tauMax) {
-    const a = cm[best - 1], b = cm[best], c = cm[best + 1];
+    const a = d[best - 1], b = d[best], c = d[best + 1];
     const den = a - 2 * b + c;
     if (Math.abs(den) > 1e-12) t = best + (0.5 * (a - c)) / den;
   }

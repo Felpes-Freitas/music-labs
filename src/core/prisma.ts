@@ -110,7 +110,7 @@ export function cutoffOct(p: Params, f0: number, st: SpectrumState): number {
  * Amplitudes dos harmônicos 1..H em out (out[0] fica 0). Devolve H.
  * Usado pela voz (em tempo real) e pela tela do Prisma (visualização).
  */
-export function prismaSpectrum(p: Params, f0: number, sr: number, st: SpectrumState, out: Float32Array, maxF = f0): number {
+export function prismaSpectrum(p: Params, f0: number, sr: number, st: SpectrumState, out: Float32Array, maxF = f0, cutoffShift = 0): number {
   const H = Math.max(1, Math.min(Math.round(num(p, 'harmonics', 128)), Math.floor((0.45 * sr) / Math.max(1, maxF)), MAX_HARM, out.length - 1));
   const tilt = num(p, 'tilt', 0);
   const even = num(p, 'even', 1);
@@ -127,7 +127,7 @@ export function prismaSpectrum(p: Params, f0: number, sr: number, st: SpectrumSt
   for (let k = H + 1; k < out.length; k++) out[k] = 0;
   // mesma energia para qualquer forma (o filtro é que tira volume)
   const norm = pow > 0 ? Math.sqrt(1.64 / pow) : 0;
-  const co = cutoffOct(p, f0, st);
+  const co = cutoffOct(p, f0, st) + cutoffShift;
   const pluck = num(p, 'pluck', 0);
   const pt = num(p, 'pluckTime', 0.5);
   const pb = num(p, 'pluckBright', 0.5);
@@ -155,6 +155,7 @@ export interface PrismaNote {
   vel: number;
   gate: number;
   pan: number;
+  detune?: number;
 }
 
 export class PrismaVoice {
@@ -168,6 +169,12 @@ export class PrismaVoice {
   private prevAmps = new Float32Array(MAX_HARM + 1);
   private tabA = new Float32Array(TABLE + 1);
   private tabB = new Float32Array(TABLE + 1);
+  // segunda tabela (variação de timbre entre as vozes do unison)
+  private ampsV = new Float32Array(MAX_HARM + 1);
+  private prevAmpsV = new Float32Array(MAX_HARM + 1);
+  private tabVA = new Float32Array(TABLE + 1);
+  private tabVB = new Float32Array(TABLE + 1);
+  private vary = 0;
   private re = new Float64Array(TABLE);
   private im = new Float64Array(TABLE);
   private phases: Float64Array;
@@ -193,15 +200,17 @@ export class PrismaVoice {
   constructor(private sr: number, public p: Params, n: PrismaNote, startPitch: number) {
     this.key = n.key;
     this.gate = n.gate;
-    this.target = n.key;
-    this.pitch = startPitch;
+    this.target = n.key + (n.detune ?? 0);
+    this.pitch = startPitch + (n.detune ?? 0);
     this.vel = n.vel;
-    const u = Math.max(1, Math.min(8, Math.round(num(p, 'unison', 1))));
+    const u = Math.max(1, Math.min(9, Math.round(num(p, 'unison', 1))));
     this.phases = new Float64Array(u);
     this.incs = new Float64Array(u);
     this.gl = new Float64Array(u);
     this.gr = new Float64Array(u);
-    for (let i = 0; i < u; i++) this.phases[i] = u === 1 ? 0 : Math.random();
+    // Fase: 0 = todas as vozes começam juntas (ataque mais forte), 1 = aleatória.
+    const phaseVar = num(p, 'uniPhase', 1);
+    for (let i = 0; i < u; i++) this.phases[i] = u === 1 ? 0 : Math.random() * phaseVar * TABLE;
     this.amp = new Adsr(sr);
     this.fenv = new Adsr(sr);
     this.applyEnv();
@@ -224,7 +233,7 @@ export class PrismaVoice {
   }
   legato(n: PrismaNote) {
     this.key = n.key;
-    this.target = n.key;
+    this.target = n.key + (n.detune ?? 0);
     this.gate = n.gate;
     if (this.amp.stage === 4 || this.amp.stage === 0) {
       this.amp.trigger();
@@ -272,19 +281,33 @@ export class PrismaVoice {
     const maxF = f0 * Math.pow(2, detune / 12) * (num(p, 'oct', 0) > 0 ? 2 : 1);
     const st: SpectrumState = { t: this.t, fenv: this.fenv.value, vel: this.vel, lfo: Math.sin(TAU * this.lfoPh), phaser: this.phPh };
     const H = prismaSpectrum(p, f0, sr, st, this.amps, maxF);
+    // Variação: metade das vozes com o corte deslocado (até 1,5 oitava).
+    this.vary = u > 1 ? num(p, 'uniVary', 0) : 0;
+    const HV = this.vary > 0 ? prismaSpectrum(p, f0, sr, st, this.ampsV, maxF, this.vary * 1.5) : 0;
     let diff = 0, peak = 1e-9;
     for (let k = 1; k <= H; k++) {
       diff = Math.max(diff, Math.abs(this.amps[k] - this.prevAmps[k]));
       peak = Math.max(peak, this.amps[k]);
     }
     for (let k = H + 1; k <= MAX_HARM && this.prevAmps[k] !== 0; k++) diff = Math.max(diff, this.prevAmps[k]);
+    for (let k = 1; k <= HV; k++) diff = Math.max(diff, Math.abs(this.ampsV[k] - this.prevAmpsV[k]));
     if (!this.hasTable || diff > peak * 2e-3) {
       // tabela nova: a atual vira a "anterior" e cruza ao longo do bloco
-      const tmp = this.tabB;
+      let tmp = this.tabB;
       this.tabB = this.tabA;
       this.tabA = tmp;
       synthTable(this.amps, H, this.tabA, this.re, this.im);
-      if (!this.hasTable) this.tabB.set(this.tabA);
+      if (this.vary > 0) {
+        tmp = this.tabVB;
+        this.tabVB = this.tabVA;
+        this.tabVA = tmp;
+        synthTable(this.ampsV, HV, this.tabVA, this.re, this.im);
+        this.prevAmpsV.set(this.ampsV);
+      }
+      if (!this.hasTable) {
+        this.tabB.set(this.tabA);
+        this.tabVB.set(this.tabVA);
+      }
       this.hasTable = true;
       this.xf = 0;
       this.prevAmps.set(this.amps);
@@ -300,9 +323,12 @@ export class PrismaVoice {
     for (let i = from; i < to; i++) {
       if (this.blockPos >= CB) this.control();
       const w = this.xf < 1 ? this.blockPos / CB : 1;
-      const A = this.tabA, B = this.tabB;
+      const vary = this.vary > 0;
       let l = 0, r = 0;
       for (let k = 0; k < u; k++) {
+        const odd = vary && (k & 1) === 1;
+        const A = odd ? this.tabVA : this.tabA;
+        const B = odd ? this.tabVB : this.tabB;
         let ph = this.phases[k];
         const idx = ph | 0;
         const fr = ph - idx;
@@ -319,6 +345,7 @@ export class PrismaVoice {
         this.phases[k] = ph;
       }
       if (octL > 0 || subL > 0) {
+        const A = this.tabA;
         const base = this.incs[u >> 1];
         if (octL > 0) {
           const idx = this.octPh | 0;

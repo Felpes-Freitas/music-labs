@@ -61,6 +61,8 @@ export interface NoteOn {
   gate: number; // amostras até o note-off
   pan: number;
   slide?: boolean;
+  /** Afinação fina em semitons (fração), aplicada sem mudar a tecla da voz. */
+  detune?: number;
 }
 
 interface Voice {
@@ -173,8 +175,8 @@ class SynthVoice implements Voice {
   constructor(private sr: number, private p: Params, n: NoteOn, startPitch: number) {
     this.key = n.key;
     this.gate = n.gate;
-    this.target = n.key;
-    this.pitch = startPitch;
+    this.target = n.key + (n.detune ?? 0);
+    this.pitch = startPitch + (n.detune ?? 0);
     const u = Math.round(num(p, 'unison', 1));
     for (let i = 0; i < u; i++) {
       this.osc1.push(new Osc());
@@ -197,7 +199,7 @@ class SynthVoice implements Voice {
   }
   legato(n: NoteOn) {
     this.key = n.key;
-    this.target = n.key;
+    this.target = n.key + (n.detune ?? 0);
     this.gate = n.gate;
     if (this.amp.stage === 4 || this.amp.stage === 0) {
       this.amp.trigger();
@@ -347,7 +349,7 @@ class SamplerVoice implements Voice {
     const oneshot = bool(p, 'oneshot');
     const len = s.ch[0].length;
     const reverse = bool(p, 'reverse');
-    const semis = forceKeytrack || bool(p, 'keytrack') ? n.key - root : 0;
+    const semis = (forceKeytrack || bool(p, 'keytrack') ? n.key - root : 0) + (n.detune ?? 0);
     this.inc = ((Math.pow(2, semis / 12) * s.sr) / sr) * (reverse ? -1 : 1);
     const st = num(p, 'start') * len;
     this.pos = reverse ? len - 1 - st : st;
@@ -488,9 +490,9 @@ class DrumVoice implements Voice {
       this.p = { ...p, decay: (typical[kindOverride] ?? 0.3) * scale, keytrack: false, tune: num(p, 'tune') + (kindOverride === 'tom' ? (n.key - 45) * 1.5 : 0) };
       p = this.p;
     }
-    const tune = num(p, 'tune') + (bool(p, 'keytrack') ? n.key - 60 : 0);
+    const tune = num(p, 'tune') + (bool(p, 'keytrack') ? n.key - 60 : 0) + (n.detune ?? 0);
     const base: Record<string, number> = { kick: 52, '808': 49, snare: 185, clap: 1100, hat: 330, openhat: 330, tom: 110, rim: 1700, perc: 380 };
-    this.f0 = (this.kind === '808' && bool(p, 'keytrack') ? mtof(n.key - 24) : base[this.kind] ?? 100) * Math.pow(2, (this.kind === '808' && bool(p, 'keytrack') ? num(p, 'tune') : tune) / 12);
+    this.f0 = (this.kind === '808' && bool(p, 'keytrack') ? mtof(n.key - 24) : base[this.kind] ?? 100) * Math.pow(2, (this.kind === '808' && bool(p, 'keytrack') ? num(p, 'tune') + (n.detune ?? 0) : tune) / 12);
     this.bp = new Svf(sr);
     this.hp = new Svf(sr);
     const tone = num(p, 'tone', 0.5);
@@ -633,7 +635,7 @@ class PluckVoice implements Voice {
   constructor(sr: number, private p: Params, n: NoteOn) {
     this.key = n.key;
     this.gate = n.gate;
-    const f = mtof(n.key);
+    const f = mtof(n.key + (n.detune ?? 0));
     this.period = sr / f;
     this.line = new DelayLine(Math.ceil(this.period) + 4);
     const bright = num(p, 'bright', 0.7);
@@ -707,7 +709,7 @@ class FmVoice implements Voice {
   constructor(private sr: number, private p: Params, n: NoteOn) {
     this.key = n.key;
     this.gate = n.gate;
-    this.f = mtof(n.key);
+    this.f = mtof(n.key + (n.detune ?? 0));
     this.env = new Adsr(sr);
     this.env.a = num(p, 'a'); this.env.d = num(p, 'd'); this.env.s = num(p, 's'); this.env.r = num(p, 'r');
     this.env.trigger();
