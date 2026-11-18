@@ -212,7 +212,7 @@ tool('save_project', 'Salva o projeto (.musiclabs). Sem path usa o arquivo atual
 
 tool(
   'open_project',
-  'Abre um .musiclabs ou importa um .flp do FL Studio (canais, patterns, notas, playlist, mixer; plugins do FL viram instrumentos nativos equivalentes).',
+  'Abre um .musiclabs ou importa um .flp do FL Studio (canais, patterns, notas, playlist, mixer; plugins do FL viram instrumentos nativos equivalentes). Se o relatório vier com locked=true, o .flp foi salvo por um FL não registrado: o FL embaralha tempo e outros valores nesses arquivos (trava de licença) e eles ficam no padrão; pergunte o BPM ao usuário. Não tente decodificar esses valores.',
   { path: z.string() },
   (a) => api('POST', '/api/open', a),
 );

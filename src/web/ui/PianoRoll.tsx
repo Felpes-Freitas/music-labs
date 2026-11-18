@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { useApp, state, edit, previewEdit, onLive, selectChannel, act } from '../state';
+import { useApp, state, edit, previewEdit, onLive, selectChannel, act, setHint } from '../state';
 import { audio } from '../audio';
 import { PPQ, STEP, noteName, patternLength, ticksPerBar, uid, type Note } from '../../core/model';
 import { set } from '../../core/ops';
@@ -103,7 +103,7 @@ export function PianoRoll() {
   const keyY = (key: number) => RULER + (127 - key) * view.current.rowH - view.current.scrollY;
   const tickX = (t: number) => KEYS + (t - view.current.scrollX) * view.current.zx;
 
-  const { ref, paint, size } = useCanvas(
+  const { ref, paint, paintOverlay, size } = useCanvas(
     (ctx, w, h) => {
       const v = view.current;
       const g = geo(w, h);
@@ -191,28 +191,6 @@ export function PianoRoll() {
           ctx.fillText(noteName(n.key), x + 4, y + rows - 4);
         }
       }
-      // fantasma de onde a nota vai entrar
-      if (hover.current && !drag.current && (tool === 'draw' || tool === 'paint')) {
-        const hv = hover.current;
-        const keys = (CHORDS[chord] ?? [0]).map((iv) => hv.key + iv);
-        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-        ctx.setLineDash([3, 3]);
-        for (const k of keys) ctx.strokeRect(tickX(hv.tick) + 0.5, keyY(k) + 1.5, Math.max(3, lastLen.current * v.zx - 1), rows - 3);
-        ctx.setLineDash([]);
-      }
-      const d = drag.current;
-      if (d?.kind === 'select') {
-        ctx.fillStyle = 'rgba(120,190,255,0.12)';
-        ctx.strokeStyle = '#8cc8ff';
-        const rx = Math.min(d.x0, d.x1), ry = Math.min(d.y0, d.y1);
-        ctx.fillRect(rx, ry, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
-        ctx.strokeRect(rx + 0.5, ry + 0.5, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
-      }
-      if (playTick.current >= 0) {
-        const x = tickX(playTick.current);
-        ctx.fillStyle = '#9fe0ff';
-        ctx.fillRect(x, g.gridT, 1.5, g.gridB - g.gridT);
-      }
       ctx.restore();
 
       // ---------------- teclado
@@ -290,15 +268,6 @@ export function PianoRoll() {
       ctx.lineTo(ex - 6, RULER - 7);
       ctx.lineTo(ex, RULER - 7);
       ctx.fill();
-      if (playTick.current >= 0) {
-        const x = tickX(playTick.current);
-        ctx.fillStyle = '#9fe0ff';
-        ctx.beginPath();
-        ctx.moveTo(x - 5, RULER - 8);
-        ctx.lineTo(x + 5, RULER - 8);
-        ctx.lineTo(x, RULER);
-        ctx.fill();
-      }
       ctx.restore();
       ctx.fillStyle = '#1f2528';
       ctx.fillRect(0, 0, KEYS, RULER);
@@ -373,7 +342,45 @@ export function PianoRoll() {
       ctx.fillRect(g.gridR, 0, SB, RULER);
       ctx.fillRect(g.gridR, g.gridB, SB, h - g.gridB);
     },
-    [p, s.patternId, s.channelId, sel, ghost, snap, s.scale, s.scaleRoot, tool, lane, chord],
+    [s.version, s.patternId, s.channelId, sel, ghost, snap, s.scale, s.scaleRoot, tool, lane, chord],
+    (ctx, w, h) => {
+      // Camada de cima: prévia sob o mouse, retângulo de seleção e cursor de reprodução.
+      const v = view.current;
+      const g = geo(w, h);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(g.gridL, g.gridT, g.gridR - g.gridL, g.gridB - g.gridT);
+      ctx.clip();
+      if (hover.current && !drag.current && (tool === 'draw' || tool === 'paint')) {
+        const hv = hover.current;
+        const keys = (CHORDS[chord] ?? [0]).map((iv) => hv.key + iv);
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+        ctx.setLineDash([3, 3]);
+        for (const k of keys) ctx.strokeRect(tickX(hv.tick) + 0.5, keyY(k) + 1.5, Math.max(3, lastLen.current * v.zx - 1), v.rowH - 3);
+        ctx.setLineDash([]);
+      }
+      const d = drag.current;
+      if (d?.kind === 'select') {
+        ctx.fillStyle = 'rgba(120,190,255,0.12)';
+        ctx.strokeStyle = '#8cc8ff';
+        const rx = Math.min(d.x0, d.x1), ry = Math.min(d.y0, d.y1);
+        ctx.fillRect(rx, ry, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
+        ctx.strokeRect(rx + 0.5, ry + 0.5, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
+      }
+      ctx.restore();
+      if (playTick.current >= 0) {
+        const x = tickX(playTick.current);
+        if (x >= KEYS && x < g.gridR) {
+          ctx.fillStyle = '#9fe0ff';
+          ctx.fillRect(x, g.gridT, 1.5, g.gridB - g.gridT);
+          ctx.beginPath();
+          ctx.moveTo(x - 5, RULER - 8);
+          ctx.lineTo(x + 5, RULER - 8);
+          ctx.lineTo(x, RULER);
+          ctx.fill();
+        }
+      }
+    },
   );
 
   const clampView = () => {
@@ -391,13 +398,18 @@ export function PianoRoll() {
         const t = st.playing && st.mode === 'pattern' && st.patternId === state.patternId ? st.tick : -1;
         if (t !== playTick.current) {
           playTick.current = t;
+          let scrolled = false;
           if (t >= 0 && state.followPlay) {
             const v = view.current;
             const w = size.current.w - SB;
             const x = KEYS + (t - v.scrollX) * v.zx;
-            if (x > w - 20 || x < KEYS) v.scrollX = Math.max(0, t - 10 / v.zx);
+            if (x > w - 20 || x < KEYS) {
+              v.scrollX = Math.max(0, t - 10 / v.zx);
+              scrolled = true;
+            }
           }
-          paint();
+          if (scrolled) paint();
+          else paintOverlay();
         }
       }),
     [],
@@ -590,16 +602,16 @@ export function PianoRoll() {
         const hn = hit(x, y);
         el.style.cursor = hn ? (hn.edge && (tool === 'draw' || tool === 'paint') ? 'ew-resize' : tool === 'erase' ? 'not-allowed' : tool === 'slice' ? 'col-resize' : 'move') : tool === 'select' ? 'crosshair' : 'copy';
         const hv = hn ? null : { key: fitScale(keyAt(y)), tick: Math.max(0, snapFloor(tickAt(x))) };
-        if (JSON.stringify(hv) !== JSON.stringify(hover.current)) {
+        if (hv?.key !== hover.current?.key || hv?.tick !== hover.current?.tick) {
           hover.current = hv;
-          state.hint = hv ? `${noteName(hv.key)} · compasso ${Math.floor(hv.tick / bar) + 1}, step ${Math.floor((hv.tick % bar) / STEP) + 1}` : state.hint;
-          paint();
+          if (hv) setHint(`${noteName(hv.key)} · compasso ${Math.floor(hv.tick / bar) + 1}, step ${Math.floor((hv.tick % bar) / STEP) + 1}`);
+          paintOverlay();
         }
       } else {
         el.style.cursor = y >= g.laneTop - 5 && y < g.laneTop ? 'ns-resize' : x < KEYS ? 'pointer' : 'default';
         if (hover.current) {
           hover.current = null;
-          paint();
+          paintOverlay();
         }
       }
       return;
@@ -640,7 +652,7 @@ export function PianoRoll() {
       case 'select':
         d.x1 = x;
         d.y1 = y;
-        paint();
+        paintOverlay();
         break;
       case 'erase': {
         const hn = hit(x, y, curNotes());
@@ -880,7 +892,7 @@ export function PianoRoll() {
         onPointerLeave={() => {
           if (hover.current) {
             hover.current = null;
-            paint();
+            paintOverlay();
           }
         }}
         onWheel={onWheel as any}
