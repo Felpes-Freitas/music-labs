@@ -807,7 +807,7 @@ export function PianoRoll() {
         const dt = (e.key === 'ArrowRight' ? 1 : -1) * grid;
         commit(notes.map((n) => (sel.has(n.id) ? { ...n, pos: Math.max(0, n.pos + dt) } : n)));
       } else if (e.key === 'Escape') setSel(new Set());
-      else if (!ctrl && !e.altKey && ['p', 'b', 'd', 't', 'c', 'e'].includes(k)) setTool(({ p: 'draw', b: 'paint', d: 'erase', t: 'mute', c: 'slice', e: 'select' } as Record<string, Tool>)[k]);
+      else if (e.shiftKey && !ctrl && !e.altKey && ['p', 'b', 'd', 't', 'c', 'e'].includes(k)) setTool(({ p: 'draw', b: 'paint', d: 'erase', t: 'mute', c: 'slice', e: 'select' } as Record<string, Tool>)[k]);
       else return;
       e.preventDefault();
       e.stopPropagation();
@@ -832,12 +832,12 @@ export function PianoRoll() {
       tools={
         <span class="pr-tools nodrag">
           <span class="tgroup">
-            {toolBtn('draw', 'pencil', 'Lápis: cria, move e redimensiona notas; direito apaga; Ctrl+arrastar seleciona', 'P')}
-            {toolBtn('paint', 'brush', 'Pincel: arraste para pintar notas em sequência', 'B')}
-            {toolBtn('erase', 'eraser', 'Borracha: clique ou arraste sobre notas', 'D')}
-            {toolBtn('mute', 'mute', 'Mute: silencia notas sem apagar', 'T')}
-            {toolBtn('slice', 'slice', 'Fatiar: corta uma nota no ponto clicado', 'C')}
-            {toolBtn('select', 'select', 'Seleção por retângulo (Shift soma)', 'E')}
+            {toolBtn('draw', 'pencil', 'Lápis: cria, move e redimensiona notas; direito apaga; Ctrl+arrastar seleciona', 'Shift+P')}
+            {toolBtn('paint', 'brush', 'Pincel: arraste para pintar notas em sequência', 'Shift+B')}
+            {toolBtn('erase', 'eraser', 'Borracha: clique ou arraste sobre notas', 'Shift+D')}
+            {toolBtn('mute', 'mute', 'Mute: silencia notas sem apagar', 'Shift+T')}
+            {toolBtn('slice', 'slice', 'Fatiar: corta uma nota no ponto clicado', 'Shift+C')}
+            {toolBtn('select', 'select', 'Seleção por retângulo (Shift soma)', 'Shift+E')}
           </span>
           <span class="tgroup" data-hint="Grade de snap (magnetismo)">
             <svg class="ico" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 3v5a4 4 0 008 0V3M4 5.5h2.5M9.5 5.5H12" /></svg>

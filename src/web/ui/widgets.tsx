@@ -47,6 +47,12 @@ export function Knob(p: KnobProps) {
   const onDown = (e: PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (e.button === 1) {
+      // botão do meio: volta ao valor padrão
+      if (p.def !== undefined) p.onCommit(p.def);
+      return;
+    }
+    if (e.button !== 0) return;
     const el = e.currentTarget as Element;
     el.setPointerCapture(e.pointerId);
     const y0 = e.clientY;
@@ -68,7 +74,7 @@ export function Knob(p: KnobProps) {
     el.addEventListener('pointermove', move as any);
     el.addEventListener('pointerup', up);
   };
-  const tip = `${p.label ? p.label + ': ' : ''}${p.format ? p.format(shown) : fmt(shown)}`;
+  const tip = `${p.label ? p.label + ': ' : ''}${p.format ? p.format(shown) : fmt(shown)} · arraste · duplo clique ou botão do meio: padrão`;
   return (
     <div class="knob" data-hint={p.title ?? tip}>
       <svg
@@ -117,6 +123,7 @@ export function Win(p: { id: WindowId; title: ComponentChildren; icon?: string; 
     if (max) {
       Object.assign(w, max);
       delete (w as any).max;
+      focusWindow(p.id, true);
     } else if (ws) {
       (w as any).max = { x: w.x, y: w.y, w: w.w, h: w.h };
       Object.assign(w, { x: 0, y: 0, w: ws.clientWidth, h: ws.clientHeight });

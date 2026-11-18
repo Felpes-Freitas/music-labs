@@ -1,7 +1,7 @@
 import { render } from 'preact';
 import { useEffect } from 'preact/hooks';
 import './style.css';
-import { useApp, state, togglePlay, setMode, undo, redo, openWindow, api, toast } from './state';
+import { useApp, state, togglePlay, setMode, undo, redo, openWindow, cycleWindows, api, toast } from './state';
 import { audio } from './audio';
 import { Toolbar } from './ui/Toolbar';
 import { ChannelRack } from './ui/ChannelRack';
@@ -19,9 +19,28 @@ const KEYMAP: Record<string, number> = {
 const held = new Map<string, { ch: string; key: number }>();
 let octave = 0;
 
+/** Só campos onde se digita texto ficam com o teclado; o resto toca o instrumento. */
+function isTextField(t: EventTarget | null) {
+  const el = t as HTMLElement | null;
+  if (!el || !el.tagName) return false;
+  if (el.isContentEditable || el.tagName === 'TEXTAREA') return true;
+  if (el.tagName === 'INPUT') return !['range', 'checkbox', 'radio', 'button', 'color'].includes((el as HTMLInputElement).type);
+  return false;
+}
+
 function onKeyDown(e: KeyboardEvent) {
   const t = e.target as HTMLElement;
-  if (t.closest('input, select, textarea')) return;
+  if (isTextField(t)) {
+    if (e.key === 'Enter' || e.key === 'Escape') (t as HTMLElement).blur();
+    return;
+  }
+  // um <select> focado não rouba as teclas: devolve o foco ao app
+  if (t.tagName === 'SELECT') (t as HTMLElement).blur();
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    cycleWindows(e.shiftKey);
+    return;
+  }
   const k = e.key.toLowerCase();
   const ctrl = e.ctrlKey || e.metaKey;
   if (ctrl && k === 'z') return (e.preventDefault(), e.shiftKey ? redo() : undo());
@@ -55,6 +74,21 @@ function onKeyUp(e: KeyboardEvent) {
   }
 }
 
+// Botões, sliders, caixas e listas não guardam o foco depois de usados: assim o
+// teclado continua tocando o instrumento selecionado, não importa onde se clicou.
+const releaseFocus = () =>
+  setTimeout(() => {
+    const a = document.activeElement as HTMLElement | null;
+    if (a && a !== document.body && !isTextField(a) && a.tagName !== 'SELECT') a.blur();
+  }, 0);
+window.addEventListener('pointerup', releaseFocus);
+window.addEventListener('change', (e) => {
+  const t = e.target as HTMLElement;
+  if (!isTextField(t)) setTimeout(() => t.blur(), 0);
+});
+// botão do meio é "voltar ao padrão" nos knobs: sem a rolagem automática do navegador
+window.addEventListener('mousedown', (e) => e.button === 1 && e.preventDefault());
+
 // Se a janela perde o foco com teclas apertadas, solta todas (evita nota presa).
 window.addEventListener('blur', () => {
   for (const [k, h] of held) {
@@ -84,6 +118,40 @@ async function setupMidi() {
   } catch {
     /* sem MIDI */
   }
+}
+
+function LoadingScreen() {
+  const s = useApp();
+  if (!s.loading && !s.needsClick) return null;
+  const l = s.loading;
+  const pct = l && l.total ? Math.round((l.done / l.total) * 100) : 0;
+  return (
+    <div class="loading" onPointerDown={() => s.needsClick && audio.resume().then((ok) => ok && ((state.needsClick = false), toast('Áudio ligado')))}>
+      <div class="loading-box">
+        <div class="logo">
+          <span class="logo-dot" />
+          MUSIC LABS
+        </div>
+        {l ? (
+          <>
+            <div class="loading-title">Carregando o projeto</div>
+            <div class="loading-bar">
+              <div style={{ width: `${l.total ? pct : 8}%` }} class={l.total && !(l.done >= l.total && l.pending) ? '' : 'indeterminate'} />
+            </div>
+            <div class="loading-label">
+              {l.total ? `${l.done} de ${l.total} samples${l.label ? ' · ' + l.label : ''}` : 'Preparando o áudio…'}
+              {l.total && l.done >= l.total && l.pending ? ' · preparando instrumentos…' : ''}
+            </div>
+          </>
+        ) : (
+          <>
+            <div class="loading-title">Tudo carregado</div>
+            <div class="loading-label">O navegador pediu um clique antes de tocar som: clique em qualquer lugar.</div>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function App() {
@@ -118,13 +186,10 @@ function App() {
           <PianoRoll />
           <Mixer />
           <ChannelSettings />
-          {!audio.running && (
-            <div class="audio-hint" onClick={() => audio.start().then(() => toast('Áudio ligado'))}>
-              Clique para ligar o áudio
-            </div>
-          )}
+
         </div>
       </div>
+      <LoadingScreen />
       <div class="toasts">
         {s.toasts.map((t) => (
           <div class={`toast ${t.from === 'mcp' ? 'mcp' : ''}`} key={t.id}>
