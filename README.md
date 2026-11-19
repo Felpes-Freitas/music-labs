@@ -76,7 +76,10 @@ git push --follow-tags
   - **Só quando tocar** (gravação inteligente): com a música tocando, cada trecho que
     você toca vira um clipe onde o ponteiro estava; o silêncio fica de fora. A detecção
     aprende o ruído de fundo (chiado de headset, ambiente) e só considera o que passa
-    acima dele, com margem e pausa ajustáveis. Esse "denoise" serve só para decidir os
+    acima dele, com margem e pausa ajustáveis. Um **limiar de volume** (linha vermelha no
+    visualizador) define o mínimo para virar gravação; sons curtos como batidas não abrem
+    take, e a detecção usa uma segunda captura com cancelamento de eco do navegador, para
+    não confundir a música saindo dos alto-falantes com você tocando. Esse "denoise" serve só para decidir os
     cortes: não altera o retorno nem o áudio gravado. Funciona também com loop.
   - O retorno roda num contexto de áudio separado, com buffer mínimo e a cadeia leve; a
     gravação guarda o sinal cru e reaplica os efeitos em alta qualidade (amp, overdrive e

@@ -22,13 +22,13 @@ function scene(sec: number, noiseDb: (t: number) => number, notes: number[]) {
 }
 
 /** Mesma lógica de takes da gravação: abre quando ativo, fecha depois de `hold` inativo. */
-function takes(x: Float32Array, hold = 0.8, margin = 10) {
-  const det = new TakeDetector(SR, margin);
+function takes(x: Float32Array, hold = 0.8, margin = 10, thresholdDb = -90) {
+  const det = new TakeDetector(SR, margin, 0.12, thresholdDb);
   const out: [number, number][] = [];
   let open: number | null = null, last = 0;
   for (const s of det.push(x)) {
     if (s.active) {
-      if (open === null) open = s.end / SR;
+      if (open === null) open = s.since / SR;
       last = s.end / SR;
     } else if (open !== null && s.end / SR - last > hold) {
       out.push([open, s.end / SR]);
@@ -56,4 +56,29 @@ test('se o ambiente fica mais barulhento, o detector se adapta e os takes ainda 
 
 test('ruído sozinho não abre take', () => {
   assert.equal(takes(scene(8, () => -40, [])).length, 0);
+});
+
+/** Microfone de notebook: a bateria da música vaza dos alto-falantes e duas frases são cantadas. */
+function bleed(sec: number, phrases: number[]) {
+  const x = new Float32Array(SR * sec);
+  const beat = 60 / 128;
+  for (let i = 0; i < x.length; i++) {
+    const t = i / SR;
+    let v = rnd() * 0.006;
+    const ph = t % beat;
+    v += 0.05 * Math.exp(-ph * 30) * Math.sin(2 * Math.PI * 60 * ph);
+    v += 0.02 * Math.exp(-((t + beat / 2) % beat) * 40) * rnd();
+    for (const n of phrases) {
+      const d = t - n;
+      if (d >= 0 && d < 1.5) v += 0.2 * Math.min(1, d * 20) * Math.min(1, (1.5 - d) * 20) * (Math.sin(2 * Math.PI * 220 * d + 0.3 * Math.sin(2 * Math.PI * 5 * d)) + 0.4 * Math.sin(2 * Math.PI * 440 * d));
+    }
+    x[i] = v;
+  }
+  return x;
+}
+
+test('com a bateria vazando no microfone, o limiar de volume separa as frases', () => {
+  const t = takes(bleed(11, [2, 6.5]), 0.8, 10, -20);
+  assert.equal(t.length, 2, JSON.stringify(t));
+  assert.ok(Math.abs(t[0][0] - 2) < 0.15 && Math.abs(t[1][0] - 6.5) < 0.15, JSON.stringify(t));
 });
