@@ -240,9 +240,13 @@ Z…M/Q…P teclado musical, -/= oitava.
   e `accent()`** para seguir o tema (repintam com `onTheme`).
 - **Playlist** (`Playlist.tsx`): clipes de pattern/áudio (forma de onda)/automação (pontos
   editáveis); **área selecionada** (arrastar na régua ou clicar num clipe; faixa
-  destacada; play começa nela); botão direito na área → `SelectionMenu.tsx` (Preencher
-  com pattern repetido/cortado, Inserir instrumento — Music Labs, presets, biblioteca/FL,
-  ferramentas —, apagar). Arrastar um clipe de áudio para o Stitcher/Afinador envia para lá.
+  destacada; play começa nela). Botão direito **num clipe** sempre apaga (mesmo dentro da
+  área); **num lugar vazio da área** abre `SelectionMenu.tsx` (Preencher com pattern
+  repetido/cortado, Inserir instrumento — Music Labs, presets, biblioteca/FL, ferramentas —,
+  apagar), agindo na track clicada. Amp/Afinador/Stitcher abertos por ali guardam
+  `state.selTrack`: a gravação do amp e o "Enviar para a playlist" caem nessa track (ou na
+  livre logo abaixo) no começo da área; `selTrack` some quando a área muda. Com área
+  selecionada, arrastar apagando (botão direito ou borracha) só apaga dentro dela. Arrastar um clipe de áudio para o Stitcher/Afinador envia para lá.
 - **Lista ao lado da playlist** (`Picker.tsx`): Patterns + **Áudios** (lista do projeto),
   largura ajustável arrastando a borda.
 - **Transporte** (`Toolbar.tsx`): PAT/SONG, play, stop, **REC geral** (grava notas ao vivo

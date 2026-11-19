@@ -81,6 +81,8 @@ export const state = {
   windows: defaultLayout(),
   /** Área selecionada na playlist (ticks): o play começa nela e o loop fica nela. */
   sel: null as null | { start: number; end: number },
+  /** Track escolhida no menu da área selecionada: áudio do amp/Afinador/Stitcher vai para ela. */
+  selTrack: null as number | null,
   loopOn: getPref('tr.loop', false),
   metronome: getPref('tr.metronome', false),
   countIn: getPref('tr.countIn', true),
@@ -378,7 +380,9 @@ export function play(mode = state.mode) {
 // ---------------------------------------------------------------- área selecionada, loop, metrônomo, contagem
 
 export function setSelection(sel: { start: number; end: number } | null) {
-  state.sel = sel && sel.end > sel.start ? sel : null;
+  const next = sel && sel.end > sel.start ? sel : null;
+  if (!next || !state.sel || next.start !== state.sel.start || next.end !== state.sel.end) state.selTrack = null;
+  state.sel = next;
   audio.transport({ region: state.sel ? [state.sel.start, state.sel.end] : null });
   emit();
 }
@@ -475,7 +479,8 @@ export async function toggleRecord(fromAmp: AmpTake | null = null, extra: { smar
   // como no REC geral: começa na área selecionada (ou onde a agulha está)
   const start = state.sel ? state.sel.start : audio.status.mode === 'song' ? Math.max(0, Math.floor(audio.status.tick)) : 0;
   try {
-    const track = A.freeTrack(state.project, start, 1e12);
+    const track =
+      state.sel && state.selTrack !== null ? freeTrackFrom(state.selTrack, start, state.sel.end - start) : A.freeTrack(state.project, start, 1e12);
     if (fromAmp) {
       const stream = audio.ampStream;
       if (!stream) throw new Error('o amp está desligado');
@@ -514,7 +519,7 @@ const liveTakes = new Map<number, string>();
 let recBaseTrack = 0;
 
 /** Primeira track, a partir de `from`, sem nada no trecho [pos, pos+len). */
-function freeTrackFrom(from: number, pos: number, len: number) {
+export function freeTrackFrom(from: number, pos: number, len: number) {
   const p = state.project;
   for (let t = from; ; t++) if (!p.clips.some((c) => c.track === t && c.pos < pos + len && c.pos + c.len > pos)) return t;
 }

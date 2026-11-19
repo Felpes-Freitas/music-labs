@@ -7,7 +7,7 @@ import { PPQ, uid } from '../core/model';
 import { set, ins, rem, type Op } from '../core/ops';
 import * as A from '../core/actions';
 import { encodeWav } from '../core/wav';
-import { state, edit, act, toast, countInIfOn } from './state';
+import { state, edit, act, toast, countInIfOn, freeTrackFrom } from './state';
 import { loadAudio, makeRoomBelow, playheadTick, ticksPerSec, uploadFiles } from './clipaudio';
 import { getPref } from './prefs';
 import { audio } from './audio';
@@ -116,9 +116,11 @@ export async function sendToPlaylist(id: string) {
     toast(`${it.name} na playlist, logo abaixo do original`);
     return;
   }
-  const tick = playheadTick();
+  // veio do menu da área selecionada: começo da área, na track clicada (ou a livre logo abaixo)
+  const target = state.sel && state.selTrack !== null;
+  const tick = target ? state.sel!.start : playheadTick();
   const len = Math.round(secs * ticksPerSec(p));
-  const track = A.freeTrack(p, tick, len);
+  const track = target ? freeTrackFrom(state.selTrack!, tick, len) : A.freeTrack(p, tick, len);
   act(A.addAudioClip, { sample: it.path, bar: 1, beat: tick / PPQ, track: track + 1, lengthSec: secs });
   toast(`${it.name} na playlist (track ${track + 1})`);
 }
