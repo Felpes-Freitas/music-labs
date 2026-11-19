@@ -10,6 +10,7 @@ import * as A from '../core/actions';
 import { encodeWav } from '../core/wav';
 import type { EngineStatus } from '../core/engine';
 import { getPref } from './prefs';
+import { foldTake } from '../core/loopfold';
 import { renderChain } from '../core/effects';
 import type { EffectType, Params } from '../core/model';
 import { startMidiRec, finishMidiRec, recNote, midiRecording, midiOnStatus } from './midirec';
@@ -516,10 +517,10 @@ export async function toggleRecord(fromAmp: AmpTake | null = null, extra: { smar
 export let livePeaks: (path: string, L: Float32Array, sr: number) => void = () => {};
 export const setLivePeaksHandler = (fn: typeof livePeaks) => void (livePeaks = fn);
 
-/** Takes já colocados na playlist durante a gravação (prévia "live:"), por índice do take. */
-const liveTakes = new Map<number, string>();
+/** Takes já colocados na playlist durante a gravação (prévia "live:"), por índice do take: um clipe por pedaço. */
+const liveTakes = new Map<number, string[]>();
 let recBaseTrack = 0;
-/** Área do loop da gravação do amp (a cauda dos efeitos não passa do fim dela). */
+/** Área do loop da gravação do amp (nada passa do fim dela: o que sobra volta ao início). */
 let recLoop: [number, number] | null = null;
 
 /** Primeira track, a partir de `from`, sem nada no trecho [pos, pos+len). */
@@ -541,10 +542,14 @@ function placeLiveTake(k: number) {
   audio.postLiveSample(path, a.sr, [L, R]);
   livePeaks(path, L, a.sr);
   const tps = (state.project.bpm * PPQ) / 60;
-  const len = Math.max(1, Math.round((L.length / a.sr) * tps));
-  const track = freeTrackFrom(recBaseTrack, Math.round(a.tick), len);
-  const r = act(A.addAudioClip, { sample: path, bar: 1, beat: a.tick / PPQ, track: track + 1, lengthSec: L.length / a.sr });
-  if (r) liveTakes.set(k, (r as { clip: string }).clip);
+  const ids: string[] = [];
+  for (const pc of foldTake(a.tick, L.length, a.sr, tps, recLoop)) {
+    const len = Math.max(1, Math.round(((pc.b - pc.a) / a.sr) * tps));
+    const track = freeTrackFrom(recBaseTrack, pc.tick, len);
+    const r = act(A.addAudioClip, { sample: path, bar: 1, beat: pc.tick / PPQ, track: track + 1, startSec: pc.a / a.sr, lengthSec: (pc.b - pc.a) / a.sr });
+    if (r) ids.push((r as { clip: string }).clip);
+  }
+  if (ids.length) liveTakes.set(k, ids);
 }
 
 async function finishRecording() {
@@ -555,10 +560,13 @@ async function finishRecording() {
   recDone = null;
   const live = new Map(liveTakes);
   liveTakes.clear();
+  const loop = recLoop;
   const ids: string[] = [];
   emit();
   if (!r) return;
-  const takes = r.takes.filter((t) => t.L.length >= r.sr * 0.08 && !(live.has(t.k) && !state.project.clips.some((c) => c.id === live.get(t.k))));
+  const exists = (id: string) => state.project.clips.some((c) => c.id === id);
+  // take cuja prévia você apagou inteira durante a gravação não volta
+  const takes = r.takes.filter((t) => t.L.length >= r.sr * 0.08 && !(live.has(t.k) && !live.get(t.k)!.some(exists)));
   if (!takes.length) {
     if (amp?.smart) toast('Nada foi tocado: nenhum clipe criado');
     return;
@@ -567,51 +575,52 @@ async function finishRecording() {
   let placed = 0;
   const tps = (state.project.bpm * PPQ) / 60;
   for (const t of takes) {
-    // a prévia deste take já foi para a playlist e você apagou: não volta
-    const liveId = live.get(t.k);
-    if (liveId && !state.project.clips.some((c) => c.id === liveId)) continue;
     try {
       // o retorno usou a cadeia leve; aqui ela roda de novo, sobreamostrada
       let [L, R] = amp ? renderChain(r.sr, amp.chain, t.L, t.R, { bpm: state.project.bpm, outGainDb: amp.outGainDb, tailSec: 2.5 }) : [t.L, t.R];
-      const clipId = live.get(t.k);
-      const clip = clipId ? state.project.clips.find((c) => c.id === clipId) : undefined;
-      const pos = clip ? clip.pos : Math.round(t.tick);
-      const rawLen = Math.max(1, Math.round((t.L.length / r.sr) * tps));
-      const track = clip ? clip.track : freeTrackFrom(recBaseTrack, pos, rawLen);
-      // a cauda dos efeitos vai até o próximo clipe da mesma track (com um fade curto)
-      const next = state.project.clips.filter((c) => c.track === track && c.id !== clipId && c.pos >= pos + rawLen - 1).sort((x, y) => x.pos - y.pos)[0];
-      // gravando em loop, nada passa do fim da área (a cauda nunca tocaria mesmo: a volta corta)
-      const frameAt = (tick: number) => Math.floor(((tick - pos) / tps) * r.sr);
+      const liveIds = live.get(t.k) ?? [];
+      const pieces = foldTake(t.tick, t.L.length, r.sr, tps, loop);
+      // a cauda dos efeitos fica no último pedaço: até o fim da área (loop) ou até o próximo clipe da track
+      const last = pieces[pieces.length - 1];
+      const lastClip = liveIds.length ? state.project.clips.find((c) => c.id === liveIds[pieces.length - 1]) : undefined;
+      const lastTick = lastClip ? lastClip.pos : last.tick;
+      const lastTrack = lastClip ? lastClip.track : freeTrackFrom(recBaseTrack, last.tick, Math.max(1, Math.round(((last.b - last.a) / r.sr) * tps)));
+      const frameAt = (tick: number) => last.a + Math.floor(((tick - lastTick) / tps) * r.sr);
       let max = L.length;
-      if (next) max = Math.min(max, Math.max(t.L.length, frameAt(next.pos)));
-      if (recLoop && pos < recLoop[1]) max = Math.max(1, Math.min(max, frameAt(recLoop[1])));
+      const next = state.project.clips.filter((c) => c.track === lastTrack && !liveIds.includes(c.id) && c.pos >= lastTick + 1).sort((x, y) => x.pos - y.pos)[0];
+      if (next) max = Math.min(max, Math.max(last.b, frameAt(next.pos)));
+      if (loop) max = Math.min(max, Math.max(last.b, frameAt(loop[1])));
       if (L.length > max) {
         L = L.slice(0, max);
         R = R.slice(0, max);
-        const fade = Math.min(max, Math.round(0.03 * r.sr));
+        const fade = Math.min(max - last.b, Math.round(0.03 * r.sr));
         for (let i = 0; i < fade; i++) {
           const g = i / fade;
           L[max - 1 - i] *= g;
           R[max - 1 - i] *= g;
         }
       }
+      last.b = L.length;
       const wav = encodeWav(L, R, r.sr, 24);
       const res = await fetch(`/api/recording?name=${encodeURIComponent(state.project.name)}`, { method: 'POST', headers: { 'content-type': 'audio/wav' }, body: new Blob([wav as BlobPart], { type: 'audio/wav' }) });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error);
-      const lenTicks = Math.max(1, Math.round((L.length / r.sr) * tps));
-      if (clip) {
-        // a prévia vira o arquivo em alta qualidade, no mesmo lugar
-        edit([set(['clips', clip.id, 'sample'], d.path), set(['clips', clip.id, 'len'], lenTicks)]);
-        ids.push(clip.id);
-        placed++;
-      } else {
-        const result = act(A.addAudioClip, { sample: d.path, bar: 1, beat: pos / PPQ, track: track + 1, lengthSec: L.length / r.sr });
-        if (result) {
-          placed++;
-          ids.push((result as { clip: string }).clip);
+      pieces.forEach((pc, i) => {
+        const lenTicks = Math.max(1, Math.round(((pc.b - pc.a) / r.sr) * tps));
+        const id = liveIds[i];
+        const clip = id ? state.project.clips.find((c) => c.id === id) : undefined;
+        if (id && !clip) return; // este pedaço foi apagado durante a gravação
+        if (clip) {
+          // a prévia vira o arquivo em alta qualidade, no mesmo lugar (mesmo que você tenha movido)
+          edit([set(['clips', clip.id, 'sample'], d.path), set(['clips', clip.id, 'startSec'], pc.a / r.sr), set(['clips', clip.id, 'len'], lenTicks)]);
+          ids.push(clip.id);
+        } else {
+          const track = freeTrackFrom(recBaseTrack, pc.tick, lenTicks); // depois dos pedaços já colocados
+          const result = act(A.addAudioClip, { sample: d.path, bar: 1, beat: pc.tick / PPQ, track: track + 1, startSec: pc.a / r.sr, lengthSec: (pc.b - pc.a) / r.sr });
+          if (result) ids.push((result as { clip: string }).clip);
         }
-      }
+      });
+      placed++;
     } catch (e) {
       toast(`Erro ao salvar a gravação: ${(e as Error).message}`);
     }

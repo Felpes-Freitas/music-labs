@@ -207,6 +207,12 @@ scripts/     ferramentas de diagnóstico e testes de UI (os _*.mts são temporá
   parar, `finishRecording` troca cada prévia pelo arquivo em alta qualidade no mesmo lugar;
   take cuja prévia foi apagada durante a gravação é descartado (não volta). Em loop, a
   cauda dos efeitos é cortada no fim da área (`recLoop`).
+- **Rede de segurança do loop** (`core/loopfold.ts`, `foldTake`): na prévia e na versão
+  final, take que passa do fim da área é cortado ali e o excesso continua no início dela
+  (vários pedaços se for maior que o loop; take que começou fora é trazido para dentro).
+  Os pedaços são clipes do mesmo arquivo com `startSec` diferentes, cada um numa track
+  livre. Toco < 150 ms no começo (pré-ataque) e sobra < 60 ms no fim (variação de tempo)
+  são descartados. `liveTakes` guarda os ids dos pedaços de cada take.
   Notas: `midiOnStatus` transforma cada volta em pattern assim que o loop recomeça.
 - **Contagem de 4 tempos** (opção `countIn`, ícone "321") vale para o REC geral, o amp (engine `countIn` +
   `countInSec` no startRecording) e as ferramentas (`countInIfOn` + `startCapture({arm})`).
