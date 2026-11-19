@@ -7,6 +7,10 @@ import * as A from '../../core/actions';
 import { Win, IconBtn, useCanvas } from './widgets';
 import { askText } from './Dialog';
 import { openTune } from './Tune';
+import { addStitchTakes } from './Stitch';
+
+/** Janela de ferramenta (Stitcher/Afinador) embaixo do ponteiro, se houver. */
+const toolAt = (x: number, y: number) => (document.elementFromPoint(x, y)?.closest('.win-stitch .tool, .win-tune .tool') as HTMLElement | null) ?? null;
 import { ui, accent } from '../theme';
 
 const HEADW = 120;
@@ -437,6 +441,10 @@ export function Playlist() {
       return;
     }
     if (d.kind === 'move') {
+      // arrastando um áudio por cima do Stitcher/Afinador: destaca a janela (soltar = enviar para lá)
+      const tool = d.orig.kind === 'audio' && !d.dup ? toolAt(e.clientX, e.clientY) : null;
+      document.querySelectorAll('.tool.dropping').forEach((el) => el !== tool && el.classList.remove('dropping'));
+      tool?.classList.add('dropping');
       const dt = Math.round((x - d.x0) / v.zx / snap) * snap;
       const dtr = Math.round((y - d.y0) / v.rowH);
       const c = { ...d.orig, pos: Math.max(0, d.orig.pos + dt), track: Math.max(0, Math.min(p.tracks.length - 1, d.orig.track + dtr)) };
@@ -455,10 +463,21 @@ export function Playlist() {
     }
   };
 
-  const onUp = () => {
+  const onUp = (e?: PointerEvent) => {
     const d = drag.current;
     drag.current = null;
     if (!d) return;
+    document.querySelectorAll('.tool.dropping').forEach((el) => el.classList.remove('dropping'));
+    // soltou um áudio dentro do Stitcher ou do Afinador: o clipe volta ao lugar e vai para a ferramenta
+    if (d.kind === 'move' && !d.dup && d.orig.kind === 'audio' && e) {
+      const tool = toolAt(e.clientX, e.clientY);
+      if (tool) {
+        previewEdit([set(['clips', d.id], d.orig)]);
+        if (tool.closest('.win-stitch')) addStitchTakes([d.id]);
+        else openTune(d.id);
+        return;
+      }
+    }
     if (d.kind === 'point') {
       const c = state.project.clips.find((x) => x.id === d.id);
       if (c) edit([set(['clips', c.id, 'points'], c.points ?? [])]);
@@ -535,7 +554,7 @@ export function Playlist() {
           class="pl-canvas"
           onPointerDown={onDown as any}
           onPointerMove={onMove as any}
-          onPointerUp={onUp}
+          onPointerUp={onUp as any}
           onWheel={onWheel as any}
           onContextMenu={(e) => e.preventDefault()}
           onDragOver={(e) => e.dataTransfer?.types.includes('text/x-batuque-sample') && e.preventDefault()}

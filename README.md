@@ -92,14 +92,16 @@ git push --follow-tags
   oscilação dentro das notas. O tom é detectado e pode ser trocado (raiz e escala).
   "Salvar como variação" cria um clipe novo numa track logo abaixo do original, que não
   muda. A mudança de altura preserva a duração (PSOLA).
-- **Stitcher** (F12): importe vários takes de uma vez (ou arraste, ou grave) — eles
-  são alinhados entre si automaticamente. O Stitcher detecta o tom, deduz a nota que se
-  queria cantar em cada trecho (escala + consenso entre os takes) e usa, nota a nota, o
-  take que chegou mais perto dela. A melodia aparece no topo e pode ser corrigida
-  arrastando as notas (ex.: era um Dó, não um Si); a escolha dos takes se refaz e, com
-  "Afinar na melodia", a costura sai afinada exatamente nessas notas. Também dá para
-  trocar o take de qualquer nota com um clique. Afinador e Stitcher têm botão Gravar com
-  a gravação inteligente.
+- **Stitcher** (F12): em cima, a onda do resultado, com cada pedaço na cor do áudio de
+  onde veio (clique em qualquer ponto para tocar dali); logo abaixo, a melodia; embaixo,
+  a lista dos áudios, cada um com a sua cor e os pedaços usados destacados. "Adicionar
+  áudio" puxa do computador (vários de uma vez, alinhados automaticamente) ou da
+  playlist; também dá para arrastar arquivos ou clipes da playlist para a janela, ou
+  gravar. O Stitcher detecta o tom, deduz a nota que se queria cantar em cada trecho
+  (escala + consenso entre os áudios) e usa, nota a nota, o áudio que chegou mais perto
+  dela. Arraste uma nota da melodia para corrigir (ex.: era um Dó, não um Si) e a escolha
+  se refaz; com "Afinar na melodia", o resultado sai afinado exatamente nessas notas.
+  Clique num trecho de um áudio da lista para usá-lo ali.
 - **Configurações** (menu Aparência ou Ctrl+,): temas Grafite, OLED e Adobe, cor de
   destaque com seletor de cor, Alt + arrastar janelas, entrada de gravação e atalhos.
 - **Parar duas vezes** corta também as caudas de reverb/eco e notas soltas.

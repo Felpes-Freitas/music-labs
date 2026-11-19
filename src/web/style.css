@@ -633,3 +633,29 @@ body.alt-drag .win, body.alt-drag .win * { cursor: move !important; }
 .stitch-list-head { display: flex; align-items: center; justify-content: space-between; }
 .stitch-all { height: 18px; font-size: 10px; padding: 0 6px; text-transform: none; letter-spacing: 0; }
 .stitch-lanes { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; }
+/* Stitcher: resultado em cima, melodia, lista de áudios com cores */
+.st-add { position: relative; }
+.st-add-btn { font-weight: 600; }
+.st-pop { position: absolute; top: 32px; left: 0; z-index: 50; background: var(--pop); border: 1px solid var(--line2); border-radius: var(--win-rad); box-shadow: 0 10px 28px var(--shadow); padding: 4px; display: flex; flex-direction: column; min-width: 190px; }
+.st-pop > button { justify-content: flex-start; border: none; background: transparent; box-shadow: none; height: 30px !important; }
+.st-pop > button:hover:not(:disabled) { background: var(--acc) !important; color: var(--acc-ink); }
+.st-pick { width: 300px; padding: 0; }
+.st-pick-head { font-size: 10px; text-transform: uppercase; letter-spacing: 1.3px; color: var(--head); font-weight: 700; padding: 8px 10px 4px; }
+.st-pick-list { max-height: 260px; overflow-y: auto; }
+.st-pick-foot { display: flex; justify-content: flex-end; gap: 6px; padding: 6px 8px; border-top: 1px solid var(--line2); }
+.st-main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.st-row { display: flex; align-items: stretch; border-bottom: 1px solid var(--line2); }
+.st-label { width: 210px; flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 10px; background: var(--bg2); border-right: 1px solid var(--line2); }
+.st-label > div { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.st-label b { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-label small { color: var(--dim); font-size: 10px; }
+.st-canvas { flex: 1; min-width: 0; display: block; height: 100%; touch-action: none; }
+.st-final { height: 110px; flex-shrink: 0; }
+.st-mel { height: 82px; flex-shrink: 0; }
+.st-list { flex: 1; min-height: 0; overflow-y: auto; }
+.st-take { height: 46px; }
+.st-take.unused .st-swatch { opacity: .35; }
+.st-take.unused .st-name b { color: var(--dim); }
+.st-swatch { width: 12px; height: 28px; border-radius: 3px; flex-shrink: 0; }
+.st-name { flex: 1; min-width: 0; }
+.st-play { width: 34px; height: 34px !important; border-radius: 50%; padding: 0; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
