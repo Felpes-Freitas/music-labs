@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { useApp, state, edit, previewEdit, onLive, selectPattern, setBrush, openWindow, setMode, act, setHint, setSelection, setLivePeaksHandler } from '../state';
+import { useApp, state, edit, toast, previewEdit, onLive, selectPattern, setBrush, openWindow, setMode, act, setHint, setSelection, setLivePeaksHandler } from '../state';
 import { SelectionMenu } from './SelectionMenu';
 import { audio } from '../audio';
 import { PPQ, patternLength, songLength, ticksPerBar, uid, isPatternClip, type Clip, type AutoTarget } from '../../core/model';
@@ -21,6 +21,9 @@ const HEADW = 120;
 
 /** O último clique foi na playlist? (atalhos de teclado dela: Delete, Esc, Ctrl+A) */
 let plFocus = false;
+export const playlistFocused = () => plFocus;
+/** Área de transferência da playlist (Ctrl+C / Ctrl+X → Ctrl+V). */
+let clipboard: Clip[] = [];
 window.addEventListener('pointerdown', (e) => void (plFocus = !!(e.target as Element).closest?.('.win-playlist')), true);
 
 const RULER = 22;
@@ -28,7 +31,8 @@ const RULER = 22;
 type Drag =
   /** Move o clipe clicado e, junto, os outros selecionados (group: originais de todos). */
   | { kind: 'move'; id: string; x0: number; y0: number; orig: Clip; dup: boolean; group: Clip[]; only: boolean }
-  | { kind: 'resize'; id: string; x0: number; orig: Clip; side: 'l' | 'r' }
+  /** Redimensiona o clipe clicado e, junto, os outros selecionados (group: originais). */
+  | { kind: 'resize'; id: string; x0: number; orig: Clip; side: 'l' | 'r'; group: Clip[] }
   | { kind: 'point'; id: string; idx: number; orig: Clip }
   | { kind: 'erase' }
   | { kind: 'seek' }
@@ -47,6 +51,10 @@ export function Playlist() {
   /** Clipes selecionados (Ctrl/Shift+clique soma); arrastar um deles move todos. */
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const pickedRef = useRef(picked);
+  /** Onde o mouse está na grade (Ctrl+V cola ali). */
+  const hover = useRef<{ tick: number; track: number } | null>(null);
+  /** snapNow do render atual (os atalhos de teclado são registrados uma vez só). */
+  const snapRef = useRef<() => number>(() => PPQ);
   pickedRef.current = picked;
   const playTick = useRef(-1);
   const bar = ticksPerBar(p);
@@ -59,6 +67,7 @@ export function Playlist() {
     if (snapMode === 'bar') return bar;
     return autoSnap(view.current.zx, bar);
   };
+  snapRef.current = snapNow;
 
   // Delete apaga os clipes selecionados; Esc tira a seleção; Ctrl+A seleciona tudo
   useEffect(() => {
@@ -71,6 +80,35 @@ export function Playlist() {
         edit(state.project.clips.filter((c) => sel.has(c.id)).map((c) => rem(['clips', c.id])));
         setPicked(new Set());
       } else if (e.key === 'Escape' && sel.size) setPicked(new Set());
+      else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && ['c', 'x', 'v', 'b'].includes(e.key.toLowerCase())) {
+        const k = e.key.toLowerCase();
+        const chosen = state.project.clips.filter((c) => sel.has(c.id));
+        if (k === 'c' || k === 'x') {
+          if (!chosen.length) return;
+          e.preventDefault();
+          clipboard = chosen.map((c) => ({ ...c }));
+          if (k === 'x') {
+            edit(chosen.map((c) => rem(['clips', c.id])), 'Recortar');
+            setPicked(new Set());
+          }
+          toast(`${chosen.length} ${chosen.length > 1 ? 'itens copiados' : 'item copiado'}${k === 'x' ? ' (recortado)' : ''}`);
+        } else if (k === 'v' && clipboard.length) {
+          e.preventDefault();
+          // cola onde o mouse está (o item mais à esquerda/acima vai para lá); fora da grade, logo depois do original
+          const minPos = Math.min(...clipboard.map((c) => c.pos)), maxEnd = Math.max(...clipboard.map((c) => c.pos + c.len));
+          const minTrack = Math.min(...clipboard.map((c) => c.track));
+          const h = hover.current;
+          const sn = snapRef.current();
+          const at = h ? Math.max(0, Math.round(h.tick / sn) * sn) : maxEnd;
+          const dTrack = h ? h.track - minTrack : 0;
+          pasteClips(clipboard, at - minPos, dTrack);
+        } else if (k === 'b' && chosen.length) {
+          // duplica logo à frente (como no FL)
+          e.preventDefault();
+          const minPos = Math.min(...chosen.map((c) => c.pos)), maxEnd = Math.max(...chosen.map((c) => c.pos + c.len));
+          pasteClips(chosen, maxEnd - minPos, 0);
+        }
+      }
       else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
         e.preventDefault();
         setPicked(new Set(state.project.clips.map((c) => c.id)));
@@ -79,6 +117,13 @@ export function Playlist() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+  /** Insere cópias deslocadas (dt ticks, dTrack tracks) e deixa elas selecionadas. */
+  const pasteClips = (src: Clip[], dt: number, dTrack: number) => {
+    const n = state.project.tracks.length;
+    const copies = src.map((c) => ({ ...c, id: uid('k'), pos: Math.max(0, c.pos + dt), track: Math.max(0, Math.min(n - 1, c.track + dTrack)) }));
+    edit(copies.map((c) => ins(['clips'], c)), 'Colar');
+    setPicked(new Set(copies.map((c) => c.id)));
+  };
   // clipes apagados (botão direito, desfazer...) saem da seleção
   useEffect(() => {
     if (!picked.size) return;
@@ -381,6 +426,22 @@ export function Playlist() {
     return null;
   };
   const clipOps = (c: Clip): ReturnType<typeof set>[] => [set(['clips', c.id], c)];
+  /**
+   * Anda o começo de um clipe dt ticks sem mexer no conteúdo (áudio começa mais adiante
+   * no arquivo; pattern muda o offset). Automação não tem começo móvel: fica como está.
+   */
+  const trimStart = (c: Clip, dt: number, sn: number): Clip => {
+    if (c.kind === 'auto') return c;
+    const secPerTick = 60 / (p.bpm * PPQ);
+    let pos = Math.min(c.pos + dt, c.pos + c.len - Math.min(sn, c.len));
+    pos = Math.max(0, pos);
+    if (c.kind === 'audio') pos = Math.max(pos, Math.ceil(c.pos - (c.startSec ?? 0) / secPerTick));
+    const d = pos - c.pos;
+    if (c.kind === 'audio') return { ...c, pos, len: c.len - d, startSec: Math.max(0, (c.startSec ?? 0) + d * secPerTick) };
+    const pat = p.patterns.find((q) => q.id === c.patternId);
+    const plen = pat ? patternLength(p, pat) : c.len;
+    return { ...c, pos, len: c.len - d, offset: (((c.offset + d) % plen) + plen) % plen };
+  };
 
   const onDown = (e: PointerEvent) => {
     const [x, y] = local(e);
@@ -500,7 +561,7 @@ export function Playlist() {
       if (next !== cur) setPicked(next);
       if (!next.has(h.c.id)) return; // Ctrl+clique tirou da seleção
       if (h.edge) {
-        drag.current = { kind: 'resize', id: h.c.id, x0: x, orig: { ...h.c }, side: h.edge };
+        drag.current = { kind: 'resize', id: h.c.id, x0: x, orig: { ...h.c }, side: h.edge, group: state.project.clips.filter((c) => next.has(c.id)).map((c) => ({ ...c })) };
         return;
       }
       let group = state.project.clips.filter((c) => next.has(c.id)).map((c) => ({ ...c }));
@@ -573,6 +634,7 @@ export function Playlist() {
 
   const onMove = (e: PointerEvent) => {
     const [x, y] = local(e);
+    hover.current = x > HEADW && y > RULER ? { tick: tickAt(x), track: trackAt(y) } : null;
     const d = drag.current;
     if (!d) {
       const h = y > RULER && x > HEADW ? hit(x, y) : null;
@@ -608,25 +670,16 @@ export function Playlist() {
       dtr = Math.max(-Math.min(...d.group.map((c) => c.track)), Math.min(p.tracks.length - 1 - Math.max(...d.group.map((c) => c.track)), dtr));
       previewEdit(d.group.flatMap((c) => clipOps({ ...c, pos: c.pos + dt, track: c.track + dtr })));
     } else if (d.kind === 'resize') {
+      // o clipe clicado encaixa na grade; os outros selecionados mudam o mesmo tanto
       const sn = snapNow();
       const o = d.orig;
       if (d.side === 'r') {
         const end = Math.round((o.pos + o.len + (x - d.x0) / v.zx) / sn) * sn;
-        previewEdit(clipOps({ ...o, len: Math.max(sn, end - o.pos) }));
+        const dl = Math.max(sn, end - o.pos) - o.len;
+        previewEdit(d.group.flatMap((c) => clipOps({ ...c, len: Math.max(Math.min(sn, c.len), c.len + dl) })));
       } else {
-        // pela esquerda: o começo anda e o conteúdo fica no lugar (áudio: começa mais adiante no arquivo)
-        const secPerTick = 60 / (p.bpm * PPQ);
-        let pos = Math.round((o.pos + (x - d.x0) / v.zx) / sn) * sn;
-        pos = Math.min(pos, o.pos + o.len - Math.min(sn, o.len));
-        pos = Math.max(0, pos);
-        if (o.kind === 'audio') pos = Math.max(pos, Math.ceil(o.pos - (o.startSec ?? 0) / secPerTick));
-        const dt = pos - o.pos;
-        if (o.kind === 'audio') previewEdit(clipOps({ ...o, pos, len: o.len - dt, startSec: Math.max(0, (o.startSec ?? 0) + dt * secPerTick) }));
-        else {
-          const pat = p.patterns.find((q) => q.id === o.patternId);
-          const plen = pat ? patternLength(p, pat) : o.len;
-          previewEdit(clipOps({ ...o, pos, len: o.len - dt, offset: ((((o.offset + dt) % plen) + plen) % plen) }));
-        }
+        const dt = Math.round((o.pos + (x - d.x0) / v.zx) / sn) * sn - o.pos;
+        previewEdit(d.group.flatMap((c) => clipOps(trimStart(c, dt, sn))));
       }
     } else if (d.kind === 'erase') {
       // com uma área selecionada, arrastar apagando só pega o que está dentro dela
@@ -687,8 +740,8 @@ export function Playlist() {
       }
       edit(cur.flatMap((c) => clipOps(c)));
     } else if (d.kind === 'resize') {
-      const c = state.project.clips.find((x) => x.id === d.id);
-      if (c) edit(clipOps(c));
+      const cur = d.group.map((g) => state.project.clips.find((x) => x.id === g.id)).filter((c): c is Clip => !!c);
+      if (cur.length) edit(cur.flatMap((c) => clipOps(c)));
     } else if (d.kind === 'sel' && !d.moved && e) {
       // clique simples na régua: tira a seleção e posiciona a agulha
       setSelection(null);
@@ -749,6 +802,7 @@ export function Playlist() {
           class="pl-canvas"
           onPointerDown={onDown as any}
           onPointerMove={onMove as any}
+          onPointerLeave={() => void (hover.current = null)}
           onPointerUp={onUp as any}
           onWheel={onWheel as any}
           onContextMenu={(e) => e.preventDefault()}

@@ -259,8 +259,12 @@ Z…M/Q…P teclado musical, -/= oitava.
   régua ou **Alt+clique num clipe** (só isso; pintar ou clicar não seleciona área; com o
   "Alt+arrastar janelas" ligado, a playlist fica de fora). **Clipes selecionados**
   (`picked`, contorno claro): clique seleciona um, Ctrl alterna, Shift soma, Ctrl+A tudo;
-  arrastar um move o grupo; Ctrl+Shift+arrastar duplica; Delete apaga; Esc limpa (atalhos
-  valem se o último clique foi na playlist — ela fica no fundo, nunca é a janela da frente).
+  arrastar um move o grupo; puxar a borda de um redimensiona o grupo (`trimStart` na
+  esquerda; automação não tem começo móvel); Ctrl+C/Ctrl+X/Ctrl+V (cola onde o mouse está,
+  ou logo depois do original), Ctrl+B duplica à frente; Ctrl+Shift+arrastar duplica;
+  Delete apaga; Esc limpa (atalhos
+  valem se o último clique foi na playlist — `playlistFocused()`; ela fica no fundo, nunca é
+  a janela da frente, e o piano roll ignora o teclado nesse caso).
   Bordas: direita e **esquerda** redimensionam (esquerda anda o começo e mantém o conteúdo:
   `startSec` no áudio, `offset` no pattern). **Snap** (`core/snap.ts`, ímã "auto/tempo/
   compasso", pref `pl.snap`): auto segue o zoom como no FL (compasso … 1/16 de tempo,
