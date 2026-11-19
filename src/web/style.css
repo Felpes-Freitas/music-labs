@@ -718,3 +718,27 @@ body.alt-drag .win, body.alt-drag .win * { cursor: move !important; }
 .amp-buf { display: flex; align-items: center; gap: 5px; color: var(--dim); font-size: 11px; }
 .amp-buf input { width: 64px; height: 24px; text-align: right; }
 .amp-buf small { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--dim2); }
+
+/* ---------------------------------------------------------------- selects no tema
+   A lista do select seguia o padrão do sistema (fundo claro) com o texto claro do
+   tema: ficava ilegível. Com o select personalizável do Chromium, a lista inteira
+   segue o tema e o item sob o mouse fica na cor de destaque. */
+option, optgroup { background-color: var(--pop); color: var(--text); }
+@supports (appearance: base-select) {
+  select, ::picker(select) { appearance: base-select; }
+  select { display: inline-flex; align-items: center; gap: 4px; padding: 0 4px 0 6px; line-height: 1; }
+  select::picker-icon { color: var(--dim); font-size: 9px; transition: transform .12s; }
+  select:open::picker-icon { transform: rotate(180deg); }
+  ::picker(select) {
+    background: var(--pop); color: var(--text); border: 1px solid var(--line2); border-radius: var(--win-rad);
+    box-shadow: 0 10px 28px var(--shadow); padding: 3px; max-height: min(420px, 70vh); min-width: anchor-size(width);
+  }
+  option { display: flex; align-items: center; gap: 6px; padding: 5px 10px 5px 6px; border-radius: var(--rad); background: transparent; color: var(--text); font-size: 12px; cursor: pointer; white-space: nowrap; }
+  option:hover, option:focus-visible { background: var(--acc); color: var(--acc-ink); outline: none; }
+  option:checked { font-weight: 600; }
+  option::checkmark { color: var(--acc); }
+  option:hover::checkmark, option:focus-visible::checkmark { color: var(--acc-ink); }
+  option:disabled { color: var(--dim2); cursor: default; }
+  optgroup { padding: 2px 0; }
+  optgroup legend, optgroup::label { display: block; padding: 6px 8px 3px; font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--head); font-weight: 700; }
+}
