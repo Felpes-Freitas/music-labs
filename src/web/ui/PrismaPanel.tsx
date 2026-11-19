@@ -12,6 +12,7 @@ import { usePref } from '../prefs';
 import { Icon } from './icons';
 import { Knob, fmt } from './widgets';
 import { PrismaFilter } from './PrismaFilter';
+import { ui, accent, themeRev } from '../theme';
 
 const DEFS = INSTRUMENTS.prisma.params;
 const def = (k: string) => DEFS.find((d) => d.key === k)!;
@@ -121,7 +122,7 @@ function EnvGraph(p: { ch: Channel; keys: [string, string, string, string]; colo
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const w = rc.width, h = rc.height;
     const g = geom(w, h);
-    ctx.fillStyle = '#0f1416';
+    ctx.fillStyle = ui('#0f1416');
     ctx.fillRect(0, 0, w, h);
     ctx.beginPath();
     ctx.moveTo(0, g.bot);
@@ -139,14 +140,14 @@ function EnvGraph(p: { ch: Channel; keys: [string, string, string, string]; colo
     ctx.stroke();
     ctx.lineWidth = 1;
     for (const [x, y] of [[g.ax, g.top], [g.dx, g.sy], [g.rx, g.bot]] as [number, number][]) {
-      ctx.fillStyle = '#0f1416';
+      ctx.fillStyle = ui('#0f1416');
       ctx.beginPath();
       ctx.arc(x, y, 4.5, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = p.color;
       ctx.stroke();
     }
-  }, [a, d, s, r, p.color]);
+  }, [a, d, s, r, p.color, themeRev]);
 
   const onDown = (e: PointerEvent) => {
     const c = e.currentTarget as HTMLCanvasElement;

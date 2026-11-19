@@ -8,6 +8,8 @@ import { set } from '../../core/ops';
 import { Knob, IconBtn, dbFmt } from './widgets';
 import { Icon } from './icons';
 import { askConfirm, askText } from './Dialog';
+import { ACCENTS, themes, prefs as looks, setTheme, setAccent, setAltDrag, accentColor, isHex } from '../theme';
+import { ui, accent } from '../theme';
 
 // ---------------------------------------------------------------- ações de arquivo
 
@@ -65,7 +67,7 @@ async function analyze() {
 
 // ---------------------------------------------------------------- menus
 
-type Item = { label: string; key?: string; run?: () => void; sub?: Item[]; sep?: boolean; on?: boolean };
+type Item = { label: string; key?: string; run?: () => void; sub?: Item[]; sep?: boolean; on?: boolean; swatch?: string; hint?: string };
 
 function menus(): Record<string, Item[]> {
   const s = state;
@@ -109,6 +111,39 @@ function menus(): Record<string, Item[]> {
       { label: 'Piano roll', key: 'F7', on: s.windows.piano.open, run: () => openWindow('piano', true) },
       { label: 'Navegador', key: 'Alt+F8', on: s.windows.browser.open, run: () => openWindow('browser', true) },
       { label: 'Mixer', key: 'F9', on: s.windows.mixer.open, run: () => openWindow('mixer', true) },
+    ],
+    Aparência: [
+      {
+        label: 'Tema',
+        sub: themes().map((t) => ({ label: t.name, hint: t.hint, on: looks.theme === t.id, run: () => setTheme(t.id) })),
+      },
+      {
+        label: 'Cor de destaque',
+        sub: [
+          { label: 'Padrão do tema', on: looks.accent === null, run: () => setAccent(null) },
+          { sep: true, label: '' },
+          ...ACCENTS.map((a) => ({ label: a.name, swatch: a.color, on: looks.accent?.toLowerCase() === a.color, run: () => setAccent(a.color) })),
+          { sep: true, label: '' },
+          {
+            label: 'Personalizada…',
+            swatch: looks.accent && !ACCENTS.some((a) => a.color === looks.accent?.toLowerCase()) ? looks.accent : undefined,
+            on: !!looks.accent && !ACCENTS.some((a) => a.color === looks.accent?.toLowerCase()),
+            run: async () => {
+              const v = await askText({ title: 'Cor de destaque personalizada', label: 'Cor em hexadecimal (ex.: #ff8a3d)', value: accentColor(), ok: 'Aplicar' });
+              if (!v) return;
+              if (!isHex(v)) return toast('Cor inválida: use o formato #rrggbb');
+              setAccent('#' + v.trim().replace('#', '').toLowerCase());
+            },
+          },
+        ],
+      },
+      { sep: true, label: '' },
+      {
+        label: 'Alt + arrastar move janelas',
+        hint: 'Segure Alt e arraste qualquer ponto de uma janela para movê-la (Alt + botão direito redimensiona)',
+        on: looks.altDrag,
+        run: () => (setAltDrag(!looks.altDrag), emit()),
+      },
     ],
     Opções: [
       { label: 'Seguir a reprodução', on: s.followPlay, run: () => ((state.followPlay = !state.followPlay), emit()) },
@@ -161,19 +196,25 @@ function MenuBar() {
                 it.sep ? (
                   <div class="menu-sep" />
                 ) : (
-                  <div class={`menu-item ${it.sub ? 'has-sub' : ''}`} onClick={() => run(it)} onPointerEnter={() => setSub(it.sub ? it.label : null)}>
+                  <div class={`menu-item ${it.sub ? 'has-sub' : ''}`} data-hint={it.hint} onClick={() => run(it)} onPointerEnter={() => setSub(it.sub ? it.label : null)}>
                     <span class="menu-check">{it.on ? '✓' : ''}</span>
+                    {it.swatch && <span class="menu-swatch" style={{ background: it.swatch }} />}
                     <span class="menu-label">{it.label}</span>
                     {it.key && <span class="menu-key">{it.key}</span>}
                     {it.sub && <Icon name="chevron" size={10} />}
                     {it.sub && sub === it.label && (
                       <div class="menu-drop sub">
-                        {it.sub.map((x) => (
-                          <div class="menu-item" onClick={(e) => (e.stopPropagation(), run(x))}>
-                            <span class="menu-check" />
-                            <span class="menu-label">{x.label}</span>
-                          </div>
-                        ))}
+                        {it.sub.map((x) =>
+                          x.sep ? (
+                            <div class="menu-sep" />
+                          ) : (
+                            <div class="menu-item" data-hint={x.hint} onClick={(e) => (e.stopPropagation(), run(x))}>
+                              <span class="menu-check">{x.on ? '✓' : ''}</span>
+                              {x.swatch && <span class="menu-swatch" style={{ background: x.swatch }} />}
+                              <span class="menu-label">{x.label}</span>
+                            </div>
+                          ),
+                        )}
                       </div>
                     )}
                   </div>
@@ -234,9 +275,9 @@ function Scope() {
       if (!c) return;
       const ctx = c.getContext('2d')!;
       const w = c.width, h = c.height;
-      ctx.fillStyle = '#0c1012';
+      ctx.fillStyle = ui('#0c1012');
       ctx.fillRect(0, 0, w, h);
-      ctx.strokeStyle = '#1f2a2f';
+      ctx.strokeStyle = ui('#1f2a2f');
       ctx.beginPath();
       ctx.moveTo(0, h / 2);
       ctx.lineTo(w - 14, h / 2);

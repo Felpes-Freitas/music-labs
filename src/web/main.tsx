@@ -1,7 +1,7 @@
 import { render } from 'preact';
 import { useEffect } from 'preact/hooks';
 import './style.css';
-import { useApp, state, togglePlay, setMode, undo, redo, openWindow, cycleWindows, fitWindows, api, toast } from './state';
+import { useApp, emit, state, togglePlay, setMode, undo, redo, openWindow, cycleWindows, fitWindows, api, toast } from './state';
 import { audio } from './audio';
 import { TitleBar, Toolbar } from './ui/Toolbar';
 import { ChannelRack } from './ui/ChannelRack';
@@ -11,6 +11,15 @@ import { Mixer } from './ui/Mixer';
 import { ChannelSettings } from './ui/ChannelSettings';
 import { Browser, addSampleChannel } from './ui/Browser';
 import { DialogHost, dialogOpen } from './ui/Dialog';
+import { applyTheme, onTheme, prefs as looks } from './theme';
+
+applyTheme();
+onTheme(() => emit());
+// Alt segurado: cursor de mover sobre as janelas
+const altCursor = (on: boolean) => document.body.classList.toggle('alt-drag', on && looks.altDrag);
+window.addEventListener('keydown', (e) => e.key === 'Alt' && altCursor(true));
+window.addEventListener('keyup', (e) => e.key === 'Alt' && altCursor(false));
+window.addEventListener('blur', () => altCursor(false));
 
 // Teclado do computador como piano (duas fileiras, como em muitos DAWs).
 const KEYMAP: Record<string, number> = {

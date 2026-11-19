@@ -12,6 +12,7 @@ import { mtof } from '../../core/dsp';
 import { set } from '../../core/ops';
 import { edit, onLive, previewEdit, setHint } from '../state';
 import { Knob, fmt } from './widgets';
+import { ui, accent } from '../theme';
 
 export const NODE_COLORS = ['#f2a93b', '#7fd6f2', '#c49cff', '#6fdc8c', '#ff7b8a', '#e8d36a'];
 
@@ -109,24 +110,24 @@ function FilterGraph(p: { ch: Channel; sel: number; setSel: (i: number) => void 
   const paint = (ctx: CanvasRenderingContext2D, g: Geo) => {
     const { w, h } = g;
     const bg = ctx.createLinearGradient(0, 0, 0, h);
-    bg.addColorStop(0, '#10161a');
-    bg.addColorStop(1, '#090c0e');
+    bg.addColorStop(0, ui('#10161a'));
+    bg.addColorStop(1, ui('#090c0e'));
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, w, h);
     // grade de frequência e de dB
     ctx.font = '9px sans-serif';
     for (const f of [30, 50, 100, 200, 500, 1000, 2000, 5000, 10000]) {
       const x = Math.round(xOf(f, g)) + 0.5;
-      ctx.fillStyle = '#18222a';
+      ctx.fillStyle = ui('#18222a');
       ctx.fillRect(x, PAD_T, 1, h - PAD_T - PAD_B);
-      ctx.fillStyle = '#4f6068';
+      ctx.fillStyle = ui('#4f6068');
       ctx.fillText(f >= 1000 ? `${f / 1000}k` : String(f), x + 2, h - 4);
     }
     for (const db of [12, 0, -12, -24, -36]) {
       const y = Math.round(yOfDb(db, g)) + 0.5;
-      ctx.fillStyle = db === 0 ? '#2f4048' : '#161f25';
+      ctx.fillStyle = db === 0 ? ui('#2f4048') : ui('#161f25');
       ctx.fillRect(0, y, w, 1);
-      ctx.fillStyle = '#4f6068';
+      ctx.fillStyle = ui('#4f6068');
       ctx.fillText(`${db > 0 ? '+' : ''}${db}`, 3, y - 2);
     }
     // espectrograma ao vivo do som do canal
@@ -182,7 +183,7 @@ function FilterGraph(p: { ch: Channel; sel: number; setSel: (i: number) => void 
         firstY = y;
       } else ctx.lineTo(x, y);
     }
-    ctx.strokeStyle = '#ffb347';
+    ctx.strokeStyle = accent();
     ctx.lineWidth = 2;
     ctx.stroke();
     ctx.lineWidth = 1;
@@ -212,23 +213,23 @@ function FilterGraph(p: { ch: Channel; sel: number; setSel: (i: number) => void 
       ctx.arc(x, y, rad, 0, Math.PI * 2);
       ctx.fill();
       if (sel) {
-        ctx.strokeStyle = '#fff';
+        ctx.strokeStyle = ui('#fff');
         ctx.lineWidth = 1.5;
         ctx.stroke();
         ctx.lineWidth = 1;
       }
-      ctx.fillStyle = '#10161a';
+      ctx.fillStyle = ui('#10161a');
       ctx.font = 'bold 9px sans-serif';
       ctx.fillText(String(n.i), x - 2.5, y + 3);
     }
     // legenda e leitura sob o mouse
     ctx.font = '9.5px sans-serif';
-    ctx.fillStyle = '#8fa3ad';
+    ctx.fillStyle = ui('#8fa3ad');
     const label = `nota ${noteName(refKey.current)} · ${nodes.length} ${nodes.length === 1 ? 'nó ativo' : 'nós ativos'}`;
     ctx.fillText(label, w - ctx.measureText(label).width - 6, 12);
     if (hover.current && !drag.current) {
       const f = fOf(hover.current.x, g);
-      ctx.fillStyle = '#c9d1d5';
+      ctx.fillStyle = ui('#c9d1d5');
       ctx.fillText(`${fmtHz(f)} · ${curveDb(nodes, Math.log2(f)).toFixed(1)} dB`, 26, 12);
     }
   };
