@@ -46,6 +46,12 @@ export function SelectionMenu(p: { x: number; y: number; track: number; sel: { s
     toast(`${name}: pattern novo na área selecionada. Toque no teclado com o REC ligado para gravar`);
   };
   const fillOpsFor = (pat: Pattern, tr: number, a: number, b: number): Op[] => [ins(['clips'], { id: uid('k'), track: tr, pos: a, len: b - a, patternId: pat.id, offset: 0 } satisfies Clip)];
+  /** Abre a ferramenta lembrando a track clicada (o áudio dela vai para lá). */
+  const openTool = (k: 'amp' | 'tune' | 'stitch', label: string) => {
+    state.selTrack = track;
+    openWindow(k, false);
+    toast(`${label}: o áudio vai para a track ${track + 1}, no começo da área`);
+  };
   const newChannel = (args: { type?: InstrumentType; preset?: string }, label: string) => {
     const r = act(A.addChannel, args);
     if (r) placeNew((r as { id: string }).id, label);
@@ -87,9 +93,9 @@ export function SelectionMenu(p: { x: number; y: number; track: number; sel: { s
           ? [{ label: 'Carregando a biblioteca…' }]
           : [...byCat.entries()].map(([cat, list]) => ({ label: cat, sub: list.slice(0, 400).map((i) => ({ label: i.name, run: () => newSample(i.path, i.name) })) }))),
         { sep: true, label: '' },
-        { label: 'Amp de guitarra', run: () => openWindow('amp', false) },
-        { label: 'Afinador', run: () => openWindow('tune', false) },
-        { label: 'Stitcher', run: () => openWindow('stitch', false) },
+        { label: 'Amp de guitarra', hint: 'O áudio vai para esta track, no começo da área', run: () => openTool('amp', 'Amp de guitarra') },
+        { label: 'Afinador', hint: 'O áudio vai para esta track, no começo da área', run: () => openTool('tune', 'Afinador') },
+        { label: 'Stitcher', hint: 'O áudio vai para esta track, no começo da área', run: () => openTool('stitch', 'Stitcher') },
       ],
     },
     { sep: true, label: '' },

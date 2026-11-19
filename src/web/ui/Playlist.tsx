@@ -329,15 +329,6 @@ export function Playlist() {
       drag.current = { kind: 'sel', t0: Math.max(0, Math.round(tickAt(x) / snap) * snap), x0: x, moved: false };
       return;
     }
-    // botão direito dentro da área selecionada: menu (preencher, inserir instrumento)
-    if (e.button === 2 && s.sel && x > HEADW) {
-      const t = tickAt(x);
-      if (t >= s.sel.start && t < s.sel.end) {
-        drag.current = null;
-        setMenu({ x: e.clientX, y: e.clientY, track: Math.max(0, trackAt(y)) });
-        return;
-      }
-    }
     if (x < HEADW) {
       const t = trackAt(y);
       const tr = p.tracks[t];
@@ -348,6 +339,16 @@ export function Playlist() {
       return;
     }
     const h = hit(x, y);
+    // botão direito num lugar vazio da área selecionada: menu (preencher, inserir
+    // instrumento) na track clicada. Em cima de um clipe, apaga como sempre.
+    if (e.button === 2 && s.sel && !h) {
+      const t = tickAt(x);
+      if (t >= s.sel.start && t < s.sel.end) {
+        drag.current = null;
+        setMenu({ x: e.clientX, y: e.clientY, track: Math.max(0, Math.min(p.tracks.length - 1, trackAt(y))) });
+        return;
+      }
+    }
     // edição de pontos no corpo de um clipe de automação
     if (h && h.c.kind === 'auto' && !h.edge && tool === 'draw') {
       const c = h.c;
@@ -480,8 +481,14 @@ export function Playlist() {
       const end = Math.round((d.orig.pos + d.orig.len + (x - d.x0) / v.zx) / snap) * snap;
       previewEdit(clipOps({ ...d.orig, len: Math.max(snap, end - d.orig.pos) }));
     } else if (d.kind === 'erase') {
+      // com uma área selecionada, arrastar apagando só pega o que está dentro dela
+      const sel = state.sel;
+      if (sel) {
+        const t = tickAt(x);
+        if (t < sel.start || t >= sel.end) return;
+      }
       const h = hit(x, y);
-      if (h) edit([rem(['clips', h.c.id])]);
+      if (h && (!sel || (h.c.pos < sel.end && h.c.pos + h.c.len > sel.start))) edit([rem(['clips', h.c.id])]);
     } else if (d.kind === 'seek') seek(x);
     else if (d.kind === 'sel') {
       if (!d.moved && Math.abs(x - d.x0) < 4) return;
