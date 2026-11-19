@@ -273,6 +273,9 @@ Z…M/Q…P teclado musical, -/= oitava.
 - Preferências locais: `getPref/setPref/usePref` (`src/web/prefs.ts`, localStorage
   `musiclabs.ui`), não ficam no projeto (tema, amp, opções de transporte, larguras).
 - Textos em português com acentuação correta.
+- **Selects** usam o select personalizável do Chromium (`appearance: base-select`,
+  `::picker(select)` no fim do style.css): a lista segue o tema e o item sob o mouse fica na
+  cor de destaque. Não reverter para a lista nativa (ficava branca e ilegível).
 
 ---
 
