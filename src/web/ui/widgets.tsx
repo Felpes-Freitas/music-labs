@@ -3,6 +3,7 @@ import type { ComponentChildren } from 'preact';
 import { state, focusWindow, closeWindow, emit, act, type WindowId } from '../state';
 import * as A from '../../core/actions';
 import { onTheme, prefs as looks } from '../theme';
+import { recAuto } from '../midirec';
 import { Icon } from './icons';
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -69,6 +70,7 @@ export function Knob(p: KnobProps) {
       last = v;
       setDrag(v);
       p.onInput(v);
+      if (p.auto) recAuto({ path: p.auto.path, min: p.min, max: p.max, log: p.log, label: p.auto.label }, v);
     };
     const up = () => {
       el.removeEventListener('pointermove', move as any);
@@ -324,5 +326,73 @@ export function ContextMenu(p: { x: number; y: number; items: [string, () => voi
         </button>
       ))}
     </div>
+  );
+}
+
+export interface MenuItem {
+  label: string;
+  run?: () => void;
+  sub?: MenuItem[];
+  sep?: boolean;
+  hint?: string;
+  swatch?: string;
+}
+
+/** Menu de contexto com submenus (abrem ao passar o mouse). */
+export function MenuTree(p: { x: number; y: number; items: MenuItem[]; onClose: () => void }) {
+  useEffect(() => {
+    const close = () => p.onClose();
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && p.onClose();
+    setTimeout(() => window.addEventListener('pointerdown', close, { once: true }), 0);
+    window.addEventListener('keydown', key);
+    return () => {
+      window.removeEventListener('pointerdown', close);
+      window.removeEventListener('keydown', key);
+    };
+  }, []);
+  return <MenuLevel x={p.x} y={p.y} items={p.items} onClose={p.onClose} />;
+}
+
+function MenuLevel(p: { x: number; y: number; items: MenuItem[]; onClose: () => void }) {
+  const [open, setOpen] = useState<{ i: number; x: number; y: number } | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ x: p.x, y: p.y });
+  // não deixa o menu sair da tela
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setPos({ x: Math.min(p.x, window.innerWidth - r.width - 6), y: Math.max(6, Math.min(p.y, window.innerHeight - r.height - 6)) });
+  }, [p.x, p.y, p.items.length]);
+  return (
+    <>
+      <div ref={ref} class="ctx menutree" style={{ left: `${pos.x}px`, top: `${pos.y}px` }} onPointerDown={(e) => e.stopPropagation()}>
+        {p.items.map((it, i) =>
+          it.sep ? (
+            <div class="menu-sep" />
+          ) : (
+            <button
+              class={`${it.sub ? 'has-sub' : ''} ${open?.i === i ? 'open' : ''}`}
+              data-hint={it.hint}
+              onPointerEnter={(e) => {
+                if (!it.sub) return setOpen(null);
+                const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                setOpen({ i, x: r.right - 2, y: r.top - 4 });
+              }}
+              onClick={() => {
+                if (it.sub) return;
+                it.run?.();
+                p.onClose();
+              }}
+            >
+              {it.swatch && <span class="menu-swatch" style={{ background: it.swatch }} />}
+              <span class="mt-label">{it.label}</span>
+              {it.sub && <Icon name="chevron" size={10} />}
+            </button>
+          ),
+        )}
+      </div>
+      {open && p.items[open.i]?.sub && <MenuLevel x={open.x} y={open.y} items={p.items[open.i].sub!} onClose={p.onClose} />}
+    </>
   );
 }

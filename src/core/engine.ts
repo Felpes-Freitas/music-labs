@@ -55,6 +55,10 @@ export interface EngineStatus {
   lit: number[];
   /** Espectro (dB por faixa) do som do canal observado; null se em silêncio. */
   spectrum: number[] | null;
+  /** Contagem antes de começar: tempos que faltam (0 = tocando de verdade). */
+  countIn: number;
+  /** Quantas vezes o loop recomeçou desde o play (a gravação usa para trocar de track). */
+  loops: number;
 }
 
 export interface InsertStats {
@@ -159,11 +163,45 @@ export class Engine {
     if (!this.patternId) this.patternId = p.patterns[0]?.id ?? null;
   }
 
-  play(mode: 'pattern' | 'song', patternId?: string | null, fromTick?: number) {
+  play(mode: 'pattern' | 'song', patternId?: string | null, fromTick?: number, countInBeats = 0) {
     this.mode = mode;
     if (patternId) this.patternId = patternId;
     if (fromTick !== undefined) this.tick = fromTick;
     this.playing = true;
+    this.loops = 0;
+    // contagem: só o metrônomo soa durante esses tempos; a música começa depois
+    this.preroll = countInBeats * PPQ;
+    this.prerollPos = 0;
+  }
+
+  // ---- transporte (não fica salvo no projeto)
+  /** Área selecionada na playlist (ticks): o play começa nela e o loop fica nela. */
+  region: [number, number] | null = null;
+  loopOn = false;
+  metronome = false;
+  loops = 0;
+  private preroll = 0;
+  private prerollPos = 0;
+  private click = { left: 0, freq: 0, ph: 0, gain: 0 };
+  setTransport(t: { region?: [number, number] | null; loopOn?: boolean; metronome?: boolean }) {
+    if (t.region !== undefined) this.region = t.region && t.region[1] > t.region[0] ? t.region : null;
+    if (t.loopOn !== undefined) this.loopOn = t.loopOn;
+    if (t.metronome !== undefined) this.metronome = t.metronome;
+  }
+  private startClick(accent: boolean) {
+    this.click = { left: Math.round(this.sr * 0.035), freq: accent ? 1760 : 1175, ph: 0, gain: accent ? 0.42 : 0.3 };
+  }
+  /** Soma o clique do metrônomo a partir do frame f. */
+  private renderClick(L: Float32Array, R: Float32Array, f0: number, n: number) {
+    const c = this.click;
+    const total = Math.round(this.sr * 0.035);
+    for (let i = f0; i < n && c.left > 0; i++, c.left--) {
+      const env = c.left / total;
+      const v = Math.sin(c.ph) * c.gain * env * env;
+      c.ph += (2 * Math.PI * c.freq) / this.sr;
+      L[i] += v;
+      R[i] += v;
+    }
   }
   stop(rewind = true) {
     this.playing = false;
@@ -238,6 +276,11 @@ export class Engine {
       const pat = p.patterns.find((x) => x.id === this.patternId);
       return [0, pat ? patternLength(p, pat) : 384];
     }
+    if (this.region) {
+      // com loop: a área inteira; sem loop: da área até o fim da música
+      if (this.loopOn) return this.region;
+      return [0, Math.max(songLength(p), this.region[1])];
+    }
     if (p.loop && p.loop.end > p.loop.start) return [p.loop.start, p.loop.end];
     const end = songLength(p);
     return [0, end > 0 ? end : 384 * 4];
@@ -305,6 +348,22 @@ export class Engine {
     // trechos contínuos de tempo neste bloco (o loop pode quebrar o bloco em dois)
     const segs: { f0: number; f1: number; t0: number }[] = [];
 
+    // contagem antes de começar: só o metrônomo, a música espera
+    if (this.playing && this.preroll > 0) {
+      const ticks = n * tps;
+      let from = 0;
+      for (let b = Math.ceil(this.prerollPos / PPQ) * PPQ; b < this.prerollPos + ticks && b < this.preroll; b += PPQ) {
+        const f = Math.floor((b - this.prerollPos) / tps);
+        this.renderClick(outL, outR, from, f);
+        from = f;
+        this.startClick(b === 0);
+      }
+      this.renderClick(outL, outR, from, n);
+      this.prerollPos += ticks;
+      if (this.prerollPos < this.preroll) return;
+      this.preroll = 0;
+    }
+
     if (this.playing) {
       const [ls, le] = this.loopRange();
       if (this.tick >= le || this.tick < ls) this.tick = ls;
@@ -326,7 +385,8 @@ export class Engine {
           segs.push({ f0: ft, f1: Math.min(n, ft + framesToEnd), t0: tt });
           f0 += framesToEnd;
           t0 = ls + (t0 + framesToEnd * tps - le);
-          if (this.mode === 'song' && !p.loop) {
+          this.loops++;
+          if (this.mode === 'song' && !p.loop && !this.loopOn) {
             // Fim da música: para no fim, como num player.
             this.playing = false;
             this.tick = 0;
@@ -537,6 +597,21 @@ export class Engine {
       master.peakAll = Math.max(master.peakAll, pl, pr);
       this.statFrames += n;
     }
+    // metrônomo: um clique a cada tempo (mais agudo no começo do compasso); fica fora dos medidores
+    if (this.metronome && this.playing && !collectStats) {
+      const bar = PPQ * (p.timeSig?.[0] ?? 4);
+      let from = 0;
+      for (const sg of segs) {
+        const t1 = sg.t0 + (sg.f1 - sg.f0) * tps;
+        for (let b = Math.ceil(sg.t0 / PPQ) * PPQ; b < t1; b += PPQ) {
+          const f = sg.f0 + Math.floor((b - sg.t0) / tps);
+          this.renderClick(outL, outR, from, f);
+          from = f;
+          this.startClick(b % bar === 0);
+        }
+      }
+      this.renderClick(outL, outR, from, n);
+    }
   }
 
   private auto = new Map<string, number>();
@@ -588,7 +663,8 @@ export class Engine {
     this.flashes.clear();
     const spectrum = this.watched && this.scopeFresh ? analyzeSpectrum(this.scope, this.scopeW, this.sr) : null;
     this.scopeFresh = false;
-    return { playing: this.playing, mode: this.mode, patternId: this.patternId, tick: this.tick, meters, gr, activeChannels: active, lit: [...this.lit.keys()], spectrum };
+    const countIn = this.playing && this.preroll > 0 ? Math.ceil((this.preroll - this.prerollPos) / PPQ) : 0;
+    return { playing: this.playing, mode: this.mode, patternId: this.patternId, tick: this.tick, meters, gr, activeChannels: active, lit: [...this.lit.keys()], spectrum, countIn, loops: this.loops };
   }
 
   insertStats(): InsertStats[] {

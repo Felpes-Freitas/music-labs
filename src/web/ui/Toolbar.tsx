@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { toggleLoop, toggleMetronome, toggleCountIn } from '../state';
+import { midiRecording } from '../midirec';
 import { useApp, useHint, state, play, stop, toggleRecord, setMode, selectPattern, act, edit, previewEdit, undo, redo, openWindow, api, toast, onLive, emit, type WindowId } from '../state';
 import { audio } from '../audio';
 import * as A from '../../core/actions';
@@ -418,7 +420,23 @@ export function Toolbar() {
         </div>
         <IconBtn icon={playing ? 'pause' : 'play'} class={`tbig play ${playing ? 'on' : ''}`} hint="Tocar / pausar (Espaço)" onClick={() => (playing ? stop() : play())} />
         <IconBtn icon="stop" class="tbig" hint="Parar e voltar ao início" onClick={() => stop()} />
-        <IconBtn icon="record" class={`tbig rec ${audio.recording ? 'on' : ''}`} hint={audio.recording ? 'Parar a gravação' : 'Gravar do microfone a partir da posição atual (vira um clipe de áudio na playlist)'} onClick={() => toggleRecord()} />
+        <IconBtn
+          icon="record"
+          class={`tbig rec ${audio.recording || midiRecording() ? 'on' : ''}`}
+          hint={audio.recording || midiRecording() ? 'Parar a gravação' : 'Gravar notas (teclado do computador, teclado MIDI) e automações (knobs mexidos) a partir da seleção ou da posição atual. Voz e instrumentos de áudio: Amp, Afinador e Stitcher'}
+          onClick={() => toggleRecord()}
+        />
+        <div class="tr-toggles">
+          <button class={`tr-tog ${s.loopOn ? 'on' : ''}`} onClick={toggleLoop} data-hint="Loop: ao chegar no fim da área selecionada (ou da música), volta para o começo. Gravando, cada volta vira um pattern novo na track de baixo">
+            <Icon name="loop" size={13} />
+          </button>
+          <button class={`tr-tog ${s.metronome ? 'on' : ''}`} onClick={toggleMetronome} data-hint="Metrônomo: um clique a cada tempo (mais agudo no começo do compasso)">
+            <Icon name="metronome" size={13} />
+          </button>
+          <button class={`tr-tog ${s.countIn ? 'on' : ''}`} onClick={toggleCountIn} data-hint="Contagem: ao gravar, conta 3 tempos (3, 2, 1) antes de começar">
+            <span class="tr-count">321</span>
+          </button>
+        </div>
         <div class="lcdbox">
           <BpmControl />
           <span class="lcd-cap">BPM</span>

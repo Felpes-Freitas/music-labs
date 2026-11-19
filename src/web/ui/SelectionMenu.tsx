@@ -1,0 +1,103 @@
+// Menu do botão direito numa área selecionada da playlist: preencher a área com um
+// pattern (repetido e cortado para caber) ou inserir um instrumento novo ali (um
+// pattern novo, só com ele, ocupando a área, pronto para gravar).
+
+import { useEffect, useState } from 'preact/hooks';
+import { state, edit, act, api, toast, selectPattern, selectChannel, openWindow, setSelection } from '../state';
+import * as A from '../../core/actions';
+import { INSTRUMENTS, PRESETS } from '../../core/registry';
+import { patternLength, uid, color, STEP, type Clip, type InstrumentType, type Pattern } from '../../core/model';
+import { ins, rem, type Op } from '../../core/ops';
+import { MenuTree, type MenuItem } from './widgets';
+import { addSampleChannel } from './Browser';
+
+let libCache: { name: string; category: string; path: string }[] | null = null;
+
+/** Clipes do pattern repetido para encher [start, end) na track (o último é cortado). */
+export function fillOps(patId: string, track: number, start: number, end: number): Op[] {
+  const p = state.project;
+  const pat = p.patterns.find((x) => x.id === patId);
+  if (!pat) return [];
+  const plen = patternLength(p, pat);
+  const ops: Op[] = [];
+  for (let pos = start; pos < end; pos += plen) ops.push(ins(['clips'], { id: uid('k'), track, pos, len: Math.min(plen, end - pos), patternId: patId, offset: 0 } satisfies Clip));
+  return ops;
+}
+
+export function SelectionMenu(p: { x: number; y: number; track: number; sel: { start: number; end: number }; onClose: () => void }) {
+  const [lib, setLib] = useState(libCache);
+  useEffect(() => {
+    if (!libCache)
+      api('GET', '/api/registry').then((r) => {
+        libCache = r.localInstruments ?? [];
+        setLib(libCache);
+      });
+  }, []);
+  const proj = state.project;
+  const { start, end } = p.sel;
+  const track = Math.min(p.track, proj.tracks.length - 1);
+
+  /** Depois de criar o canal: pattern novo só com ele, ocupando a área. */
+  const placeNew = (channelId: string, name: string) => {
+    const pat: Pattern = { id: uid('p'), name, color: color(state.project.patterns.length), length: Math.round((end - start) / STEP), notes: { [channelId]: [] } };
+    edit([ins(['patterns'], pat), ...fillOpsFor(pat, track, start, end)]);
+    selectPattern(pat.id);
+    selectChannel(channelId);
+    toast(`${name}: pattern novo na área selecionada. Toque no teclado com o REC ligado para gravar`);
+  };
+  const fillOpsFor = (pat: Pattern, tr: number, a: number, b: number): Op[] => [ins(['clips'], { id: uid('k'), track: tr, pos: a, len: b - a, patternId: pat.id, offset: 0 } satisfies Clip)];
+  const newChannel = (args: { type?: InstrumentType; preset?: string }, label: string) => {
+    const r = act(A.addChannel, args);
+    if (r) placeNew((r as { id: string }).id, label);
+  };
+  const newSample = async (path: string, name: string) => {
+    const before = state.channelId;
+    await addSampleChannel(path, name);
+    if (state.channelId && state.channelId !== before) placeNew(state.channelId, name);
+  };
+
+  const byCat = new Map<string, { name: string; path: string }[]>();
+  for (const i of lib ?? []) {
+    const c = i.category || 'Biblioteca';
+    if (!byCat.has(c)) byCat.set(c, []);
+    byCat.get(c)!.push(i);
+  }
+  const items: MenuItem[] = [
+    {
+      label: 'Preencher com',
+      hint: 'Repete o pattern escolhido em toda a área (o último é cortado se não couber)',
+      sub: proj.patterns.length
+        ? proj.patterns.map((pt) => ({
+            label: pt.name,
+            swatch: pt.color,
+            run: () => {
+              edit(fillOps(pt.id, track, start, end));
+              selectPattern(pt.id);
+            },
+          }))
+        : [{ label: '(nenhum pattern)' }],
+    },
+    {
+      label: 'Inserir instrumento',
+      hint: 'Cria um instrumento e um pattern novo só com ele, ocupando a área',
+      sub: [
+        { label: 'Instrumentos do Music Labs', sub: (Object.keys(INSTRUMENTS) as InstrumentType[]).map((t) => ({ label: INSTRUMENTS[t].label, hint: INSTRUMENTS[t].description, run: () => newChannel({ type: t }, INSTRUMENTS[t].label) })) },
+        { label: 'Presets', sub: Object.keys(PRESETS).map((k) => ({ label: k, run: () => newChannel({ preset: k }, k) })) },
+        ...(lib === null
+          ? [{ label: 'Carregando a biblioteca…' }]
+          : [...byCat.entries()].map(([cat, list]) => ({ label: cat, sub: list.slice(0, 400).map((i) => ({ label: i.name, run: () => newSample(i.path, i.name) })) }))),
+        { sep: true, label: '' },
+        { label: 'Amp de guitarra', run: () => openWindow('amp', false) },
+        { label: 'Afinador', run: () => openWindow('tune', false) },
+        { label: 'Stitcher', run: () => openWindow('stitch', false) },
+      ],
+    },
+    { sep: true, label: '' },
+    {
+      label: 'Apagar clipes da área (nesta track)',
+      run: () => edit(state.project.clips.filter((c) => c.track === track && c.pos < end && c.pos + c.len > start).map((c) => rem(['clips', c.id]))),
+    },
+    { label: 'Tirar a seleção', run: () => setSelection(null) },
+  ];
+  return <MenuTree x={p.x} y={p.y} items={items} onClose={p.onClose} />;
+}

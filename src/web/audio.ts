@@ -9,7 +9,7 @@ import type { EngineStatus } from '../core/engine';
 export class Audio {
   ctx: AudioContext | null = null;
   node: AudioWorkletNode | null = null;
-  status: EngineStatus = { playing: false, mode: 'pattern', patternId: null, tick: 0, meters: [], gr: [], activeChannels: [], lit: [], spectrum: null };
+  status: EngineStatus = { playing: false, mode: 'pattern', patternId: null, tick: 0, meters: [], gr: [], activeChannels: [], lit: [], spectrum: null, countIn: 0, loops: 0 };
   private watching: string | null = null;
   private loaded = new Set<string>();
   private loading = new Map<string, Promise<void>>();
@@ -43,6 +43,7 @@ export class Audio {
     node.port.onmessage = (e) => {
       if (e.data.type === 'status') {
         this.status = e.data.status;
+        this.statusAt = performance.now();
         this.markRec();
         this.onStatus(this.status);
       } else if (e.data.type === 'error') console.error('engine:', e.data.error);
@@ -56,6 +57,7 @@ export class Audio {
     const p = this.getProject();
     if (p) this.setProject(p);
     if (this.watching) this.post({ type: 'watch', channel: this.watching });
+    this.post({ type: 'transport', ...this.tp });
   }
 
   get running() {
@@ -490,8 +492,14 @@ export class Audio {
     return this.loading.size;
   }
 
-  play(mode: 'pattern' | 'song', patternId: string | null, tick?: number) {
-    this.start().then(() => this.post({ type: 'play', mode, patternId, tick }));
+  play(mode: 'pattern' | 'song', patternId: string | null, tick?: number, countIn = 0) {
+    this.start().then(() => this.post({ type: 'play', mode, patternId, tick, countIn }));
+  }
+  /** Área selecionada, loop e metrônomo (estado de transporte, fora do projeto). */
+  private tp: { region?: [number, number] | null; loopOn?: boolean; metronome?: boolean } = {};
+  transport(t: { region?: [number, number] | null; loopOn?: boolean; metronome?: boolean }) {
+    Object.assign(this.tp, t);
+    this.post({ type: 'transport', ...t });
   }
   stop(rewind = true) {
     this.post({ type: 'stop', rewind });
@@ -499,7 +507,12 @@ export class Audio {
   seek(tick: number) {
     this.post({ type: 'seek', tick });
   }
+  /** Avisado a cada nota ao vivo (a gravação de notas escuta isto). */
+  onLive: (on: boolean, channel: string, key: number, vel: number) => void = () => {};
+  /** Quando chegou o último status da engine (para estimar a posição entre atualizações). */
+  statusAt = 0;
   liveOn(channel: string, key: number, vel = 0.8, gate: number | null = null) {
+    if (gate === null) this.onLive(true, channel, key, vel);
     this.start().then(() => this.post({ type: 'liveOn', channel, key, vel, gate }));
   }
   /** Diz à engine qual canal está aberto na tela (para acender as teclas dele). */
@@ -508,6 +521,7 @@ export class Audio {
     this.post({ type: 'watch', channel });
   }
   liveOff(channel: string, key: number) {
+    this.onLive(false, channel, key, 0);
     this.post({ type: 'liveOff', channel, key });
   }
 
