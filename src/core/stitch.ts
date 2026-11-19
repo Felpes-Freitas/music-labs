@@ -1,8 +1,15 @@
 // Costura (comping): várias gravações da mesma parte → uma versão final que usa,
-// trecho a trecho, o take mais afinado. Os cortes caem no começo das notas, com
-// crossfade curto, para a emenda não aparecer.
+// trecho a trecho, o take que chegou mais perto da nota que se queria cantar.
+//
+// "A nota que se queria": o tom é detectado a partir de todos os takes; em cada
+// trecho, a altura do consenso entre os takes é levada à nota da escala mais
+// próxima. Quem edita a linha melódica pode trocar essa nota (ex.: era um Dó,
+// não um Si) e a escolha dos takes se refaz. Os cortes caem no começo das notas,
+// com crossfade curto, e a costura pode sair afinada exatamente na melodia.
 
 import { trackPitch, segmentNotes, type PitchTrack } from './pitchtrack.js';
+import { shiftPitch } from './psola.js';
+import { detectKey, snapToKey, type Key } from './key.js';
 
 export interface StitchTake {
   /** Tempo da música (s) em que a amostra 0 do áudio toca. */
@@ -20,98 +27,134 @@ export interface StitchSegment {
   t1: number;
   /** Take escolhido (índice) ou -1 para silêncio. */
   take: number;
-  /** Desvio médio de afinação de cada take neste trecho (cents) ou null se ele não canta aqui. */
+  /** Nota pretendida (MIDI inteiro) ou null se ninguém canta aqui. */
+  target: number | null;
+  /** Altura cantada por cada take neste trecho (mediana) ou null. */
+  sung: (number | null)[];
+  /** Distância de cada take até a nota pretendida (cents) ou null. */
   cents: (number | null)[];
 }
 
 export interface StitchPlan {
   start: number;
   end: number;
+  key: Key;
+  detectedKey: Key;
   segments: StitchSegment[];
-  /** Desvio médio geral de cada take (cents). */
+  /** Desvio médio de cada take até a melodia (cents). */
   takeCents: (number | null)[];
 }
 
-/** Distância (cents) até a nota permitida mais próxima; scale = classes de altura (0..11) ou null = cromática. */
-function devCents(m: number, scale: number[] | null) {
-  if (!scale) return Math.abs(m - Math.round(m)) * 100;
-  let best = Infinity;
-  for (let k = Math.floor(m) - 1; k <= Math.ceil(m) + 1; k++) if (scale.includes(((k % 12) + 12) % 12)) best = Math.min(best, Math.abs(m - k) * 100);
-  return best;
+function ensureTracks(takes: StitchTake[], sr: number) {
+  for (const t of takes) {
+    if (t.track) continue;
+    const mono = new Float32Array(t.ch[0].length);
+    for (const c of t.ch) for (let i = 0; i < mono.length; i++) mono[i] += c[i] / t.ch.length;
+    t.track = trackPitch(mono, sr);
+  }
 }
 
-export function planStitch(takes: StitchTake[], sr: number, scale: number[] | null = null, merge = true): StitchPlan {
-  for (const t of takes) {
-    if (!t.track) {
-      const mono = new Float32Array(t.ch[0].length);
-      for (const c of t.ch) for (let i = 0; i < mono.length; i++) mono[i] += c[i] / t.ch.length;
-      t.track = trackPitch(mono, sr);
-    }
-  }
+/** Monta o plano. key = null usa o tom detectado. */
+export function planStitch(takes: StitchTake[], sr: number, key: Key | null = null, merge = true): StitchPlan {
+  ensureTracks(takes, sr);
   const start = Math.min(...takes.map((t) => t.offset + t.from));
   const end = Math.max(...takes.map((t) => t.offset + t.to));
   const hop = takes[0].track!.hop;
-  const g = hop / sr;
-  // cortes: começo das notas de todos os takes, agrupados (notas do mesmo lugar em takes diferentes)
+  // tom: notas de todos os takes
+  const all: { pitch: number; weight: number }[] = [];
   const onsets: number[] = [];
   for (const t of takes)
     for (const n of segmentNotes(t.track!)) {
       const s = t.offset + (n.i0 * hop) / sr;
-      if (s > t.offset + t.from && s < t.offset + t.to) onsets.push(s);
+      if (s < t.offset + t.from - 0.05 || s > t.offset + t.to) continue;
+      onsets.push(s);
+      let w = 0;
+      for (let f = n.i0; f < n.i1; f++) w += t.track!.rms[f];
+      all.push({ pitch: n.pitch, weight: w });
     }
+  const detectedKey = detectKey(all);
+  const useKey = key ?? detectedKey;
+  // cortes: começo das notas de todos os takes, agrupados
   onsets.sort((a, b) => a - b);
   const cuts = [start];
   for (let i = 0; i < onsets.length; ) {
     let j = i;
     while (j + 1 < onsets.length && onsets[j + 1] - onsets[i] < 0.12) j++;
     const c = onsets[i] - 0.03;
-    if (c - cuts[cuts.length - 1] > 0.08) cuts.push(c);
+    if (c - cuts[cuts.length - 1] > 0.08 && c < end - 0.05) cuts.push(c);
     i = j + 1;
   }
   cuts.push(end);
-
-  const stats = takes.map(() => ({ sum: 0, w: 0 }));
   const segments: StitchSegment[] = [];
-  let prev = -1;
   for (let s = 0; s + 1 < cuts.length; s++) {
     const t0 = cuts[s], t1 = cuts[s + 1];
-    const cover: number[] = [], cents: (number | null)[] = [];
-    takes.forEach((tk, k) => {
+    const sung = takes.map((tk) => sungIn(tk, t0, t1, sr));
+    const voiced = sung.filter((x): x is number => x !== null);
+    // consenso: mediana do que os takes cantaram, levada à nota da escala
+    const target = voiced.length ? snapToKey(voiced.sort((a, b) => a - b)[voiced.length >> 1], useKey) : null;
+    segments.push({ t0, t1, take: -1, target, sung, cents: [] });
+  }
+  const plan: StitchPlan = { start, end, key: useKey, detectedKey, segments, takeCents: [] };
+  rescore(plan, takes, sr);
+  if (merge) plan.segments = mergeSegments(plan.segments);
+  return plan;
+}
+
+/** Mediana da altura cantada por um take num trecho (null se quase não canta). */
+function sungIn(tk: StitchTake, t0: number, t1: number, sr: number): number | null {
+  const tr = tk.track!;
+  const v: number[] = [];
+  let frames = 0;
+  for (let f = Math.max(0, Math.floor(((t0 - tk.offset) * sr) / tr.hop)); f < tr.midi.length; f++) {
+    const a = (f * tr.hop) / sr;
+    if (tk.offset + a >= t1) break;
+    frames++;
+    if (a < tk.from || a >= tk.to || Number.isNaN(tr.midi[f])) continue;
+    v.push(tr.midi[f]);
+  }
+  if (!frames || v.length < frames * 0.25 || v.length < 6) return null;
+  v.sort((a, b) => a - b);
+  return v[v.length >> 1];
+}
+
+/**
+ * Recalcula, para a melodia atual (targets), o desvio de cada take e o take
+ * escolhido em cada trecho. Use depois de mudar um target.
+ */
+export function rescore(plan: StitchPlan, takes: StitchTake[], sr: number) {
+  const stats = takes.map(() => ({ sum: 0, w: 0 }));
+  let prev = -1;
+  for (const sg of plan.segments) {
+    sg.cents = takes.map((tk, k) => {
+      if (sg.target === null || sg.sung[k] === null) return null;
       const tr = tk.track!;
-      let frames = 0, voiced = 0, sum = 0, w = 0;
-      for (let t = t0; t < t1; t += g) {
-        frames++;
-        const a = t - tk.offset;
-        if (a < tk.from || a >= tk.to) continue;
-        const f = Math.floor((a * sr) / hop);
+      let sum = 0, w = 0;
+      for (let f = Math.max(0, Math.floor(((sg.t0 - tk.offset) * sr) / tr.hop)); f < tr.midi.length; f++) {
+        const a = (f * tr.hop) / sr;
+        if (tk.offset + a >= sg.t1) break;
         const m = tr.midi[f];
-        if (m === undefined || Number.isNaN(m)) continue;
-        voiced++;
-        const r = tr.rms[f];
-        sum += devCents(m, scale) * r;
-        w += r;
+        if (a < tk.from || a >= tk.to || Number.isNaN(m)) continue;
+        // distância até a nota pretendida (não até o semitom mais próximo)
+        sum += Math.min(300, Math.abs(m - sg.target) * 100) * tr.rms[f];
+        w += tr.rms[f];
       }
-      cover.push(frames ? voiced / frames : 0);
-      cents.push(w > 0 ? sum / w : null);
       if (w > 0) {
         stats[k].sum += sum;
         stats[k].w += w;
       }
+      return w > 0 ? sum / w : null;
     });
-    const maxCover = Math.max(...cover);
     let best = -1;
-    if (maxCover > 0.2) {
-      for (let k = 0; k < takes.length; k++) {
-        if (cover[k] < maxCover * 0.6 || cents[k] === null) continue;
-        // um take só troca se for claramente melhor (evita emendas à toa)
-        const bonus = k === prev ? 3 : 0;
-        if (best < 0 || cents[k]! - bonus < cents[best]! - (best === prev ? 3 : 0)) best = k;
-      }
-    } else best = prev; // silêncio: continua no mesmo take (sem corte no meio da respiração)
-    segments.push({ t0, t1, take: best, cents });
-    if (best >= 0) prev = best;
+    sg.cents.forEach((c, k) => {
+      if (c === null) return;
+      const score = c - (k === prev ? 4 : 0); // só troca de take se valer a emenda
+      const bs = best < 0 ? Infinity : sg.cents[best]! - (best === prev ? 4 : 0);
+      if (score < bs) best = k;
+    });
+    sg.take = best >= 0 ? best : sg.target === null ? prev : -1;
+    if (sg.take >= 0) prev = sg.take;
   }
-  return { start, end, segments: merge ? mergeSegments(segments) : segments, takeCents: stats.map((s) => (s.w > 0 ? s.sum / s.w : null)) };
+  plan.takeCents = stats.map((s) => (s.w > 0 ? s.sum / s.w : null));
 }
 
 /** Junta trechos vizinhos do mesmo take (use antes de renderStitch). */
@@ -127,16 +170,17 @@ export function mergeSegments(segments: StitchSegment[]): StitchSegment[] {
 
 /** Monta o áudio final (estéreo) a partir do plano, com crossfades de equal power. */
 export function renderStitch(plan: StitchPlan, takes: StitchTake[], sr: number, xfade = 0.012): [Float32Array, Float32Array] {
+  const segs = mergeSegments(plan.segments);
   const n = Math.ceil((plan.end - plan.start) * sr);
   const L = new Float32Array(n), R = new Float32Array(n);
   const fade = Math.max(1, Math.round(xfade * sr));
-  for (let si = 0; si < plan.segments.length; si++) {
-    const seg = plan.segments[si];
+  for (let si = 0; si < segs.length; si++) {
+    const seg = segs[si];
     if (seg.take < 0) continue;
     const tk = takes[seg.take];
     const a = Math.round((seg.t0 - plan.start) * sr), b = Math.round((seg.t1 - plan.start) * sr);
-    const fadeIn = si > 0 && plan.segments[si - 1].take >= 0;
-    const fadeOut = si + 1 < plan.segments.length && plan.segments[si + 1].take >= 0;
+    const fadeIn = si > 0 && segs[si - 1].take >= 0;
+    const fadeOut = si + 1 < segs.length && segs[si + 1].take >= 0;
     for (let i = Math.max(0, a - (fadeIn ? fade : 0)); i < Math.min(n, b + (fadeOut ? fade : 0)); i++) {
       let gain = 1;
       if (fadeIn && i < a + fade) gain = Math.sin((Math.PI / 2) * Math.min(1, Math.max(0, (i - (a - fade)) / (2 * fade))));
@@ -148,4 +192,36 @@ export function renderStitch(plan: StitchPlan, takes: StitchTake[], sr: number, 
     }
   }
   return [L, R];
+}
+
+/**
+ * Leva cada nota da costura até a nota da melodia (corrige o centro da nota,
+ * mantendo vibrato e expressão). Usado quando a melodia foi editada ou quando
+ * nenhum take acertou em cheio.
+ */
+export function tuneToMelody(L: Float32Array, R: Float32Array, plan: StitchPlan, sr: number): [Float32Array, Float32Array] {
+  const mono = new Float32Array(L.length);
+  for (let i = 0; i < L.length; i++) mono[i] = (L[i] + R[i]) * 0.5;
+  const tr = trackPitch(mono, sr);
+  const shift = new Float32Array(tr.midi.length);
+  for (const sg of plan.segments) {
+    if (sg.target === null) continue;
+    const f0 = Math.max(0, Math.floor(((sg.t0 - plan.start) * sr) / tr.hop)), f1 = Math.min(tr.midi.length, Math.ceil(((sg.t1 - plan.start) * sr) / tr.hop));
+    const v: number[] = [];
+    for (let f = f0; f < f1; f++) if (!Number.isNaN(tr.midi[f])) v.push(tr.midi[f]);
+    if (v.length < 4) continue;
+    v.sort((a, b) => a - b);
+    const s = sg.target - v[v.length >> 1];
+    if (Math.abs(s) < 0.03) continue;
+    for (let f = f0; f < f1; f++) shift[f] = s;
+  }
+  // transições suaves
+  const sm = new Float32Array(shift.length);
+  for (let f = 0; f < shift.length; f++) {
+    let a = 0, k = 0;
+    for (let j = Math.max(0, f - 4); j <= Math.min(shift.length - 1, f + 4); j++) (a += shift[j]), k++;
+    sm[f] = a / k;
+  }
+  const [oL, oR] = shiftPitch([L, R], tr, sm);
+  return [oL, oR];
 }

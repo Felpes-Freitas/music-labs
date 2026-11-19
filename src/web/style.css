@@ -622,3 +622,14 @@ body.alt-drag .win, body.alt-drag .win * { cursor: move !important; }
 .stitch-cents.good { color: #8ae8a4; }
 .stitch-cents.mid { color: #e8c547; }
 .stitch-cents.bad { color: #ff8a8a; }
+.keypick { display: flex; align-items: center; gap: 4px; }
+.keypick-lbl { color: var(--dim); font-size: 11px; }
+.keypick select { height: 26px; }
+.keypick select:first-of-type { width: 150px; }
+.keypick select:last-of-type { width: 130px; }
+.tool.dropping { outline: 2px dashed var(--acc); outline-offset: -6px; }
+.tool-bar .tool-open { gap: 5px; }
+.tool-check { display: flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
+.stitch-list-head { display: flex; align-items: center; justify-content: space-between; }
+.stitch-all { height: 18px; font-size: 10px; padding: 0 6px; text-transform: none; letter-spacing: 0; }
+.stitch-lanes { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; }
