@@ -131,6 +131,19 @@ async function setupMidi() {
   }
 }
 
+/** Logo que se preenche: o anel acompanha o carregamento (null = indeterminado) e a onda se desenha em loop. */
+function LogoMark(p: { progress: number | null }) {
+  const done = p.progress === 100;
+  return (
+    <svg class={`logomark ${p.progress === null ? 'spin' : ''} ${done ? 'done' : ''}`} viewBox="0 0 120 120" width="132" height="132">
+      <circle class="lm-track" cx="60" cy="60" r="44" />
+      <circle class="lm-ring" cx="60" cy="60" r="44" pathLength={100} style={{ strokeDashoffset: `${100 - (p.progress ?? 25)}` }} />
+      <circle class="lm-hole" cx="60" cy="60" r="28" />
+      <path class="lm-wave" pathLength={100} d="M33 60 C39 44, 49 42, 53 56 C56 66, 58 71, 60 71 C62 71, 64 66, 67 56 C71 42, 81 44, 87 60" />
+    </svg>
+  );
+}
+
 function LoadingScreen() {
   const s = useApp();
   if (!s.loading && !s.needsClick) return null;
@@ -139,16 +152,14 @@ function LoadingScreen() {
   return (
     <div class="loading" onPointerDown={() => s.needsClick && audio.resume().then((ok) => ok && ((state.needsClick = false), toast('Áudio ligado')))}>
       <div class="loading-box">
-        <div class="logo">
-          <span class="logo-dot" />
-          MUSIC LABS
-        </div>
+        <LogoMark progress={l ? (l.total && !(l.done >= l.total && l.pending) ? pct : null) : 100} />
+        <h1 class="brand">
+          <span class="brand-a">MUSIC</span>
+          <span class="brand-b">LABS</span>
+        </h1>
         {l ? (
           <>
-            <div class="loading-title">Carregando o projeto</div>
-            <div class="loading-bar">
-              <div style={{ width: `${l.total ? pct : 8}%` }} class={l.total && !(l.done >= l.total && l.pending) ? '' : 'indeterminate'} />
-            </div>
+            <div class="loading-title">{l.total ? `Carregando o projeto · ${pct}%` : 'Carregando o projeto'}</div>
             <div class="loading-label">
               {l.total ? `${l.done} de ${l.total} samples${l.label ? ' · ' + l.label : ''}` : 'Preparando o áudio…'}
               {l.total && l.done >= l.total && l.pending ? ' · preparando instrumentos…' : ''}

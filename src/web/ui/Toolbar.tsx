@@ -384,7 +384,7 @@ function WindowControls() {
           {max ? <path d="M2.5 3.5h5v5h-5zM3.5 1.5h5v5" /> : <path d="M1.5 1.5h7v7h-7z" />}
         </svg>
       </button>
-      <button class="close" data-hint="Fechar o Music Labs" onClick={() => w.close()}>
+      <button class="close" data-hint="Fechar" onClick={() => w.close()}>
         <svg width="10" height="10" viewBox="0 0 10 10">
           <path d="M1.5 1.5l7 7M8.5 1.5l-7 7" stroke="currentColor" stroke-width="1.2" />
         </svg>
@@ -402,10 +402,6 @@ export function TitleBar() {
   );
   return (
     <div class={`titlebar ${window.mlabsWindow ? 'desktop' : ''}`} onDblClick={(e) => (e.target as Element).classList.contains('tb-drag') && window.mlabsWindow?.toggleMaximize()}>
-      <div class="logo" title="Music Labs">
-        <span class="logo-dot" />
-        <span class="logo-txt">MUSIC LABS</span>
-      </div>
       <MenuBar />
       <div class="tb-drag">
         <span class="pname" data-hint={s.path ?? 'Projeto ainda não salvo'}>
