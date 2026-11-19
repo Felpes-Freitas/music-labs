@@ -9,6 +9,7 @@ import type { ActionResult } from '../core/actions';
 import * as A from '../core/actions';
 import { encodeWav } from '../core/wav';
 import type { EngineStatus } from '../core/engine';
+import { getPref } from './prefs';
 import { audio } from './audio';
 
 export type WindowId = 'rack' | 'piano' | 'playlist' | 'mixer' | 'browser' | 'channel';
@@ -329,7 +330,12 @@ export function play(mode = state.mode) {
   audio.play(mode, state.patternId, undefined);
   emit();
 }
+/** Parar: a primeira vez para a música; parado, corta também as caudas (reverb, eco, notas soltas). */
 export function stop() {
+  if (!audio.status.playing && !audio.recording) {
+    audio.post({ type: 'panic' });
+    return;
+  }
   audio.stop();
   playingFlag = false;
   if (audio.recording) finishRecording();
@@ -345,7 +351,7 @@ export async function toggleRecord() {
   if (audio.recording) return stop();
   const start = audio.status.mode === 'song' ? Math.max(0, Math.floor(audio.status.tick)) : 0;
   try {
-    await audio.startRecording(start);
+    await audio.startRecording(start, A.freeTrack(state.project, start, 1e12), { deviceId: getPref<string>('rec.device', '') || undefined, channels: getPref('rec.channels', 'stereo') });
   } catch (e) {
     toast(`Não consegui acessar o microfone: ${(e as Error).message}`);
     return;
@@ -366,7 +372,7 @@ async function finishRecording() {
     const res = await fetch(`/api/recording?name=${encodeURIComponent(state.project.name)}`, { method: 'POST', headers: { 'content-type': 'audio/wav' }, body: new Blob([wav as BlobPart], { type: 'audio/wav' }) });
     const d = await res.json();
     if (!res.ok) throw new Error(d.error);
-    const result = act(A.addAudioClip, { sample: d.path, bar: 1, beat: r.startTick / PPQ, lengthSec: r.L.length / r.sr });
+    const result = act(A.addAudioClip, { sample: d.path, bar: 1, beat: r.startTick / PPQ, track: r.track + 1, lengthSec: r.L.length / r.sr });
     if (result) toast(`Gravação salva e colocada na track ${result.track} (${(r.L.length / r.sr).toFixed(1)} s)`);
   } catch (e) {
     toast(`Erro ao salvar a gravação: ${(e as Error).message}`);

@@ -85,30 +85,69 @@ export class Audio {
   }
 
   // ---------------------------------------------------------------- gravação
-  private rec: { stream: MediaStream; node: AudioWorkletNode; src: MediaStreamAudioSourceNode; chunks: Float32Array[][]; startTick: number } | null = null;
+  private rec: {
+    stream: MediaStream;
+    node: AudioWorkletNode;
+    src: MediaStreamAudioSourceNode;
+    chunks: Float32Array[][];
+    startTick: number;
+    track: number;
+    pick: RecChannels;
+    frames: number;
+    /** Pico de cada bloco de PEAK_FRAMES amostras, para desenhar a onda ao vivo. */
+    peaks: number[];
+    acc: number;
+    accN: number;
+  } | null = null;
+  /** Gravação em andamento (para a playlist desenhar a onda enquanto grava). */
+  get liveRecording() {
+    const r = this.rec;
+    return r && this.ctx ? { startTick: r.startTick, track: r.track, frames: r.frames, sr: this.ctx.sampleRate, peaks: r.peaks, peakFrames: PEAK_FRAMES } : null;
+  }
 
   get recording() {
     return !!this.rec;
   }
 
   /** Começa a capturar o microfone; startTick é a posição da música no início. */
-  async startRecording(startTick: number) {
+  async startRecording(startTick: number, track: number, opt: { deviceId?: string; channels?: RecChannels } = {}) {
     await this.resume();
     const ctx = this.ctx!;
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2 } });
+    const audio: MediaTrackConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2 };
+    if (opt.deviceId) audio.deviceId = { exact: opt.deviceId };
+    const stream = await navigator.mediaDevices.getUserMedia({ audio });
     const src = ctx.createMediaStreamSource(stream);
     const node = new AudioWorkletNode(ctx, 'ml-recorder', { numberOfInputs: 1, numberOfOutputs: 0, channelCount: 2, channelCountMode: 'explicit' });
-    const chunks: Float32Array[][] = [];
-    node.port.onmessage = (e) => chunks.push(e.data as Float32Array[]);
+    const rec = { stream, node, src, chunks: [] as Float32Array[][], startTick, track, pick: opt.channels ?? 'stereo', frames: 0, peaks: [] as number[], acc: 0, accN: 0 };
+    node.port.onmessage = (e) => {
+      const c = pickChannels(e.data as Float32Array[], rec.pick);
+      rec.chunks.push(c);
+      for (let i = 0; i < c[0].length; i++) {
+        const a = Math.max(Math.abs(c[0][i]), Math.abs(c[1][i]));
+        if (a > rec.acc) rec.acc = a;
+        if (++rec.accN === PEAK_FRAMES) {
+          rec.peaks.push(rec.acc);
+          rec.acc = 0;
+          rec.accN = 0;
+        }
+      }
+      rec.frames += c[0].length;
+    };
     src.connect(node);
-    this.rec = { stream, node, src, chunks, startTick };
+    this.rec = rec;
+  }
+
+  /** Entradas de áudio disponíveis (os nomes só aparecem depois de liberar o microfone uma vez). */
+  async inputDevices() {
+    const all = await navigator.mediaDevices.enumerateDevices();
+    return all.filter((d) => d.kind === 'audioinput').map((d, i) => ({ id: d.deviceId, label: d.label || `Entrada ${i + 1}` }));
   }
 
   /**
    * Para a gravação e devolve o áudio (já compensando a latência de entrada e
    * saída, para alinhar com o que estava tocando).
    */
-  stopRecording(): { L: Float32Array; R: Float32Array; sr: number; startTick: number } | null {
+  stopRecording(): { L: Float32Array; R: Float32Array; sr: number; startTick: number; track: number } | null {
     const r = this.rec;
     if (!r) return null;
     this.rec = null;
@@ -128,7 +167,7 @@ export class Audio {
         R[w] = (c[1] ?? c[0])[i];
       }
     }
-    return { L, R, sr: ctx.sampleRate, startTick: r.startTick };
+    return { L, R, sr: ctx.sampleRate, startTick: r.startTick, track: r.track };
   }
 
   /** Carrega um arquivo ou um instrumento multi-sample (pasta / .fst) na engine. */
@@ -232,3 +271,14 @@ export class Audio {
 }
 
 export const audio = new Audio();
+
+export type RecChannels = 'stereo' | 'left' | 'right';
+const PEAK_FRAMES = 256;
+
+/** Estéreo, ou só um canal da interface duplicado nos dois lados (guitarra, microfone). */
+function pickChannels(c: Float32Array[], pick: RecChannels): Float32Array[] {
+  const l = c[0], r = c[1] ?? c[0];
+  if (pick === 'left') return [l, l];
+  if (pick === 'right') return [r, r];
+  return [l, r];
+}
