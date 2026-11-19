@@ -312,7 +312,54 @@ export const EFFECTS: Record<EffectType, { label: string; description: string; p
     description: 'Limiter com lookahead para o master.',
     params: [num('gain', 'Ganho', 0, 24, 0, 'dB'), num('ceiling', 'Teto', -12, 0, -0.3, 'dBFS'), num('release', 'Release', 10, 1000, 80, 'ms', 'log')],
   },
+  // ---- guitarra
+  gate: {
+    label: 'Noise gate',
+    description: 'Corta o chiado e o ruído da guitarra quando você não está tocando.',
+    params: [num('threshold', 'Limiar', -90, -10, -55, 'dB'), num('release', 'Soltura', 5, 500, 80, 'ms', 'log')],
+  },
+  overdrive: {
+    label: 'Overdrive',
+    description: 'Overdrive de pedal: realça os médios e satura suave, ótimo para empurrar o amp.',
+    params: [num('drive', 'Drive', 0, 1, 0.45), num('tone', 'Tom', 0, 1, 0.5), num('level', 'Volume', -24, 12, 0, 'dB')],
+  },
+  fuzz: {
+    label: 'Fuzz',
+    description: 'Fuzz vintage: clipagem pesada e assimétrica, com sustain longo.',
+    params: [num('fuzz', 'Fuzz', 0, 1, 0.7), num('tone', 'Tom', 0, 1, 0.5), num('level', 'Volume', -24, 6, -6, 'dB')],
+  },
+  amp: {
+    label: 'Amplificador',
+    description: 'Cabeçote valvulado: pré com ganho, equalização de 3 bandas, presença e saturação do power.',
+    params: [
+      en('channel', 'Canal', ['clean', 'crunch', 'lead'], 'crunch'),
+      num('gain', 'Ganho', 0, 1, 0.5),
+      num('bass', 'Graves', 0, 1, 0.5),
+      num('mid', 'Médios', 0, 1, 0.5),
+      num('treble', 'Agudos', 0, 1, 0.55),
+      num('presence', 'Presença', 0, 1, 0.5),
+      num('master', 'Master', -36, 6, -8, 'dB'),
+    ],
+  },
+  cab: {
+    label: 'Gabinete',
+    description: 'Simula a caixa e o microfone: sem ele, o amp soa áspero como ligado direto na linha.',
+    params: [en('cab', 'Caixa', ['1x12 combo', '2x12 aberta', '4x12 britânica', '4x12 moderna'], '2x12 aberta'), num('mic', 'Microfone', 0, 1, 0.4), num('low', 'Corpo', 0, 1, 0.5), num('level', 'Volume', -12, 12, 0, 'dB')],
+  },
+  wah: {
+    label: 'Wah',
+    description: 'Wah-wah: pedal fixo, automático (segue a palhetada) ou com LFO.',
+    params: [en('mode', 'Modo', ['auto', 'pedal', 'lfo'], 'auto'), num('pedal', 'Pedal', 0, 1, 0.5), num('sens', 'Sensib.', 0, 1, 0.6), num('rate', 'Velocidade', 0.1, 8, 1.5, 'Hz', 'log'), num('q', 'Ressonância', 0, 1, 0.75)],
+  },
+  tremolo: {
+    label: 'Tremolo',
+    description: 'Tremolo de amp: o volume pulsa num ritmo.',
+    params: [num('rate', 'Velocidade', 0.5, 15, 5, 'Hz', 'log'), num('depth', 'Profund.', 0, 1, 0.6), en('wave', 'Onda', ['sine', 'square', 'triangle'], 'sine')],
+  },
 };
+
+/** Efeitos pensados para guitarra (aparecem primeiro no amp). */
+export const GUITAR_FX: EffectType[] = ['gate', 'wah', 'compressor', 'overdrive', 'fuzz', 'amp', 'cab', 'eq', 'tremolo', 'chorus', 'phaser', 'delay', 'reverb'];
 
 export function defaults(defs: ParamDef[]): Params {
   const o: Params = {};

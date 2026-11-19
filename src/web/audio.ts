@@ -86,9 +86,9 @@ export class Audio {
 
   // ---------------------------------------------------------------- gravação
   private rec: {
-    stream: MediaStream;
+    stream: MediaStream | null;
     node: AudioWorkletNode;
-    src: MediaStreamAudioSourceNode;
+    src: AudioNode;
     chunks: Float32Array[][];
     startTick: number;
     track: number;
@@ -110,15 +110,18 @@ export class Audio {
   }
 
   /** Começa a capturar o microfone; startTick é a posição da música no início. */
-  async startRecording(startTick: number, track: number, opt: { deviceId?: string; channels?: RecChannels } = {}) {
+  async startRecording(startTick: number, track: number, opt: { deviceId?: string; channels?: RecChannels; from?: AudioNode } = {}) {
     await this.resume();
     const ctx = this.ctx!;
-    const audio: MediaTrackConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2 };
-    if (opt.deviceId) audio.deviceId = { exact: opt.deviceId };
-    const stream = await navigator.mediaDevices.getUserMedia({ audio });
-    const src = ctx.createMediaStreamSource(stream);
+    let stream: MediaStream | null = null;
+    let src: AudioNode;
+    if (opt.from) src = opt.from; // ex.: a saída do amp, já com os efeitos
+    else {
+      stream = await openInput(opt.deviceId);
+      src = ctx.createMediaStreamSource(stream);
+    }
     const node = new AudioWorkletNode(ctx, 'ml-recorder', { numberOfInputs: 1, numberOfOutputs: 0, channelCount: 2, channelCountMode: 'explicit' });
-    const rec = { stream, node, src, chunks: [] as Float32Array[][], startTick, track, pick: opt.channels ?? 'stereo', frames: 0, peaks: [] as number[], acc: 0, accN: 0 };
+    const rec = { stream, node, src, chunks: [] as Float32Array[][], startTick, track, pick: (opt.from ? 'stereo' : opt.channels ?? 'stereo') as RecChannels, frames: 0, peaks: [] as number[], acc: 0, accN: 0 };
     node.port.onmessage = (e) => {
       const c = pickChannels(e.data as Float32Array[], rec.pick);
       rec.chunks.push(c);
@@ -137,6 +140,57 @@ export class Audio {
     this.rec = rec;
   }
 
+  // ---------------------------------------------------------------- amp de guitarra
+
+  private amp: { stream: MediaStream; src: MediaStreamAudioSourceNode; node: AudioWorkletNode; monitor: GainNode; deviceId: string } | null = null;
+  onAmpMeter: (inp: number[], out: number[]) => void = () => {};
+  /** Nó com o som do amp (para gravar). */
+  get ampNode() {
+    return this.amp?.node ?? null;
+  }
+  /** Liga o amp na entrada escolhida (troca de entrada religa só a captura). */
+  async startAmp(deviceId: string) {
+    await this.resume();
+    const ctx = this.ctx!;
+    if (this.amp && this.amp.deviceId === deviceId) return;
+    const stream = await openInput(deviceId || undefined);
+    const src = ctx.createMediaStreamSource(stream);
+    if (this.amp) {
+      // mesma cadeia, só troca a entrada
+      this.amp.src.disconnect();
+      this.amp.stream.getTracks().forEach((t) => t.stop());
+      src.connect(this.amp.node);
+      Object.assign(this.amp, { stream, src, deviceId });
+      return;
+    }
+    const node = new AudioWorkletNode(ctx, 'ml-amp', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 2, channelCountMode: 'explicit' });
+    const monitor = ctx.createGain();
+    node.port.onmessage = (e) => e.data.type === 'meter' && this.onAmpMeter(e.data.inp, e.data.out);
+    src.connect(node);
+    node.connect(monitor);
+    monitor.connect(ctx.destination);
+    this.amp = { stream, src, node, monitor, deviceId };
+  }
+  stopAmp() {
+    const a = this.amp;
+    if (!a) return;
+    if (this.rec?.src === a.node) return; // não desliga no meio de uma gravação
+    a.src.disconnect();
+    a.node.disconnect();
+    a.monitor.disconnect();
+    a.stream.getTracks().forEach((t) => t.stop());
+    this.amp = null;
+  }
+  configAmp(cfg: { chain: unknown[]; inGain: number; outGain: number; pick: RecChannels; bpm: number }) {
+    this.amp?.node.port.postMessage({ type: 'config', ...cfg });
+  }
+  setAmpMonitor(on: boolean) {
+    if (this.amp && this.ctx) this.amp.monitor.gain.setTargetAtTime(on ? 1 : 0, this.ctx.currentTime, 0.01);
+  }
+  get ampRunning() {
+    return !!this.amp;
+  }
+
   /** Entradas de áudio disponíveis (os nomes só aparecem depois de liberar o microfone uma vez). */
   async inputDevices() {
     const all = await navigator.mediaDevices.enumerateDevices();
@@ -151,9 +205,9 @@ export class Audio {
     const r = this.rec;
     if (!r) return null;
     this.rec = null;
-    r.src.disconnect();
+    r.src.disconnect(r.node);
     r.node.port.onmessage = null;
-    r.stream.getTracks().forEach((t) => t.stop());
+    r.stream?.getTracks().forEach((t) => t.stop());
     const total = r.chunks.reduce((n, c) => n + c[0].length, 0);
     const ctx = this.ctx!;
     const latency = Math.round(((ctx.baseLatency || 0) + ((ctx as any).outputLatency || 0)) * ctx.sampleRate);
@@ -281,4 +335,11 @@ function pickChannels(c: Float32Array[], pick: RecChannels): Float32Array[] {
   if (pick === 'left') return [l, l];
   if (pick === 'right') return [r, r];
   return [l, r];
+}
+
+/** Abre uma entrada de áudio com o sinal limpo (sem cancelamento de eco, supressão de ruído nem ganho automático). */
+function openInput(deviceId?: string) {
+  const audio: MediaTrackConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2 };
+  if (deviceId) audio.deviceId = { exact: deviceId };
+  return navigator.mediaDevices.getUserMedia({ audio });
 }

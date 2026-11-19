@@ -111,6 +111,7 @@ function menus(): Record<string, Item[] | (() => void)> {
       { label: 'Piano roll', key: 'F7', on: s.windows.piano.open, run: () => openWindow('piano', true) },
       { label: 'Navegador', key: 'Alt+F8', on: s.windows.browser.open, run: () => openWindow('browser', true) },
       { label: 'Mixer', key: 'F9', on: s.windows.mixer.open, run: () => openWindow('mixer', true) },
+      { label: 'Amp de guitarra', key: 'F10', on: s.windows.amp.open, run: () => openWindow('amp', true) },
     ],
     Aparência: () => openSettings('aparencia'),
     Opções: [
@@ -384,6 +385,7 @@ export function TitleBar() {
         {winBtn('rack', 'rack', 'Rack de canais', 'F6')}
         {winBtn('piano', 'piano', 'Piano roll', 'F7')}
         {winBtn('mixer', 'mixer', 'Mixer', 'F9')}
+        {winBtn('amp', 'guitar', 'Amp de guitarra', 'F10')}
         {winBtn('browser', 'browser', 'Navegador', 'Alt+F8')}
       </div>
       <div class={`conn ${s.connected ? 'ok' : ''}`} data-hint={s.connected ? 'Conectado: o Claude pode editar via MCP' : 'Sem conexão com o servidor'}>

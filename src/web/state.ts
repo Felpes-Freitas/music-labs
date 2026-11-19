@@ -12,7 +12,7 @@ import type { EngineStatus } from '../core/engine';
 import { getPref } from './prefs';
 import { audio } from './audio';
 
-export type WindowId = 'rack' | 'piano' | 'playlist' | 'mixer' | 'browser' | 'channel';
+export type WindowId = 'rack' | 'piano' | 'playlist' | 'mixer' | 'browser' | 'channel' | 'amp';
 
 export interface WinState {
   /** Geometria anterior quando a janela está maximizada. */
@@ -44,6 +44,7 @@ function defaultLayout(): Record<WindowId, WinState> {
     piano: { open: false, x: 40, y: 40, w: W - 80, h: H - 80, z: 4 },
     mixer: { open: false, x: 30, y: Math.max(8, H - 470), w: Math.min(W - 60, 1200), h: 450, z: 5 },
     channel: { open: false, x: Math.min(W - 480, Math.min(720, W * 0.55) + 16), y: 8, w: 470, h: 440, z: 6 },
+    amp: { open: false, x: 40, y: Math.max(8, H - 520), w: Math.min(W - 80, 1040), h: Math.min(H - 16, 500), z: 7 },
   };
 }
 
@@ -289,7 +290,7 @@ export function focusWindow(id: WindowId, force = false) {
 }
 /** Tab: traz para a frente a próxima janela aberta (Shift+Tab: a anterior). */
 export function cycleWindows(back = false) {
-  const order: WindowId[] = ['playlist', 'rack', 'piano', 'mixer', 'channel'];
+  const order: WindowId[] = ['playlist', 'rack', 'piano', 'mixer', 'channel', 'amp'];
   const open = order.filter((id) => state.windows[id].open);
   if (!open.length) return;
   const top = open.reduce((a, b) => (state.windows[b].z > state.windows[a].z ? b : a));
@@ -347,11 +348,15 @@ export function togglePlay() {
 }
 
 /** Gravar: toca a música em modo song a partir da posição atual e captura o microfone. */
-export async function toggleRecord() {
+export async function toggleRecord(fromAmp = false) {
   if (audio.recording) return stop();
   const start = audio.status.mode === 'song' ? Math.max(0, Math.floor(audio.status.tick)) : 0;
   try {
-    await audio.startRecording(start, A.freeTrack(state.project, start, 1e12), { deviceId: getPref<string>('rec.device', '') || undefined, channels: getPref('rec.channels', 'stereo') });
+    const track = A.freeTrack(state.project, start, 1e12);
+    if (fromAmp) {
+      if (!audio.ampNode) throw new Error('o amp está desligado');
+      await audio.startRecording(start, track, { from: audio.ampNode });
+    } else await audio.startRecording(start, track, { deviceId: getPref<string>('rec.device', '') || undefined, channels: getPref('rec.channels', 'stereo') });
   } catch (e) {
     toast(`Não consegui acessar o microfone: ${(e as Error).message}`);
     return;

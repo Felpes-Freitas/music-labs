@@ -68,6 +68,11 @@ git push --follow-tags
   atual, com compensação de latência; a onda aparece na playlist enquanto grava, o
   arquivo vai para `~/MusicLabs/Gravações` e vira um clip de áudio. Entrada e canais
   (estéreo, só entrada 1 ou 2) em Configurações → Áudio e gravação.
+- **Amp de guitarra** (F10): entrada própria escolhida no canto da janela (e qual
+  canal da interface), visualizador, cadeia de efeitos reordenável arrastando (noise
+  gate, wah, compressor, overdrive, fuzz, amplificador com canais clean/crunch/lead,
+  gabinete, EQ, tremolo, chorus, phaser, delay, reverb), presets de fábrica e seus, e
+  botão Gravar que grava o som já com os efeitos direto na playlist.
 - **Configurações** (menu Aparência ou Ctrl+,): temas Grafite, OLED e Adobe, cor de
   destaque com seletor de cor, Alt + arrastar janelas, entrada de gravação e atalhos.
 - **Parar duas vezes** corta também as caudas de reverb/eco e notas soltas.

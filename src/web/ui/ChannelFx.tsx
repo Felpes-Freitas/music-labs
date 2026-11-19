@@ -21,10 +21,17 @@ const MAIN: Record<EffectType, string[]> = {
   bitcrusher: ['bits', 'downsample'],
   stereo: ['width'],
   limiter: ['gain'],
+  gate: ['threshold'],
+  overdrive: ['drive', 'tone'],
+  fuzz: ['fuzz', 'tone'],
+  amp: ['gain', 'mid'],
+  cab: ['mic'],
+  wah: ['sens'],
+  tremolo: ['rate', 'depth'],
 };
 
 /** Ordem do seletor: os básicos primeiro. */
-const ORDER: EffectType[] = ['reverb', 'delay', 'phaser', 'chorus', 'distortion', 'filter', 'eq', 'compressor', 'bitcrusher', 'stereo', 'limiter'];
+const ORDER: EffectType[] = ['reverb', 'delay', 'phaser', 'chorus', 'distortion', 'filter', 'eq', 'compressor', 'bitcrusher', 'stereo', 'limiter', 'overdrive', 'fuzz', 'amp', 'cab', 'wah', 'tremolo', 'gate'];
 
 const fmtFor = (d: ParamDef) => (x: number) => {
   if (d.unit === 'Hz') return x >= 1000 ? `${(x / 1000).toFixed(2)} kHz` : `${Math.round(x)} Hz`;

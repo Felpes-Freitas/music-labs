@@ -9,6 +9,7 @@ import { PianoRoll } from './ui/PianoRoll';
 import { Playlist } from './ui/Playlist';
 import { Mixer } from './ui/Mixer';
 import { ChannelSettings } from './ui/ChannelSettings';
+import { AmpWindow } from './ui/Amp';
 import { Browser, addSampleChannel } from './ui/Browser';
 import { DialogHost, dialogOpen } from './ui/Dialog';
 import { SettingsHost, settingsOpen, openSettings } from './ui/Settings';
@@ -70,6 +71,7 @@ function onKeyDown(e: KeyboardEvent) {
   if (e.key === 'F7') return (e.preventDefault(), openWindow('piano', true));
   if (e.key === 'F8') return (e.preventDefault(), openWindow('browser', true));
   if (e.key === 'F9') return (e.preventDefault(), openWindow('mixer', true));
+  if (e.key === 'F10') return (e.preventDefault(), openWindow('amp', true));
   if (ctrl || e.altKey) return;
   if (k === 'l' && !e.repeat) return setMode(state.mode === 'pattern' ? 'song' : 'pattern');
   if (k === '-' ) return (octave = Math.max(-3, octave - 1), toast(`Oitava do teclado: ${octave >= 0 ? '+' : ''}${octave}`));
@@ -219,6 +221,7 @@ function App() {
           <PianoRoll />
           <Mixer />
           <ChannelSettings />
+          <AmpWindow />
 
         </div>
       </div>
