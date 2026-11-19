@@ -7,10 +7,12 @@
 // para corrigir) e embaixo a lista dos áudios, cada um com a sua cor.
 
 import { useEffect, useReducer, useRef, useState } from 'preact/hooks';
-import { useApp, state, toast, setHint } from '../state';
+import { useApp, state, toast, setHint, edit } from '../state';
+import { set } from '../../core/ops';
+import type { StitchSession } from '../../core/model';
 import { audio } from '../audio';
 import { noteName } from '../../core/model';
-import { planStitch, renderStitch, rescore, tuneToMelody, type StitchPlan, type StitchTake, type StitchSegment } from '../../core/stitch';
+import { planStitch, renderStitch, rescore, tuneToMelody, restoreSegments, type StitchPlan, type StitchTake, type StitchSegment } from '../../core/stitch';
 import { trackPitch } from '../../core/pitchtrack';
 import { alignOffset } from '../../core/align';
 import { snapToKey, keyLabel, type Key } from '../../core/key';
@@ -57,7 +59,73 @@ const listeners = new Set<() => void>();
 const changed = () => {
   rev++;
   listeners.forEach((l) => l());
+  persist();
 };
+
+// ---------------------------------------------------------------- sessão guardada no projeto
+
+/** Última sessão escrita no projeto (ou lida dele), em JSON. */
+let savedJson = '';
+/** Sessão a reaplicar quando a análise terminar (projeto aberto, desfazer). */
+let pending: StitchSession | null = null;
+/** Lista de áudios a que o plano atual corresponde. */
+let planIds = '';
+let persistTimer = 0;
+
+function sessionNow(): StitchSession | null {
+  if (!ids.length) return null;
+  return {
+    ids: [...ids],
+    key,
+    tune: tuneOut,
+    segments: plan && planIds === ids.join()
+      ? (plan.segments as Seg[]).map((sg) => ({
+          t0: +sg.t0.toFixed(4),
+          t1: +sg.t1.toFixed(4),
+          take: sg.take,
+          target: sg.target,
+          ...(sg.manual ? { manual: true } : {}),
+          ...(sg.piece ? { piece: { ...sg.piece } } : {}),
+        }))
+      : [],
+  };
+}
+
+/** Escreve a sessão no projeto (com um pequeno atraso, só quando muda). */
+function persist() {
+  if (busy || pending) return;
+  clearTimeout(persistTimer);
+  persistTimer = window.setTimeout(() => {
+    if (busy || pending) return;
+    const ses = sessionNow();
+    const json = JSON.stringify(ses);
+    if (json === savedJson) return;
+    savedJson = json;
+    edit([set(['stitch'], ses)], 'Stitcher');
+  }, 350);
+}
+
+/** O projeto trouxe outra sessão (abriu um projeto, desfez/refez): carrega. */
+function adopt(ses: StitchSession | null | undefined) {
+  const json = JSON.stringify(ses ?? null);
+  if (json === savedJson) return;
+  savedJson = json;
+  stopPreview();
+  if (!ses) {
+    ids = [];
+    plan = null;
+    takes = [];
+    final = null;
+    pending = null;
+    listeners.forEach((l) => l());
+    return;
+  }
+  ids = ses.ids.filter((id) => !!poolItem(id));
+  key = ses.key;
+  tuneOut = ses.tune;
+  pending = ses;
+  analyze();
+}
 
 const colorFor = (id: string) => {
   if (!colorOf.has(id)) {
@@ -108,7 +176,9 @@ const mono = (ch: Float32Array[]) => {
 };
 
 /** Analisa os áudios e monta o plano da costura (os áudios são alinhados ao primeiro). */
+let gen = 0;
 async function analyze() {
+  const my = ++gen;
   stopPreview();
   ids = ids.filter((id) => !!poolItem(id));
   ids.forEach(colorFor);
@@ -116,15 +186,20 @@ async function analyze() {
   final = null;
   savedId = null;
   takes = [];
-  if (ids.length < 2) return changed();
+  if (ids.length < 2) {
+    pending = null;
+    return changed();
+  }
   busy = `Analisando a afinação de ${ids.length} áudios…`;
   changed();
   try {
     const items = ids.map((id) => poolItem(id)!);
     const loaded = await Promise.all(items.map((it) => loadAudio(it.path)));
+    if (my !== gen) return; // outra análise começou depois desta
     sr = loaded[0].sr;
     if (loaded.some((a) => a.sr !== sr)) throw new Error('os áudios têm taxas de amostragem diferentes');
     await new Promise((r) => setTimeout(r, 0));
+    if (my !== gen) return;
     const ref = mono(loaded[0].ch);
     takes = items.map((it, k) => {
       const a = loaded[k];
@@ -138,7 +213,25 @@ async function analyze() {
       const offset = k === 0 ? 0 : -alignOffset(ref, m, sr);
       return { offset, from: 0, to: a.ch[0].length / sr, ch: a.ch, track: tr };
     });
+    if (my !== gen) return; // outra análise começou depois desta
     plan = planStitch(takes, sr, key, false);
+    planIds = ids.join();
+    // sessão guardada: os mesmos áudios, na mesma ordem → volta cortes, escolhas e pedaços
+    const ses = pending;
+    pending = null;
+    if (ses && ses.ids.join() === ids.join() && ses.segments.length) {
+      restoreSegments(plan, takes, sr, ses.segments);
+      ses.segments.forEach((sv, i) => {
+        if (sv.piece && poolItem(sv.piece.id)) (plan!.segments[i] as Seg).piece = { ...sv.piece };
+      });
+      await loadPieces();
+      if (my !== gen) return;
+      rebuild();
+      busy = '';
+      savedJson = JSON.stringify(sessionNow()); // é o que já está no projeto
+      changed();
+      return;
+    }
     rebuild();
   } catch (e) {
     toast(`Stitcher: ${(e as Error).message}`);
@@ -223,6 +316,26 @@ async function openPiece(si: number) {
   }
 }
 
+/** Carrega o áudio atual de cada trecho editado (true se algum mudou). */
+async function loadPieces() {
+  if (!plan) return false;
+  let dirty = false;
+  for (const sg of plan.segments as Seg[]) {
+    if (!sg.piece) continue;
+    const it = poolItem(sg.piece.id);
+    if (!it) {
+      delete sg.piece;
+      dirty = true;
+      continue;
+    }
+    if (pieceAudio.get(it.id)?.path === it.path) continue;
+    const a = await loadAudio(it.path);
+    pieceAudio.set(it.id, { path: it.path, ch: a.ch });
+    dirty = true;
+  }
+  return dirty;
+}
+
 /** Recarrega os trechos que mudaram no Afinador e remonta a costura. */
 async function refreshPieces() {
   if (!plan) return;
@@ -266,6 +379,11 @@ export function StitchWindow() {
     return () => void listeners.delete(force as () => void);
   }, []);
   // áudios apagados da lista saem do Stitcher; áudios trocados (editados) são reanalisados
+  // projeto aberto / desfazer: a sessão guardada manda
+  const open = s.windows.stitch.open;
+  useEffect(() => {
+    if (open) adopt(s.project.stitch);
+  }, [JSON.stringify(s.project.stitch ?? null), open]);
   const sig = ids.map((id) => poolItem(id)?.path ?? '-').join('|');
   useEffect(() => {
     analyze();
