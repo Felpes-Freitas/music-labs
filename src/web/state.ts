@@ -2,9 +2,9 @@
 // seleção atual, janelas e status ao vivo da engine.
 
 import { useEffect, useReducer } from 'preact/hooks';
-import type { Project } from '../core/model';
+import type { Project, AudioItem } from '../core/model';
 import { emptyProject, findPattern, findChannel, parseNote, PPQ, ticksPerBar, songLength, uid } from '../core/model';
-import { applyOps, set, type Op } from '../core/ops';
+import { applyOps, set, ins, type Op } from '../core/ops';
 import type { ActionResult } from '../core/actions';
 import * as A from '../core/actions';
 import { encodeWav } from '../core/wav';
@@ -84,6 +84,12 @@ export const state = {
   sel: null as null | { start: number; end: number },
   /** Track escolhida no menu da área selecionada: áudio do amp/Afinador/Stitcher vai para ela. */
   selTrack: null as number | null,
+  /**
+   * Pincel da playlist (como no FL): o que um clique num espaço vazio coloca. null = o
+   * pattern selecionado; senão um áudio (o último clipe de áudio clicado ou o áudio
+   * escolhido na lista), com o mesmo trecho do arquivo.
+   */
+  brush: null as null | { sample: string; startSec: number; len: number; gain?: number; insert?: number; name: string },
   loopOn: getPref('tr.loop', false),
   metronome: getPref('tr.metronome', false),
   countIn: getPref('tr.countIn', true),
@@ -552,6 +558,14 @@ function placeLiveTake(k: number) {
   if (ids.length) liveTakes.set(k, ids);
 }
 
+/** Gravação nova → lista de áudios do projeto (junto dos patterns), com nome numerado. */
+function addRecordingToPool(path: string, base: string) {
+  const list = state.project.audios ?? [];
+  if (list.some((a) => a.path === path)) return;
+  const n = list.filter((a) => a.name.startsWith(base + ' ')).length + 1;
+  edit([ins(['audios'], { id: uid('au'), name: `${base} ${n}`, path, original: path } satisfies AudioItem)]);
+}
+
 async function finishRecording() {
   const r = audio.stopRecording();
   const amp = ampTake;
@@ -605,6 +619,7 @@ async function finishRecording() {
       const res = await fetch(`/api/recording?name=${encodeURIComponent(state.project.name)}`, { method: 'POST', headers: { 'content-type': 'audio/wav' }, body: new Blob([wav as BlobPart], { type: 'audio/wav' }) });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error);
+      addRecordingToPool(d.path, amp ? 'Guitarra' : 'Gravação');
       pieces.forEach((pc, i) => {
         const lenTicks = Math.max(1, Math.round(((pc.b - pc.a) / r.sr) * tps));
         const id = liveIds[i];
@@ -633,8 +648,14 @@ export function setMode(mode: 'pattern' | 'song') {
   audio.post({ type: 'mode', mode, patternId: state.patternId });
   emit();
 }
+/** Escolhe um áudio como pincel da playlist (null volta para o pattern selecionado). */
+export function setBrush(b: typeof state.brush) {
+  state.brush = b;
+  emit();
+}
 export function selectPattern(id: string) {
   state.patternId = id;
+  state.brush = null;
   audio.post({ type: 'pattern', patternId: id });
   emit();
 }

@@ -679,6 +679,7 @@ body.alt-drag .win, body.alt-drag .win * { cursor: move !important; }
 .pa { display: flex; align-items: center; gap: 5px; height: 26px; padding: 0 4px 0 6px; border-radius: var(--rad); background: var(--btn2); border: 1px solid var(--line2); cursor: grab; font-size: 12px; }
 .pa:hover { background: var(--btn-h1); }
 .pa.variant { margin-left: 14px; }
+.pa.on { background: linear-gradient(var(--titlef1), var(--btn-h1)); box-shadow: inset 0 0 0 1px var(--acc); }
 .pa-ico { color: #4fb3d9; flex-shrink: 0; }
 .pa-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pa-badge { font-size: 9px; color: var(--acc); }

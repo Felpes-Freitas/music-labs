@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { useApp, state, edit, previewEdit, onLive, selectPattern, openWindow, setMode, act, setHint, setSelection, setLivePeaksHandler } from '../state';
+import { useApp, state, edit, previewEdit, onLive, selectPattern, setBrush, openWindow, setMode, act, setHint, setSelection, setLivePeaksHandler } from '../state';
 import { SelectionMenu } from './SelectionMenu';
 import { audio } from '../audio';
 import { PPQ, patternLength, songLength, ticksPerBar, uid, isPatternClip, type Clip, type AutoTarget } from '../../core/model';
@@ -24,7 +24,9 @@ type Drag =
   | { kind: 'point'; id: string; idx: number; orig: Clip }
   | { kind: 'erase' }
   | { kind: 'seek' }
-  | { kind: 'sel'; t0: number; x0: number; moved: boolean };
+  | { kind: 'sel'; t0: number; x0: number; moved: boolean }
+  /** Pintando com o pincel (pattern ou áudio): cada espaço vazio por onde o mouse passa ganha uma cópia. */
+  | { kind: 'paint'; len: number; make: (track: number, pos: number) => Clip; placed: Clip[]; fr: Map<number, { lo: number; hi: number }> };
 
 export function Playlist() {
   const s = useApp();
@@ -407,7 +409,12 @@ export function Playlist() {
       return;
     }
     if (h) {
+      // o clipe clicado vira o pincel: o próximo clique no vazio coloca ele
       if (isPatternClip(h.c)) selectPattern(h.c.patternId);
+      else if (h.c.kind === 'audio' && h.c.sample) {
+        const it = (p.audios ?? []).find((a) => a.path === h.c.sample);
+        setBrush({ sample: h.c.sample, startSec: h.c.startSec ?? 0, len: h.c.len, gain: h.c.gain, insert: h.c.insert, name: it?.name ?? h.c.sample.split(/[\\/]/).pop()! });
+      }
       if (e.detail === 2 && h.c.kind === 'audio') {
         openTune(h.c.id);
         return;
@@ -426,14 +433,49 @@ export function Playlist() {
       }
       return;
     }
-    // novo clip do pattern selecionado
-    const pat = p.patterns.find((x) => x.id === s.patternId);
+    // espaço vazio: pinta com o pincel (o pattern selecionado ou o último áudio escolhido)
     const track = trackAt(y);
-    if (!pat || track < 0 || track >= p.tracks.length) return;
-    const pos = Math.max(0, Math.floor(tickAt(x) / snap) * snap);
-    const c: Clip = { id: uid('k'), track, pos, len: patternLength(p, pat), patternId: pat.id, offset: 0 };
-    edit([ins(['clips'], c)]);
-    drag.current = { kind: 'move', id: c.id, x0: x, y0: y, orig: c, dup: false };
+    if (track < 0 || track >= p.tracks.length) return;
+    const br = s.brush;
+    const pat = p.patterns.find((x) => x.id === s.patternId);
+    if (!br && !pat) return;
+    const len = br ? br.len : patternLength(p, pat!);
+    const make = (tr: number, pos: number): Clip =>
+      br
+        ? { id: uid('k'), kind: 'audio', track: tr, pos, len, patternId: '', offset: 0, sample: br.sample, startSec: br.startSec, gain: br.gain ?? 1, insert: br.insert ?? 0 }
+        : { id: uid('k'), track: tr, pos, len, patternId: pat!.id, offset: 0 };
+    const d: Drag = { kind: 'paint', len, make, placed: [], fr: new Map() };
+    drag.current = d;
+    paintAt(d, track, tickAt(x), true);
+  };
+
+  /** Livre o trecho [pos, pos+len) da track (contando o que já foi pintado agora)? */
+  const isFree = (track: number, pos: number, len: number) => !state.project.clips.some((c) => c.track === track && c.pos < pos + len && c.pos + c.len > pos);
+  /**
+   * Pinta na track até o tick do mouse: a partir do primeiro clipe, para a direita e para
+   * a esquerda, encostando um no outro; onde já tem clipe, pula.
+   */
+  const paintAt = (d: Extract<Drag, { kind: 'paint' }>, track: number, tick: number, first = false) => {
+    const put = (pos: number) => {
+      const c = d.make(track, pos);
+      d.placed.push(c);
+      previewEdit([ins(['clips'], c)]);
+    };
+    let f = d.fr.get(track);
+    if (!f) {
+      const pos = Math.max(0, Math.floor(tick / snap) * snap);
+      if (first || isFree(track, pos, d.len)) put(pos);
+      f = { lo: pos, hi: pos + d.len };
+      d.fr.set(track, f);
+    }
+    while (f.hi <= tick) {
+      if (isFree(track, f.hi, d.len)) put(f.hi);
+      f.hi += d.len;
+    }
+    while (f.lo > tick && f.lo - d.len >= 0) {
+      f.lo -= d.len;
+      if (isFree(track, f.lo, d.len)) put(f.lo);
+    }
   };
 
   const seek = (x: number) => {
@@ -490,6 +532,10 @@ export function Playlist() {
       const h = hit(x, y);
       if (h && (!sel || (h.c.pos < sel.end && h.c.pos + h.c.len > sel.start))) edit([rem(['clips', h.c.id])]);
     } else if (d.kind === 'seek') seek(x);
+    else if (d.kind === 'paint') {
+      const tr = trackAt(y);
+      if (tr >= 0 && tr < p.tracks.length) paintAt(d, tr, Math.max(0, tickAt(x)));
+    }
     else if (d.kind === 'sel') {
       if (!d.moved && Math.abs(x - d.x0) < 4) return;
       d.moved = true;
@@ -512,6 +558,14 @@ export function Playlist() {
         else openTune(d.id);
         return;
       }
+    }
+    if (d.kind === 'paint') {
+      // tudo o que foi pintado vira um passo só (desfazer tira tudo) e vira a área selecionada
+      if (!d.placed.length) return;
+      previewEdit(d.placed.map((c) => rem(['clips', c.id])));
+      edit(d.placed.map((c) => ins(['clips'], c)));
+      setSelection({ start: Math.min(...d.placed.map((c) => c.pos)), end: Math.max(...d.placed.map((c) => c.pos + c.len)) });
+      return;
     }
     if (d.kind === 'point') {
       const c = state.project.clips.find((x) => x.id === d.id);

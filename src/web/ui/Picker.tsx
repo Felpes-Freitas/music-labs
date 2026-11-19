@@ -2,7 +2,8 @@
 // muda arrastando a borda direita (fica salva).
 
 import { useRef } from 'preact/hooks';
-import { useApp, selectPattern, act } from '../state';
+import { useApp, selectPattern, setBrush, act, state } from '../state';
+import { loadAudio, ticksPerSec } from '../clipaudio';
 import * as A from '../../core/actions';
 import { askText, askConfirm } from './Dialog';
 import { Icon } from './icons';
@@ -42,7 +43,7 @@ export function Picker() {
         <div class="picker-head">Patterns</div>
         {p.patterns.map((pt) => (
           <button
-            class={`pk ${pt.id === s.patternId ? 'on' : ''}`}
+            class={`pk ${pt.id === s.patternId && !s.brush ? 'on' : ''}`}
             style={{ borderLeftColor: pt.color }}
             onClick={() => selectPattern(pt.id)}
             data-hint="Clique escolhe o pattern que o lápis pinta · duplo clique renomeia"
@@ -65,17 +66,22 @@ export function Picker() {
           + pattern
         </button>
         <div class="picker-head">Áudios</div>
-        {audios.length === 0 && <div class="picker-empty">Gravações e áudios do Afinador e do Stitcher aparecem aqui.</div>}
+        {audios.length === 0 && <div class="picker-empty">Gravações (amp, Afinador, Stitcher) e áudios importados aparecem aqui. Clique num áudio para pintá-lo na playlist.</div>}
         {withVariants.map((a) => (
           <div
-            class={`pa ${a.variantOf ? 'variant' : ''}`}
+            class={`pa ${a.variantOf ? 'variant' : ''} ${s.brush?.sample === a.path ? 'on' : ''}`}
+            onClick={async () => {
+              // o áudio vira o pincel da playlist (clicar no vazio coloca ele inteiro)
+              const d = await loadAudio(a.path);
+              setBrush({ sample: a.path, startSec: 0, len: Math.max(1, Math.round((d.ch[0].length / d.sr) * ticksPerSec(state.project))), name: a.name });
+            }}
             draggable
             onDragStart={(e) => {
               e.dataTransfer!.setData('text/x-batuque-sample', a.path);
               e.dataTransfer!.effectAllowed = 'copy';
             }}
             onDblClick={() => openTuneAudio(a.id)}
-            data-hint={`${a.name}${a.path !== a.original ? ' (editado; o original está guardado)' : ''} · arraste para a playlist · duplo clique abre no Afinador`}
+            data-hint={`${a.name}${a.path !== a.original ? ' (editado; o original está guardado)' : ''} · clique para pintar na playlist · arraste para a playlist · duplo clique abre no Afinador`}
           >
             <Icon name="wave" size={12} class="pa-ico" />
             <span class="pa-name">{a.name}</span>
