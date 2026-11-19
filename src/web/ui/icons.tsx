@@ -48,6 +48,8 @@ const P: Record<string, JSX.Element> = {
   settings: <path d="M8 5.5a2.5 2.5 0 110 5 2.5 2.5 0 010-5zM8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" />,
   help: <path d="M6 6a2 2 0 114 0c0 1.5-2 1.5-2 3M8 11.5v.5" />,
   sparkle: <path d="M8 2l1.4 4.6L14 8l-4.6 1.4L8 14l-1.4-4.6L2 8l4.6-1.4z" />,
+  guitar: <path d="M10.5 2.5l3 3M12 4l-4.6 4.6M7.4 8.6a2.6 2.6 0 10-1 4.3 2.4 2.4 0 002.2-2.2 2.6 2.6 0 00-1.2-2.1zM5.2 10.8l.9.9" />,
+  grip: <path d="M6 4h.01M10 4h.01M6 8h.01M10 8h.01M6 12h.01M10 12h.01" stroke-width="2.2" />,
 };
 
 export function Icon(p: { name: keyof typeof P | string; size?: number; class?: string }) {

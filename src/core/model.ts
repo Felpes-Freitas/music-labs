@@ -120,7 +120,14 @@ export type EffectType =
   | 'distortion'
   | 'bitcrusher'
   | 'stereo'
-  | 'limiter';
+  | 'limiter'
+  | 'gate'
+  | 'overdrive'
+  | 'fuzz'
+  | 'amp'
+  | 'cab'
+  | 'wah'
+  | 'tremolo';
 
 export interface Effect {
   id: string;

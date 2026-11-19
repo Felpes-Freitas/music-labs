@@ -412,6 +412,233 @@ class Phaser extends Fx {
   }
 }
 
+// ---------------------------------------------------------------- guitarra
+
+/** Pares de filtros iguais para L e R. */
+const pair = () => [new Biquad(), new Biquad()];
+
+class Gate extends Fx {
+  private env = 0;
+  private g = 0;
+  process(L: Float32Array, R: Float32Array, n: number) {
+    const open = dbToGain(num(this.p, 'threshold', -55));
+    const close = open * 0.5; // histerese: fecha um pouco abaixo de onde abre
+    const att = Math.exp(-1 / (0.001 * this.sr));
+    const rel = Math.exp(-1 / (num(this.p, 'release', 80) * 0.001 * this.sr));
+    const envRel = Math.exp(-1 / (0.02 * this.sr));
+    for (let i = 0; i < n; i++) {
+      const x = Math.max(Math.abs(L[i]), Math.abs(R[i]));
+      this.env = x > this.env ? x : this.env * envRel;
+      const target = this.env > open ? 1 : this.env < close ? 0 : this.g > 0.5 ? 1 : 0;
+      this.g = target > this.g ? target + (this.g - target) * att : target + (this.g - target) * rel;
+      L[i] *= this.g;
+      R[i] *= this.g;
+    }
+  }
+}
+
+class Overdrive extends Fx {
+  private hp = pair();
+  private lp = pair();
+  private dc = [new OnePole(), new OnePole()];
+  protected update() {
+    if (!this.hp) return;
+    const tone = num(this.p, 'tone', 0.5);
+    for (const f of this.hp) f.setup('highpass', 720, this.sr, 0.6);
+    for (const f of this.lp) f.setup('lowpass', 900 * Math.pow(7, tone), this.sr, 0.6);
+    for (const f of this.dc) f.setLowpass(10, this.sr);
+  }
+  constructor(sr: number, type: EffectType, params: Params) {
+    super(sr, type, params);
+    this.update();
+  }
+  process(L: Float32Array, R: Float32Array, n: number) {
+    const drive = num(this.p, 'drive', 0.45);
+    const g = 1 + drive * drive * 60;
+    const out = dbToGain(num(this.p, 'level', 0)) * (0.9 / Math.tanh(1 + drive * 2));
+    const bufs = [L, R];
+    for (let c = 0; c < 2; c++) {
+      const b = bufs[c], hp = this.hp[c], lp = this.lp[c], dc = this.dc[c];
+      for (let i = 0; i < n; i++) {
+        const x = b[i];
+        // os graves passam limpos e só os médios/agudos saturam (o "mid hump")
+        const v = x * 0.5 + hp.process(x) * g;
+        let y = Math.tanh(v + 0.08) - 0.0798; // leve assimetria: harmônicos pares
+        y = lp.process(y);
+        b[i] = (y - dc.lp(y)) * out;
+      }
+    }
+  }
+}
+
+class Fuzz extends Fx {
+  private lp = pair();
+  private hp = pair();
+  private dc = [new OnePole(), new OnePole()];
+  protected update() {
+    if (!this.lp) return;
+    const tone = num(this.p, 'tone', 0.5);
+    for (const f of this.lp) f.setup('lowpass', 1200 * Math.pow(6, tone), this.sr, 0.7);
+    for (const f of this.hp) f.setup('highpass', 60 + 200 * tone, this.sr, 0.7);
+    for (const f of this.dc) f.setLowpass(12, this.sr);
+  }
+  constructor(sr: number, type: EffectType, params: Params) {
+    super(sr, type, params);
+    this.update();
+  }
+  process(L: Float32Array, R: Float32Array, n: number) {
+    const amt = num(this.p, 'fuzz', 0.7);
+    const g = 10 + amt * amt * 400;
+    const out = dbToGain(num(this.p, 'level', -6));
+    const bufs = [L, R];
+    for (let c = 0; c < 2; c++) {
+      const b = bufs[c];
+      for (let i = 0; i < n; i++) {
+        const v = this.hp[c].process(b[i]) * g;
+        // clipagem assimétrica: lado positivo duro, negativo mais macio
+        let y = v > 0 ? Math.min(1, v) : Math.tanh(v * 0.6);
+        y = this.lp[c].process(y);
+        b[i] = (y - this.dc[c].lp(y)) * out * 0.7;
+      }
+    }
+  }
+}
+
+class Amp extends Fx {
+  private inHp = pair();
+  private inter = pair(); // entre os estágios do pré
+  private bass = pair();
+  private mid = pair();
+  private treble = pair();
+  private pres = pair();
+  private dc = [new OnePole(), new OnePole()];
+  protected update() {
+    if (!this.inHp) return;
+    const p = this.p, sr = this.sr;
+    const db = (k: string, range: number) => (num(p, k, 0.5) - 0.5) * 2 * range;
+    for (const f of this.inHp) f.setup('highpass', 90, sr, 0.7);
+    for (const f of this.inter) f.setup('lowpass', str(p, 'channel') === 'clean' ? 9000 : 6500, sr, 0.7);
+    for (const f of this.bass) f.setup('lowshelf', 120, sr, 0.7, db('bass', 12));
+    for (const f of this.mid) f.setup('peak', 650, sr, 0.8, db('mid', 12));
+    for (const f of this.treble) f.setup('highshelf', 2800, sr, 0.7, db('treble', 12));
+    for (const f of this.pres) f.setup('peak', 4500, sr, 0.9, db('presence', 9));
+    for (const f of this.dc) f.setLowpass(8, sr);
+  }
+  constructor(sr: number, type: EffectType, params: Params) {
+    super(sr, type, params);
+    this.update();
+  }
+  process(L: Float32Array, R: Float32Array, n: number) {
+    const ch = str(this.p, 'channel', 'crunch');
+    const gain = num(this.p, 'gain', 0.5);
+    const range = ch === 'clean' ? [1, 5] : ch === 'crunch' ? [4, 45] : [20, 220];
+    const pre = range[0] * Math.pow(range[1] / range[0], gain);
+    const two = ch === 'lead'; // canal lead tem um estágio a mais
+    const master = dbToGain(num(this.p, 'master', -8));
+    const norm = 1 / Math.tanh(Math.min(pre, 3));
+    const bufs = [L, R];
+    for (let c = 0; c < 2; c++) {
+      const b = bufs[c];
+      for (let i = 0; i < n; i++) {
+        let x = this.inHp[c].process(b[i]) * pre;
+        x = Math.tanh(x + 0.1) - 0.0997; // válvula de pré (assimetria leve)
+        if (two) x = Math.tanh(this.inter[c].process(x) * 3.2);
+        else x = this.inter[c].process(x);
+        x = this.treble[c].process(this.mid[c].process(this.bass[c].process(x * norm)));
+        // power amp: satura suave quando o master está alto
+        x = Math.tanh(x * master * 2.2) * 0.62;
+        x = this.pres[c].process(x);
+        b[i] = x - this.dc[c].lp(x);
+      }
+    }
+  }
+}
+
+const CABS: Record<string, { hp: number; res: [number, number]; mid: [number, number, number]; lp: number; lp2: number }> = {
+  '1x12 combo': { hp: 90, res: [130, 3], mid: [1800, 1.2, 3], lp: 5200, lp2: 6500 },
+  '2x12 aberta': { hp: 80, res: [110, 2], mid: [2400, 1.0, 2.5], lp: 5800, lp2: 7500 },
+  '4x12 britânica': { hp: 75, res: [95, 4], mid: [1500, 0.9, 4], lp: 4300, lp2: 5600 },
+  '4x12 moderna': { hp: 70, res: [85, 5], mid: [700, 1.1, -3], lp: 4800, lp2: 6200 },
+};
+
+class Cab extends Fx {
+  private f: Biquad[][] = [];
+  protected update() {
+    const c = CABS[str(this.p, 'cab', '2x12 aberta')] ?? CABS['2x12 aberta'];
+    const mic = num(this.p, 'mic', 0.4); // 0 = centro (brilhante), 1 = borda (escuro)
+    const low = num(this.p, 'low', 0.5);
+    if (!this.f.length) this.f = [0, 1].map(() => [new Biquad(), new Biquad(), new Biquad(), new Biquad(), new Biquad(), new Biquad()]);
+    for (const b of this.f) {
+      b[0].setup('highpass', c.hp, this.sr, 0.8);
+      b[1].setup('peak', c.res[0], this.sr, 1.4, c.res[1] * (0.4 + low * 1.2));
+      b[2].setup('peak', c.mid[0], this.sr, c.mid[1], c.mid[2] + (0.5 - mic) * 4);
+      b[3].setup('lowpass', c.lp * Math.pow(0.55, mic), this.sr, 0.9);
+      b[4].setup('lowpass', c.lp2 * Math.pow(0.6, mic), this.sr, 0.6);
+      b[5].setup('peak', 3200, this.sr, 2, -2 - mic * 3); // vale típico de alto-falante
+    }
+  }
+  process(L: Float32Array, R: Float32Array, n: number) {
+    const out = dbToGain(num(this.p, 'level', 0)) * 1.4;
+    const bufs = [L, R];
+    for (let c = 0; c < 2; c++) {
+      const b = bufs[c], f = this.f[c];
+      for (let i = 0; i < n; i++) {
+        let x = b[i];
+        for (let k = 0; k < 6; k++) x = f[k].process(x);
+        b[i] = x * out;
+      }
+    }
+  }
+}
+
+class Wah extends Fx {
+  private f = [new Svf(this.sr), new Svf(this.sr)];
+  private env = 0;
+  private ph = 0;
+  private pos = 0.5;
+  process(L: Float32Array, R: Float32Array, n: number) {
+    const mode = str(this.p, 'mode', 'auto');
+    const sens = num(this.p, 'sens', 0.6);
+    const rate = num(this.p, 'rate', 1.5);
+    const q = 0.55 + num(this.p, 'q', 0.75) * 0.4;
+    const rel = Math.exp(-1 / (0.12 * this.sr)), att = Math.exp(-1 / (0.004 * this.sr));
+    for (let i = 0; i < n; i++) {
+      const x = Math.max(Math.abs(L[i]), Math.abs(R[i]));
+      this.env = x + (this.env - x) * (x > this.env ? att : rel);
+      if ((i & 15) === 0) {
+        let target: number;
+        if (mode === 'pedal') target = num(this.p, 'pedal', 0.5);
+        else if (mode === 'lfo') {
+          this.ph = (this.ph + (16 * rate) / this.sr) % 1;
+          target = 0.5 - 0.5 * Math.cos(TAU * this.ph);
+        } else target = clamp(this.env * (2 + sens * 30), 0, 1);
+        this.pos += (target - this.pos) * 0.3;
+        const fc = 350 * Math.pow(2400 / 350, this.pos);
+        this.f[0].set(fc, q);
+        this.f[1].set(fc, q);
+      }
+      L[i] = this.f[0].process(L[i], 2) * 1.8;
+      R[i] = this.f[1].process(R[i], 2) * 1.8;
+    }
+  }
+}
+
+class Tremolo extends Fx {
+  private ph = 0;
+  process(L: Float32Array, R: Float32Array, n: number) {
+    const rate = num(this.p, 'rate', 5), depth = num(this.p, 'depth', 0.6);
+    const wave = str(this.p, 'wave', 'sine');
+    const inc = rate / this.sr;
+    for (let i = 0; i < n; i++) {
+      this.ph = (this.ph + inc) % 1;
+      const w = wave === 'square' ? (this.ph < 0.5 ? 1 : 0) : wave === 'triangle' ? 1 - Math.abs(this.ph * 2 - 1) : 0.5 + 0.5 * Math.sin(TAU * this.ph);
+      const g = 1 - depth * (1 - w);
+      L[i] *= g;
+      R[i] *= g;
+    }
+  }
+}
+
 export function createEffect(sr: number, type: EffectType, params: Params): Fx {
   const fx = makeEffect(sr, type, params);
   fx.setParams(params); // update() só depois que os campos da subclasse existem
@@ -431,5 +658,12 @@ function makeEffect(sr: number, type: EffectType, params: Params): Fx {
     case 'bitcrusher': return new Bitcrusher(sr, type, params);
     case 'stereo': return new Stereo(sr, type, params);
     case 'limiter': return new Limiter(sr, type, params);
+    case 'gate': return new Gate(sr, type, params);
+    case 'overdrive': return new Overdrive(sr, type, params);
+    case 'fuzz': return new Fuzz(sr, type, params);
+    case 'amp': return new Amp(sr, type, params);
+    case 'cab': return new Cab(sr, type, params);
+    case 'wah': return new Wah(sr, type, params);
+    case 'tremolo': return new Tremolo(sr, type, params);
   }
 }
