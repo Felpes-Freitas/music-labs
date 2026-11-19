@@ -81,3 +81,20 @@ test('costura mede a distância até a nota pretendida (não até o semitom mais
   const got = [mid(0.2, 0.5), mid(0.7, 1.0), mid(1.2, 1.5), mid(1.7, 2.1)];
   for (const [k, m] of [60, 62, 63, 65].entries()) assert.ok(Math.abs(got[k] - m) < 0.12, `costura afinada: ${got.map((g) => g.toFixed(2)).join(' ')}`);
 });
+
+test('notas vizinhas ligadas (legato, um semitom) continuam separadas', () => {
+  // Mi → Fá sem pausa, com a troca suavizada em ~50 ms (como depois de uma correção)
+  const n = Math.round(SR * 1.4);
+  const x = new Float32Array(n);
+  let ph = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / SR;
+    const m = t < 0.7 ? 64 : t < 0.75 ? 64 + (t - 0.7) / 0.05 : 65;
+    const f = 440 * Math.pow(2, (m - 69 + 0.12 * Math.sin(2 * Math.PI * 5.5 * t)) / 12);
+    ph += (2 * Math.PI * f) / SR;
+    x[i] = 0.3 * Math.min(1, t * 30, (1.4 - t) * 30) * (Math.sin(ph) + 0.5 * Math.sin(2 * ph));
+  }
+  const notes = segmentNotes(trackPitch(x, SR));
+  assert.equal(notes.length, 2, notes.map((q) => q.pitch.toFixed(2)).join(' '));
+  assert.ok(Math.abs(notes[0].pitch - 64) < 0.1 && Math.abs(notes[1].pitch - 65) < 0.1);
+});

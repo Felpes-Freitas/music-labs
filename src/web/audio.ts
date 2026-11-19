@@ -356,6 +356,61 @@ export class Audio {
     return !!this.amp;
   }
 
+  // ---------------------------------------------------------------- captura avulsa (Afinador, Stitcher)
+  // Grava só a entrada, sem tocar a música e sem ligação com a playlist.
+
+  private cap: { stream: MediaStream; src: MediaStreamAudioSourceNode; node: AudioWorkletNode; chunks: Float32Array[][]; frames: number; peaks: number[]; acc: number; accN: number; pick: RecChannels } | null = null;
+  onCapture: () => void = () => {};
+  get capturing() {
+    return !!this.cap;
+  }
+  /** Captura em andamento: amostras e picos (um a cada PEAK_FRAMES) para desenhar ao vivo. */
+  get liveCapture() {
+    const c = this.cap;
+    return c && this.ctx ? { frames: c.frames, sr: this.ctx.sampleRate, peaks: c.peaks, peakFrames: PEAK_FRAMES } : null;
+  }
+  async startCapture(opt: { deviceId?: string; channels?: RecChannels } = {}) {
+    await this.resume();
+    const ctx = this.ctx!;
+    const stream = await openInput(opt.deviceId);
+    const src = ctx.createMediaStreamSource(stream);
+    const node = new AudioWorkletNode(ctx, 'ml-recorder', { numberOfInputs: 1, numberOfOutputs: 0, channelCount: 2, channelCountMode: 'explicit' });
+    const cap = { stream, src, node, chunks: [] as Float32Array[][], frames: 0, peaks: [] as number[], acc: 0, accN: 0, pick: opt.channels ?? 'stereo' };
+    node.port.onmessage = (e) => {
+      const c = pickChannels(e.data as Float32Array[], cap.pick);
+      cap.chunks.push(c);
+      for (let i = 0; i < c[0].length; i++) {
+        const a = Math.max(Math.abs(c[0][i]), Math.abs(c[1][i]));
+        if (a > cap.acc) cap.acc = a;
+        if (++cap.accN === PEAK_FRAMES) {
+          cap.peaks.push(cap.acc);
+          cap.acc = 0;
+          cap.accN = 0;
+        }
+      }
+      cap.frames += c[0].length;
+      this.onCapture();
+    };
+    src.connect(node);
+    this.cap = cap;
+  }
+  stopCapture(): { L: Float32Array; R: Float32Array; sr: number } | null {
+    const c = this.cap;
+    if (!c) return null;
+    this.cap = null;
+    c.src.disconnect();
+    c.node.port.onmessage = null;
+    c.stream.getTracks().forEach((t) => t.stop());
+    const L = new Float32Array(c.frames), R = new Float32Array(c.frames);
+    let w = 0;
+    for (const ch of c.chunks) {
+      L.set(ch[0], w);
+      R.set(ch[1], w);
+      w += ch[0].length;
+    }
+    return { L, R, sr: this.ctx!.sampleRate };
+  }
+
   /** Toca um áudio avulso (prévia das ferramentas). Devolve a função de parar e o instante de início. */
   playBuffer(ch: Float32Array[], sr: number, fromSec = 0, onEnd?: () => void) {
     const ctx = this.ctx;

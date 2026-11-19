@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { useApp, state, api, act, edit, toast, selectChannel } from '../state';
+import { useApp, state, api, act, edit, toast, selectChannel, emit } from '../state';
 import { audio } from '../audio';
 import * as A from '../../core/actions';
 import { set } from '../../core/ops';
@@ -172,10 +172,26 @@ export function Browser() {
     return () => clearTimeout(t);
   }, [q]);
 
-  if (!s.windows.browser.open) return null;
+  const toggle = () => {
+    state.windows.browser.open = !state.windows.browser.open;
+    emit();
+  };
+  // recolhido: uma faixa fina com o botão de abrir
+  if (!s.windows.browser.open)
+    return (
+      <div class="browser-rail">
+        <button onClick={toggle} data-hint="Mostrar o navegador de samples (Alt+F8)">
+          <Icon name="chevron" size={11} />
+        </button>
+        <span>Navegador</span>
+      </div>
+    );
   return (
     <div class="browser">
       <div class="br-head">
+        <button class="br-collapse" onClick={toggle} data-hint="Recolher o navegador (Alt+F8)">
+          <Icon name="chevron" size={11} />
+        </button>
         <input class="search" placeholder="Buscar samples (ex.: kick 808)" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} data-hint="Busca em todas as pastas de samples" />
       </div>
       <div class="br-lib" data-hint={lib?.sources.map((x) => `${x.label}: ${x.files}`).join(' · ') || ''}>
