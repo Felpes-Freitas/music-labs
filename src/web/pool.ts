@@ -7,7 +7,7 @@ import { PPQ, uid } from '../core/model';
 import { set, ins, rem, type Op } from '../core/ops';
 import * as A from '../core/actions';
 import { encodeWav } from '../core/wav';
-import { state, edit, act, toast } from './state';
+import { state, edit, act, toast, countInIfOn } from './state';
 import { loadAudio, makeRoomBelow, playheadTick, ticksPerSec, uploadFiles } from './clipaudio';
 import { getPref } from './prefs';
 import { audio } from './audio';
@@ -146,7 +146,10 @@ export function trimSilence(L: Float32Array, R: Float32Array, sr: number): [Floa
 
 /** Grava pela captura avulsa (sem tocar a música) e coloca o áudio na lista. */
 export async function startToolRecording() {
-  await audio.startCapture({ deviceId: getPref<string>('rec.device', '') || undefined, channels: getPref('rec.channels', 'stereo') });
+  // a entrada abre antes; a contagem (se ligada) toca e só depois o áudio começa a ser guardado
+  await audio.startCapture({ deviceId: getPref<string>('rec.device', '') || undefined, channels: getPref('rec.channels', 'stereo'), arm: true });
+  await countInIfOn();
+  audio.armCapture();
 }
 export async function finishToolRecording(name: string): Promise<string | null> {
   const r = audio.stopCapture();

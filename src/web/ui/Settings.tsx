@@ -288,6 +288,7 @@ function AudioSection() {
         <p class="set-note">Para guitarra ou microfone ligados numa entrada só da interface, escolha "Só entrada 1" (ou 2): o som vai para os dois lados em vez de ficar só num. A gravação usa o sinal limpo, sem cancelamento de eco nem controle automático de volume.</p>
         <p class="set-note">Os arquivos ficam em <code>~/MusicLabs/Gravações</code>.</p>
       </section>
+      <LatencySection />
       <section class="set-group">
         <h3>Saída</h3>
         <div class="set-row">
@@ -348,6 +349,92 @@ function Shortcuts() {
           </tr>
         ))}
       </table>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------- latência
+
+function LatencySection() {
+  const [pw, setPw] = useState<{ available: boolean; quantum?: number; force?: number; rate?: number } | null>(null);
+  const [cal, setCal] = useState<string>('');
+  const [ms, setMs] = useState<number | null>(getPref<number | null>('rec.latencyMs', null));
+  useEffect(() => {
+    api('GET', '/api/latency').then(setPw).catch(() => setPw({ available: false }));
+  }, []);
+  const setQ = async (q: number) => setPw(await api('POST', '/api/latency', { quantum: q }));
+  const ctx = (audio as any).ctx as AudioContext | undefined;
+  const outMs = ctx ? Math.round(((ctx.baseLatency || 0) + ((ctx as any).outputLatency || 0)) * 1000) : null;
+  const monMs = audio.monitorLatencyMs;
+  const qms = (q: number) => ((q / (pw?.rate || 48000)) * 1000).toFixed(1);
+  const calibrate = async () => {
+    setCal('Ouça os 8 cliques…');
+    try {
+      const r = await audio.calibrateLatency({ deviceId: getPref<string>('rec.device', '') || undefined, channels: getPref('rec.channels', 'stereo') }, (k, n) => setCal(`Clique ${k} de ${n}…`));
+      audio.recLatencyMs = r.ms;
+      setPref('rec.latencyMs', r.ms);
+      setMs(r.ms);
+      setCal(`Medido: ${r.ms} ms (${r.hits} de 8 cliques${r.spread > 25 ? `, variação de ${r.spread} ms — se tocou junto, tente de novo com mais precisão` : ''}).`);
+    } catch (e) {
+      setCal(`Não deu: ${(e as Error).message}.`);
+    }
+  };
+  return (
+    <section class="set-group">
+      <h3>Latência</h3>
+      {pw?.available && (
+        <>
+          <div class="set-row">
+            <span class="set-lbl">Blocos</span>
+            <div class="seg">
+              {[
+                [0, `Sistema (${pw.quantum})`],
+                [256, 'Baixa · 256'],
+                [128, 'Muito baixa · 128'],
+                [64, 'Extrema · 64'],
+              ].map(([q, l]) => (
+                <button class={(pw.force ?? 0) === q ? 'on' : ''} onClick={() => setQ(q as number)}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p class="set-note">
+            O som anda em blocos: cada bloco é um atraso ({pw.quantum} amostras = {qms(pw.quantum ?? 1024)} ms). Blocos menores deixam o retorno e o metrônomo mais rápidos, mas pedem mais do processador — se começar a estalar, suba um nível. Vale enquanto o Music Labs estiver aberto; ao fechar, volta ao normal. O app já pede blocos pequenos sozinho; isto força o sistema inteiro.
+          </p>
+        </>
+      )}
+      <div class="set-row">
+        <span class="set-lbl">Agora</span>
+        <span>
+          saída {outMs ?? '—'} ms{monMs !== null ? ` · retorno do amp ${monMs} ms` : ''}
+        </span>
+      </div>
+      <div class="set-row">
+        <span class="set-lbl">Gravação</span>
+        <span>{ms !== null ? `atraso compensado: ${ms} ms (calibrado)` : 'atraso estimado pelo sistema (pode ficar curto)'}</span>
+      </div>
+      <div class="set-row">
+        <button class="on" onClick={calibrate}>
+          Calibrar atraso da gravação
+        </button>
+        {ms !== null && (
+          <button
+            onClick={() => {
+              audio.recLatencyMs = null;
+              setPref('rec.latencyMs', null);
+              setMs(null);
+              setCal('');
+            }}
+          >
+            Usar o estimado
+          </button>
+        )}
+      </div>
+      {cal && <p class="set-note">{cal}</p>}
+      <p class="set-note">
+        A calibração toca 8 cliques e mede quanto tempo eles demoram para voltar pela entrada. <b>Com caixas de som</b>: só aperte e fique em silêncio (o microfone ouve os cliques). <b>Com fone</b>: toque junto com cada clique (uma palhetada abafada na guitarra, ou uma batida perto do microfone). Depois disso, o que você grava cai em cima do tempo.
+      </p>
     </section>
   );
 }

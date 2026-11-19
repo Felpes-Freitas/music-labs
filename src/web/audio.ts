@@ -124,7 +124,7 @@ export class Audio {
   async startRecording(
     startTick: number,
     track: number,
-    opt: { deviceId?: string; channels?: RecChannels; stream?: MediaStream; gainDb?: number; smart?: { marginDb: number; holdSec: number; thresholdDb: number; deviceId?: string } } = {},
+    opt: { deviceId?: string; channels?: RecChannels; stream?: MediaStream; gainDb?: number; smart?: { marginDb: number; holdSec: number; thresholdDb: number; deviceId?: string }; countInSec?: number } = {},
   ) {
     await this.resume();
     const ctx = this.ctx!;
@@ -133,7 +133,9 @@ export class Audio {
     const src = ctx.createMediaStreamSource(stream);
     const node = new AudioWorkletNode(ctx, 'ml-recorder', { numberOfInputs: 1, numberOfOutputs: 0, channelCount: 2, channelCountMode: 'explicit' });
     const sr = ctx.sampleRate;
-    const latency = Math.round(((ctx.baseLatency || 0) + ((ctx as any).outputLatency || 0)) * sr);
+    const latency = this.recLatencyFrames();
+    // durante a contagem a música não anda: o que chega antes disso não entra no take
+    const preroll = Math.round((opt.countInSec ?? 0) * sr);
     const p = this.getProject();
     const rec: Rec = {
       stream,
@@ -150,8 +152,9 @@ export class Audio {
       acc: 0,
       accN: 0,
       skip: latency,
+      preroll,
       tps: 0,
-      map: [[0, startTick]],
+      map: [[preroll, startTick]],
       smart: opt.smart ? { det: new TakeDetector(sr, opt.smart.marginDb, 0.12, opt.smart.thresholdDb), hold: Math.round(opt.smart.holdSec * sr), stream: null, node: null } : null,
       noiseDb: null,
       snrDb: null,
@@ -160,7 +163,7 @@ export class Audio {
       lastLoud: 0,
     };
     rec.tps = ((p?.bpm ?? 120) * PPQ) / 60;
-    if (!rec.smart) rec.takes.push({ c0: latency, c1: null, tick: startTick, track });
+    if (!rec.smart) rec.takes.push({ c0: latency + preroll, c1: null, tick: startTick, track });
     node.port.onmessage = (e) => this.onRecChunk(rec, e.data as Float32Array[]);
     src.connect(node);
     this.rec = rec;
@@ -185,7 +188,7 @@ export class Audio {
   /** Anota onde a música está (chamado a cada status da engine). */
   private markRec() {
     const r = this.rec;
-    if (r && this.status.playing) r.map.push([r.frames, this.status.tick]);
+    if (r && this.status.playing && !this.status.countIn) r.map.push([r.frames, this.status.tick]);
     if (r && r.map.length > 4000) r.map.splice(1, 2000);
   }
 
@@ -239,7 +242,7 @@ export class Audio {
       if (!open && st.active) {
         // começa um take um pouco antes, para não cortar o ataque da palhetada
         const prevEnd = last ? last.c1! : 0;
-        const c0 = Math.max(r.skip, prevEnd, st.since - 1024 - Math.round(0.06 * sr));
+        const c0 = Math.max(r.skip + r.preroll, prevEnd, st.since - 1024 - Math.round(0.06 * sr));
         const tick = this.tickAt(r, c0 - r.skip);
         r.takes.push({ c0, c1: null, tick, track: this.takeTrack(r, tick) });
         r.lastLoud = st.end;
@@ -358,10 +361,109 @@ export class Audio {
     return !!this.amp;
   }
 
+  /**
+   * Atraso de ida e volta da gravação (ms): do som sair até o que você toca voltar
+   * pela entrada. null = estimado pelo navegador (só a saída; costuma ficar curto).
+   */
+  recLatencyMs: number | null = null;
+  recLatencyFrames() {
+    const ctx = this.ctx!;
+    const est = (ctx.baseLatency || 0) + ((ctx as any).outputLatency || 0);
+    return Math.round((this.recLatencyMs !== null ? this.recLatencyMs / 1000 : est) * ctx.sampleRate);
+  }
+
+  /**
+   * Mede o atraso de ida e volta da gravação: toca cliques e procura, no que a
+   * entrada captou, o ataque logo depois de cada um (o próprio clique vazando nas
+   * caixas, ou você tocando junto com fone). Devolve a mediana em ms.
+   */
+  async calibrateLatency(opt: { deviceId?: string; channels?: RecChannels }, onProgress: (k: number, n: number) => void) {
+    await this.resume();
+    const ctx = this.ctx!;
+    const sr = ctx.sampleRate;
+    const stream = await openInput(opt.deviceId);
+    const src = ctx.createMediaStreamSource(stream);
+    const node = new AudioWorkletNode(ctx, 'ml-recorder-t', { numberOfInputs: 1, numberOfOutputs: 0, channelCount: 2, channelCountMode: 'explicit' });
+    const chunks: { t: number; x: Float32Array }[] = [];
+    node.port.onmessage = (e) => {
+      const c = pickChannels(e.data.ch as Float32Array[], opt.channels ?? 'stereo');
+      chunks.push({ t: e.data.t, x: c[0] });
+    };
+    src.connect(node);
+    const n = 8, beat = 60 / 90;
+    const t0 = ctx.currentTime + 0.8;
+    const ticks = Array.from({ length: n }, (_, i) => t0 + i * beat);
+    ticks.forEach((t, i) => this.click(t, i === 0));
+    for (let i = 0; i < n; i++) setTimeout(() => onProgress(i + 1, n), (ticks[i] - ctx.currentTime) * 1000);
+    await new Promise((r) => setTimeout(r, (ticks[n - 1] - ctx.currentTime + 0.7) * 1000));
+    src.disconnect();
+    node.port.onmessage = null;
+    stream.getTracks().forEach((t) => t.stop());
+    if (!chunks.length) throw new Error('nada foi captado');
+    // amostras com o horário do contexto
+    const start = chunks[0].t;
+    const total = chunks.reduce((s, c) => s + c.x.length, 0);
+    const x = new Float32Array(total);
+    let w = 0;
+    for (const c of chunks) {
+      x.set(c.x, Math.round((c.t - start) * sr));
+      w += c.x.length;
+    }
+    void w;
+    const at = (t: number) => Math.round((t - start) * sr);
+    // ruído de fundo: antes do primeiro clique
+    let floor = 0;
+    for (let i = Math.max(0, at(t0 - 0.6)); i < at(t0 - 0.05); i++) floor = Math.max(floor, Math.abs(x[i]));
+    const delays: number[] = [];
+    for (const tk of ticks) {
+      const a = at(tk), b = Math.min(x.length, at(tk + 0.45));
+      let peak = 0;
+      for (let i = a; i < b; i++) peak = Math.max(peak, Math.abs(x[i]));
+      if (peak < Math.max(floor * 3, 0.01)) continue; // nada nesse tempo
+      const thr = Math.max(floor * 2.5, peak * 0.3);
+      for (let i = a; i < b; i++)
+        if (Math.abs(x[i]) > thr) {
+          delays.push(((i - a) / sr) * 1000);
+          break;
+        }
+    }
+    if (delays.length < 4) throw new Error('não deu para ouvir os cliques (ou o que você tocou) na entrada');
+    delays.sort((p, q) => p - q);
+    const med = delays[delays.length >> 1];
+    const spread = delays[Math.floor(delays.length * 0.8)] - delays[Math.floor(delays.length * 0.2)];
+    return { ms: Math.round(med), hits: delays.length, spread: Math.round(spread) };
+  }
+
+  /** Toca n cliques de contagem no tempo da música; resolve quando o último tempo termina. */
+  async countInClicks(n: number, bpm: number, onBeat: (left: number) => void) {
+    await this.resume();
+    const ctx = this.ctx!;
+    const beat = 60 / bpm;
+    const t0 = ctx.currentTime + 0.08;
+    for (let i = 0; i < n; i++) this.click(t0 + i * beat, i === 0);
+    for (let i = 0; i < n; i++) setTimeout(() => onBeat(n - i), Math.max(0, (t0 - ctx.currentTime + i * beat) * 1000));
+    await new Promise((r) => setTimeout(r, (t0 - ctx.currentTime + n * beat) * 1000));
+    onBeat(0);
+  }
+  /** Um clique de metrônomo no tempo t do contexto. */
+  click(t: number, accent = false) {
+    const ctx = this.ctx!;
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.value = accent ? 1760 : 1175;
+    g.gain.setValueAtTime(accent ? 0.42 : 0.3, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.035);
+    o.connect(g).connect(ctx.destination);
+    o.start(t);
+    o.stop(t + 0.04);
+  }
+
   // ---------------------------------------------------------------- captura avulsa (Afinador, Stitcher)
   // Grava só a entrada, sem tocar a música e sem ligação com a playlist.
 
-  private cap: { stream: MediaStream; src: MediaStreamAudioSourceNode; node: AudioWorkletNode; chunks: Float32Array[][]; frames: number; peaks: number[]; acc: number; accN: number; pick: RecChannels } | null = null;
+  private cap: { stream: MediaStream; src: MediaStreamAudioSourceNode; node: AudioWorkletNode; chunks: Float32Array[][]; frames: number; peaks: number[]; acc: number; accN: number; pick: RecChannels; armed: boolean } | null = null;
+  armCapture() {
+    if (this.cap) this.cap.armed = true;
+  }
   onCapture: () => void = () => {};
   get capturing() {
     return !!this.cap;
@@ -371,14 +473,16 @@ export class Audio {
     const c = this.cap;
     return c && this.ctx ? { frames: c.frames, sr: this.ctx.sampleRate, peaks: c.peaks, peakFrames: PEAK_FRAMES } : null;
   }
-  async startCapture(opt: { deviceId?: string; channels?: RecChannels } = {}) {
+  /** arm = só começa a guardar depois de armCapture() (contagem). */
+  async startCapture(opt: { deviceId?: string; channels?: RecChannels; arm?: boolean } = {}) {
     await this.resume();
     const ctx = this.ctx!;
     const stream = await openInput(opt.deviceId);
     const src = ctx.createMediaStreamSource(stream);
     const node = new AudioWorkletNode(ctx, 'ml-recorder', { numberOfInputs: 1, numberOfOutputs: 0, channelCount: 2, channelCountMode: 'explicit' });
-    const cap = { stream, src, node, chunks: [] as Float32Array[][], frames: 0, peaks: [] as number[], acc: 0, accN: 0, pick: opt.channels ?? 'stereo' };
+    const cap = { stream, src, node, chunks: [] as Float32Array[][], frames: 0, peaks: [] as number[], acc: 0, accN: 0, pick: opt.channels ?? 'stereo', armed: !opt.arm };
     node.port.onmessage = (e) => {
+      if (!cap.armed) return; // ainda na contagem: descarta
       const c = pickChannels(e.data as Float32Array[], cap.pick);
       cap.chunks.push(c);
       for (let i = 0; i < c[0].length; i++) {
@@ -569,6 +673,8 @@ interface Rec {
   accN: number;
   /** Latência a compensar (amostras): a amostra c soou junto com a música em c - skip. */
   skip: number;
+  /** Amostras capturadas durante a contagem (antes da música começar). */
+  preroll: number;
   tps: number; // ticks por segundo
   map: [number, number][];
   /** Detector de "está tocando" (com aprendizado do ruído de fundo); só decide os cortes. */

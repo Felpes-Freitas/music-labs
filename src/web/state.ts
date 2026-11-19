@@ -84,6 +84,8 @@ export const state = {
   loopOn: getPref('tr.loop', false),
   metronome: getPref('tr.metronome', false),
   countIn: getPref('tr.countIn', true),
+  /** Contagem das ferramentas (Afinador, Stitcher), que não usam a música: tempos que faltam. */
+  countdown: 0,
 };
 
 const listeners = new Set<() => void>();
@@ -369,6 +371,16 @@ export function toggleCountIn() {
   emit();
 }
 audio.transport({ loopOn: state.loopOn, metronome: state.metronome });
+audio.recLatencyMs = getPref<number | null>('rec.latencyMs', null);
+
+/** Contagem 3, 2, 1 (se ligada) antes de gravar nas ferramentas que não tocam a música. */
+export async function countInIfOn() {
+  if (!state.countIn) return;
+  await audio.countInClicks(3, state.project.bpm, (n) => {
+    state.countdown = n;
+    emit();
+  });
+}
 audio.onLive = recNote;
 
 /** Gravar notas e automações (o REC geral): toca a música a partir da seleção/posição. */
@@ -428,13 +440,14 @@ export async function toggleRecord(fromAmp: AmpTake | null = null, extra: { smar
   if (audio.recording || midiRecording()) return stop();
   // o REC geral grava notas e automações; áudio (voz, guitarra) fica com o amp e as ferramentas
   if (!fromAmp && !extra.audio && !extra.smart) return toggleMidiRecord();
+  const countBeats = state.countIn ? 3 : 0;
   const start = audio.status.mode === 'song' ? Math.max(0, Math.floor(audio.status.tick)) : 0;
   try {
     const track = A.freeTrack(state.project, start, 1e12);
     if (fromAmp) {
       const stream = audio.ampStream;
       if (!stream) throw new Error('o amp está desligado');
-      await audio.startRecording(start, track, { stream, channels: fromAmp.pick, gainDb: fromAmp.inGainDb, smart: fromAmp.smart ?? undefined });
+      await audio.startRecording(start, track, { stream, channels: fromAmp.pick, gainDb: fromAmp.inGainDb, smart: fromAmp.smart ?? undefined, countInSec: (countBeats * 60) / state.project.bpm });
     } else {
       const deviceId = getPref<string>('rec.device', '') || undefined;
       await audio.startRecording(start, track, { deviceId, channels: getPref('rec.channels', 'stereo'), smart: extra.smart ? { ...smartConfig(), deviceId } : undefined });
@@ -447,7 +460,7 @@ export async function toggleRecord(fromAmp: AmpTake | null = null, extra: { smar
   }
   state.mode = 'song';
   playingFlag = true;
-  audio.play('song', state.patternId, start);
+  audio.play('song', state.patternId, start, countBeats);
   toast(fromAmp?.smart || extra.smart ? 'Gravação inteligente: toque quando quiser, cada trecho vira um clipe (■ para parar)' : 'Gravando… (Espaço ou ■ para parar)');
   emit();
 }

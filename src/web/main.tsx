@@ -162,12 +162,14 @@ function LogoMark(p: { progress: number | null }) {
 
 /** "3, 2, 1" grande enquanto a contagem antes da gravação roda. */
 function CountInOverlay() {
+  const s = useApp();
   const [n, setN] = useState(0);
   useEffect(() => onLive((st) => setN(st.countIn)), []);
-  if (!n) return null;
+  const v = n || s.countdown;
+  if (!v) return null;
   return (
-    <div class="countin" key={n}>
-      {n}
+    <div class="countin" key={v}>
+      {v}
     </div>
   );
 }

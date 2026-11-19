@@ -9,6 +9,9 @@ const URL = `http://127.0.0.1:${PORT}`;
 const ROOT = path.join(__dirname, '..');
 
 app.setName('MusicLabs');
+// Latência: pede ao PulseAudio/PipeWire blocos pequenos (o padrão do sistema costuma
+// ser 1024 amostras ≈ 21 ms, o que atrasa o retorno e a gravação). Vale só para o app.
+if (!process.env.PULSE_LATENCY_MSEC) process.env.PULSE_LATENCY_MSEC = '8';
 // som sem precisar de clique (é um app de áudio)
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
