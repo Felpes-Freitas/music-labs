@@ -414,6 +414,15 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         writeFileSync(file, buf);
         return json(res, 200, { path: file });
       }
+      case 'GET /api/latency':
+        return json(res, 200, await pwQuantum());
+      case 'POST /api/latency': {
+        // modo de baixa latência: força o tamanho dos blocos do PipeWire enquanto o app roda
+        const b = await body(req);
+        const q = [0, 64, 128, 256, 512].includes(Number(b.quantum)) ? Number(b.quantum) : 0;
+        await setPwQuantum(q);
+        return json(res, 200, await pwQuantum());
+      }
       case 'POST /api/import': {
         // arquivo de áudio escolhido no computador (qualquer formato que o ffmpeg leia): salva em ~/MusicLabs/Importados
         const buf = await rawBody(req);
@@ -520,3 +529,37 @@ export function startServer(port = PORT) {
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
   startServer().then(() => console.log(`Music Labs rodando em http://127.0.0.1:${PORT}`));
 }
+
+// ---------------------------------------------------------------- latência do PipeWire (Linux)
+
+import { execFile, execFileSync } from 'node:child_process';
+const run = (cmd: string, args: string[]) => new Promise<string>((ok) => execFile(cmd, args, { timeout: 3000 }, (_e, out) => ok(String(out ?? ''))));
+let forcedQuantum = 0;
+/** Tamanho dos blocos do PipeWire: padrão do sistema e o forçado (0 = não forçado). */
+async function pwQuantum() {
+  if (process.platform !== 'linux') return { available: false };
+  const out = await run('pw-metadata', ['-n', 'settings', '0']);
+  if (!out) return { available: false };
+  const get = (k: string) => Number(new RegExp(`'${k}' value:'(\\d+)'`).exec(out)?.[1] ?? 0);
+  return { available: true, quantum: get('clock.quantum'), force: get('clock.force-quantum'), rate: get('clock.rate') || 48000 };
+}
+async function setPwQuantum(q: number) {
+  if (process.platform !== 'linux') return;
+  await run('pw-metadata', ['-n', 'settings', '0', 'clock.force-quantum', String(q)]);
+  forcedQuantum = q;
+}
+// ao fechar, devolve o PipeWire ao normal (o resto do sistema não fica em baixa latência)
+for (const sig of ['SIGINT', 'SIGTERM'] as const)
+  process.once(sig, () => {
+    if (!forcedQuantum) process.exit(0);
+    execFile('pw-metadata', ['-n', 'settings', '0', 'clock.force-quantum', '0'], () => process.exit(0));
+  });
+process.once('exit', () => {
+  if (forcedQuantum) {
+    try {
+      execFileSync('pw-metadata', ['-n', 'settings', '0', 'clock.force-quantum', '0'], { timeout: 2000 });
+    } catch {
+      /* sem pw-metadata */
+    }
+  }
+});

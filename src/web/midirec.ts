@@ -56,7 +56,10 @@ function now(): { tick: number; pass: number } | null {
   const st = audio.status;
   if (!st.playing || st.countIn > 0) return null; // ainda na contagem
   const tps = (state.project.bpm * PPQ) / 60;
-  let tick = st.tick + ((performance.now() - audio.statusAt) / 1000) * tps;
+  // você reage ao que ouve, e o som chega aos ouvidos com o atraso da saída: desconta
+  const ctx = (audio as unknown as { ctx?: AudioContext }).ctx;
+  const outLat = ctx ? (ctx.baseLatency || 0) + ((ctx as unknown as { outputLatency?: number }).outputLatency || 0) : 0;
+  let tick = st.tick + ((performance.now() - audio.statusAt) / 1000 - outLat) * tps;
   let pass = st.loops;
   const r = rec?.region;
   if (r && tick >= r[1]) {

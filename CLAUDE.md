@@ -166,6 +166,15 @@ scripts/     ferramentas de diagnóstico e testes de UI (os _*.mts são temporá
   retorno de baixa latência; a gravação guarda o sinal **cru** e os efeitos são
   reaplicados em alta qualidade (`renderChain`, sobreamostragem 4x em amp/overdrive/fuzz).
 - `playBuffer` para prévias das ferramentas.
+- **Latência**: o PipeWire do sistema usa blocos de 1024 (≈21 ms). O Electron define
+  `PULSE_LATENCY_MSEC=8` (desktop/main.cjs) para o app pedir blocos pequenos; Configurações
+  → Áudio tem "Blocos" (força `clock.force-quantum` via `pw-metadata` pelo servidor,
+  `/api/latency`; volta a 0 quando o servidor fecha) e **Calibrar atraso da gravação**
+  (`audio.calibrateLatency`: cliques + gravador com horário `ml-recorder-t`; resultado em
+  `rec.latencyMs`, usado em `recLatencyFrames()` para alinhar os takes). Notas do teclado
+  descontam a latência de saída (`midirec.now`).
+- **Contagem 3-2-1** (opção `countIn`) vale para o REC geral, o amp (engine `countIn` +
+  `countInSec` no startRecording) e as ferramentas (`countInIfOn` + `startCapture({arm})`).
 
 ### Servidor (`src/server/`)
 - `main.ts`: rotas `/api/*` (project, actions, ops, undo/redo, new/save/open, projects,

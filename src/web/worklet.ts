@@ -99,6 +99,16 @@ class RecorderProcessor extends AudioWorkletProcessor {
 }
 registerProcessor('ml-recorder', RecorderProcessor);
 
+/** Gravador com horário: manda cada bloco com o currentTime dele (calibração de latência). */
+class TimedRecorderProcessor extends AudioWorkletProcessor {
+  process(inputs: Float32Array[][]) {
+    const inp = inputs[0];
+    if (inp && inp.length) this.port.postMessage({ t: currentTime, ch: inp.map((c) => c.slice()) });
+    return true;
+  }
+}
+registerProcessor('ml-recorder-t', TimedRecorderProcessor);
+
 /**
  * Amp de guitarra: recebe a entrada de áudio, passa pela cadeia de efeitos e
  * devolve o som processado (para ouvir e para gravar). Também manda medidores e
