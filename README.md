@@ -73,6 +73,12 @@ git push --follow-tags
   gate, wah, compressor, overdrive, fuzz, amplificador com canais clean/crunch/lead,
   gabinete, EQ, tremolo, chorus, phaser, delay, reverb), presets de fábrica e seus, e
   botão Gravar que grava o som já com os efeitos direto na playlist.
+  - **Só quando tocar** (gravação inteligente): com a música tocando, cada trecho que
+    você toca vira um clipe onde o ponteiro estava; o silêncio fica de fora. Sensibilidade
+    e pausa ajustáveis; funciona também com loop.
+  - O retorno roda num contexto de áudio separado, com buffer mínimo e a cadeia leve; a
+    gravação guarda o sinal cru e reaplica os efeitos em alta qualidade (amp, overdrive e
+    fuzz sobreamostrados 4x) ao fechar cada take.
 - **Configurações** (menu Aparência ou Ctrl+,): temas Grafite, OLED e Adobe, cor de
   destaque com seletor de cor, Alt + arrastar janelas, entrada de gravação e atalhos.
 - **Parar duas vezes** corta também as caudas de reverb/eco e notas soltas.

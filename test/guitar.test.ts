@@ -57,3 +57,37 @@ test('noise gate fecha no silêncio e o amp distorce mais no canal lead', () => 
   };
   assert.ok(thd('lead') > thd('clean'), 'lead mais distorcido que clean');
 });
+
+test('reamp em alta qualidade reduz o aliasing do amp', async () => {
+  const { renderChain } = await import('../src/core/effects.ts');
+  const f = 4700; // harmônicos altos dobram de volta para frequências que não são múltiplas de f
+  const x = new Float32Array(SR);
+  for (let i = 0; i < x.length; i++) x[i] = 0.5 * Math.sin((2 * Math.PI * f * i) / SR);
+  const chain = [{ type: 'amp' as EffectType, enabled: true, mix: 1, params: { channel: 'lead', gain: 0.9, master: -6 } }];
+  // versão leve (a do retorno), processada direto
+  const lo = createEffect(SR, 'amp', chain[0].params);
+  const a = x.slice(), b = x.slice();
+  for (let i = 0; i < a.length; i += 128) lo.process(a.subarray(i, i + 128), b.subarray(i, i + 128), Math.min(128, a.length - i), ctx);
+  const [hq] = renderChain(SR, chain, x.slice(), x.slice(), { tailSec: 0 });
+  /** Energia fora dos harmônicos de f (aliasing), relativa à total. */
+  const alias = (y: Float32Array) => {
+    let out = 0, tot = 0;
+    const N = 8192, s0 = SR / 2;
+    for (let k = 20; k < N / 2; k += 3) {
+      const fr = (k * SR) / N;
+      let re = 0, im = 0;
+      for (let i = 0; i < N; i++) {
+        const w = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / N);
+        re += y[s0 + i] * w * Math.cos((2 * Math.PI * k * i) / N);
+        im -= y[s0 + i] * w * Math.sin((2 * Math.PI * k * i) / N);
+      }
+      const e = re * re + im * im;
+      tot += e;
+      const h = fr / f;
+      if (Math.abs(h - Math.round(h)) * f > 120) out += e;
+    }
+    return out / tot;
+  };
+  const al = alias(a), ah = alias(hq);
+  assert.ok(ah < al * 0.25, `aliasing: leve ${al.toExponential(2)} · alta qualidade ${ah.toExponential(2)}`);
+});

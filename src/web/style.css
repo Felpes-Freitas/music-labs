@@ -588,3 +588,9 @@ body.alt-drag .win, body.alt-drag .win * { cursor: move !important; }
 .pedal-enum select { width: 150px; height: 22px; font-size: 11px; }
 .pedal-add { width: 110px; min-height: 120px; height: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; border: 1px dashed var(--line); background: transparent; box-shadow: none; color: var(--dim); border-radius: var(--win-rad); }
 .pedal-add:hover:not(:disabled) { color: var(--acc); border-color: var(--acc); background: color-mix(in srgb, var(--acc) 6%, transparent); }
+.amp-smart { display: flex; align-items: center; gap: 6px; padding: 0 8px; border-left: 1px solid var(--line2); border-right: 1px solid var(--line2); min-height: 36px; }
+.amp-smart-on { display: flex; align-items: center; gap: 5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.amp-smart .knob { width: 46px; }
+.amp-status { font-size: 11px; color: var(--dim); white-space: nowrap; }
+.amp-status.rec { color: #ff7070; font-weight: 700; }
+.amp-lat { font-size: 10.5px; color: var(--dim2); font-family: 'JetBrains Mono', monospace; }
