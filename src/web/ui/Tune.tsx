@@ -11,7 +11,9 @@ import { shiftPitch } from '../../core/psola';
 import { Win, Knob, useCanvas, IconBtn } from './widgets';
 import { Icon } from './icons';
 import { accent, ui } from '../theme';
-import { loadAudio, audioClips, clipName, makeRoomBelow, saveAsClip, ticksPerSec } from '../clipaudio';
+import { loadAudio, audioClips, clipName, makeRoomBelow, saveAsClip, ticksPerSec, pickAudioFiles, uploadFiles, placeAudios, playheadTick, droppedAudio, acceptsAudio } from '../clipaudio';
+import { detectKey, snapToKey, keyPcs, keyLabel, type Key } from '../../core/key';
+import { KeyPicker } from './KeyPicker';
 
 interface Doc {
   clipId: string;
@@ -24,7 +26,12 @@ interface Doc {
   target: number[];
   straight: number;
   rendered: Float32Array[] | null;
+  detectedKey: Key;
+  /** Tom escolhido (null = o detectado). */
+  key: Key | null;
 }
+
+const keyOf = (d: Doc) => d.key ?? d.detectedKey;
 
 let doc: Doc | null = null;
 let loading = '';
@@ -32,6 +39,12 @@ let sel = -1;
 let preview: { stop: () => void; pos: () => number } | null = null;
 const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((l) => l());
+
+/** Coloca um arquivo na playlist (na posição atual da música, numa track livre) e abre no Afinador. */
+async function openAudioFile(path: string) {
+  const [id] = await placeAudios([path], playheadTick());
+  if (id) openTune(id);
+}
 
 /** Abre o Afinador com um clipe de áudio da playlist. */
 export async function openTune(clipId: string) {
@@ -50,7 +63,12 @@ export async function openTune(clipId: string) {
     await new Promise((r) => setTimeout(r, 0));
     const track = trackPitch(mono, a.sr);
     const notes = segmentNotes(track);
-    doc = { clipId, path: c.sample, sr: a.sr, ch: a.ch, track, notes, target: notes.map((n) => n.pitch), straight: 0, rendered: null };
+    const weights = notes.map((n) => {
+      let w = 0;
+      for (let f = n.i0; f < n.i1; f++) w += track.rms[f];
+      return { pitch: n.pitch, weight: w };
+    });
+    doc = { clipId, path: c.sample, sr: a.sr, ch: a.ch, track, notes, target: notes.map((n) => n.pitch), straight: 0, rendered: null, detectedKey: detectKey(weights), key: null };
     if (!notes.length) toast('Não encontrei notas com altura definida nesse áudio (precisa ser uma voz ou instrumento solo)');
   } catch (e) {
     toast(`Afinador: ${(e as Error).message}`);
@@ -164,11 +182,43 @@ export function TuneWindow() {
 
   return (
     <Win id="tune" title="Afinador" icon="tune" tools={tools} minW={600} minH={320}>
-      <div class="tool">
+      <div
+        class="tool"
+        onDragOver={(e) => acceptsAudio(e) && (e.preventDefault(), (e.currentTarget as HTMLElement).classList.add('dropping'))}
+        onDragLeave={(e) => (e.currentTarget as HTMLElement).classList.remove('dropping')}
+        onDrop={async (e) => {
+          (e.currentTarget as HTMLElement).classList.remove('dropping');
+          if (!acceptsAudio(e)) return;
+          e.preventDefault();
+          e.stopPropagation();
+          try {
+            const paths = await droppedAudio(e);
+            if (paths.length) openAudioFile(paths[0]);
+          } catch (err) {
+            toast(`Afinador: ${(err as Error).message}`);
+          }
+        }}
+      >
         <div class="tool-bar">
           <button class={`amp-rec ${recording ? 'on' : ''}`} onClick={rec} data-hint="Grava (só quando você canta/toca) e abre a gravação aqui">
             <Icon name="record" size={14} />
             {recording ? 'Parar' : 'Gravar'}
+          </button>
+          <button
+            class="tool-open"
+            onClick={async () => {
+              const files = await pickAudioFiles(false);
+              if (!files.length) return;
+              try {
+                const [path] = await uploadFiles(files);
+                openAudioFile(path);
+              } catch (err) {
+                toast(`Afinador: ${(err as Error).message}`);
+              }
+            }}
+            data-hint="Abrir um arquivo de áudio do computador (também dá para arrastar um arquivo ou um sample do navegador para esta janela)"
+          >
+            <Icon name="folder" size={13} /> Abrir áudio…
           </button>
           <button class={preview ? 'on' : ''} disabled={!doc || !clip} onClick={play} data-hint="Ouvir como está ficando">
             <Icon name={preview ? 'stop' : 'play'} size={12} /> Ouvir
@@ -178,10 +228,11 @@ export function TuneWindow() {
             disabled={!doc}
             onClick={() => {
               if (!doc) return;
-              doc.target = doc.notes.map((n) => Math.round(n.pitch));
+              const k = keyOf(doc);
+              doc.target = doc.notes.map((n) => snapToKey(n.pitch, k));
               edited(doc);
             }}
-            data-hint="Leva cada nota para o semitom mais próximo (autotune)"
+            data-hint="Leva cada nota para a nota mais próxima do tom escolhido (autotune)"
           >
             Corrigir afinação
           </button>
@@ -209,6 +260,17 @@ export function TuneWindow() {
           >
             Restaurar
           </button>
+          {doc && (
+            <KeyPicker
+              value={doc.key}
+              detected={doc.detectedKey}
+              onChange={(k) => {
+                if (!doc) return;
+                doc.key = k;
+                changed();
+              }}
+            />
+          )}
           <button class="tool-main" disabled={!doc || !clip} onClick={saveVariation} data-hint="Cria um novo clipe com a afinação editada, logo abaixo do original (o original não muda)">
             <Icon name="save" size={13} /> Salvar como variação
           </button>
@@ -247,12 +309,21 @@ function NotesCanvas(p: { clip: Clip | undefined }) {
       ctx.fillStyle = ui('#1a1f22');
       ctx.fillRect(0, 0, w, h);
       // linhas das notas
+      const pcs = keyPcs(keyOf(d));
       const lo = Math.floor(v.top - (h - WAVEH) / v.rowH) - 1;
       for (let m = Math.ceil(v.top); m >= lo; m--) {
         const y = rowY(m + 0.5);
-        const black = [1, 3, 6, 8, 10].includes(((m % 12) + 12) % 12);
-        ctx.fillStyle = black ? ui('#1d2326') : ui('#232a2e');
+        const pc = ((m % 12) + 12) % 12;
+        const black = [1, 3, 6, 8, 10].includes(pc);
+        // notas fora do tom ficam mais escuras; a tônica ganha um toque da cor de destaque
+        ctx.fillStyle = !pcs.includes(pc) ? ui('#171c1f') : black ? ui('#1f262a') : ui('#252c30');
         ctx.fillRect(KEYW, y, w - KEYW, v.rowH);
+        if (pc === keyOf(d).root) {
+          ctx.fillStyle = accent();
+          ctx.globalAlpha = 0.07;
+          ctx.fillRect(KEYW, y, w - KEYW, v.rowH);
+          ctx.globalAlpha = 1;
+        }
         ctx.fillStyle = m % 12 === 0 ? ui('#3d474d') : ui('#2a3135');
         ctx.fillRect(KEYW, y + v.rowH - 1, w - KEYW, 1);
         ctx.fillStyle = black ? ui('#2b3337') : ui('#d8dde0');
@@ -321,7 +392,7 @@ function NotesCanvas(p: { clip: Clip | undefined }) {
         ctx.stroke();
       });
     },
-    [d, d.target, d.straight, sel, p.clip?.id],
+    [d, d.target, d.straight, sel, p.clip?.id, d.key],
     (ctx, _w, h) => {
       if (!preview) return;
       const x = xOf(preview.pos());
@@ -358,7 +429,7 @@ function NotesCanvas(p: { clip: Clip | undefined }) {
     const n = d.notes[i], t = d.target[i];
     const c = Math.round((t - Math.round(t)) * 100);
     const from = noteName(Math.round(n.pitch)), to = noteName(Math.round(t));
-    return `Nota ${i + 1}: cantada em ${from}${fmtC(n.pitch)} → ${to}${c ? ` (${c > 0 ? '+' : ''}${c} cents)` : ''} · arraste para mudar · Shift: sem grade · duplo clique: afinar`;
+    return `Nota ${i + 1}: cantada em ${from}${fmtC(n.pitch)} → ${to}${c ? ` (${c > 0 ? '+' : ''}${c} cents)` : ''} · arraste para mudar (grade do tom ${keyLabel(keyOf(d))}; Ctrl: todos os semitons; Shift: livre) · duplo clique: afinar`;
   };
   return (
     <canvas
@@ -387,7 +458,9 @@ function NotesCanvas(p: { clip: Clip | undefined }) {
         }
         const raw = g.orig - (y - g.y0) / view.current.rowH;
         // grade de semitom (o centro da nota cai exatamente na nota); Shift = livre
-        d.target[g.i] = e.shiftKey ? raw : Math.round(raw);
+        // grade do tom (Ctrl: todos os semitons; Shift: livre)
+        const k = keyOf(d);
+        d.target[g.i] = e.shiftKey ? raw : e.ctrlKey || k.scale === 'chromatic' ? Math.round(raw) : snapToKey(raw, k);
         d.rendered = null;
         setHint(describe(g.i));
         paint();
@@ -402,7 +475,7 @@ function NotesCanvas(p: { clip: Clip | undefined }) {
         const [x, y] = local(e);
         const i = hit(x, y);
         if (i < 0) return;
-        d.target[i] = Math.round(d.notes[i].pitch);
+        d.target[i] = snapToKey(d.notes[i].pitch, keyOf(d));
         edited(d);
       }}
       onWheel={(e) => {

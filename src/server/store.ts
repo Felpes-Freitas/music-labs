@@ -12,6 +12,7 @@ export const PROJECTS_DIR = join(HOME_DIR, 'Projetos');
 export const RENDERS_DIR = join(HOME_DIR, 'Renders');
 export const SAMPLES_DIR = join(HOME_DIR, 'Samples');
 export const RECORDINGS_DIR = join(HOME_DIR, 'Gravações');
+export const IMPORTS_DIR = join(HOME_DIR, 'Importados');
 /** Pasta de estado (autosave, índice da biblioteca) no lugar padrão de cada sistema. */
 function defaultStateDir() {
   if (process.platform === 'win32') return join(process.env.APPDATA ?? join(homedir(), 'AppData/Roaming'), 'MusicLabs');
@@ -21,7 +22,7 @@ function defaultStateDir() {
 export const STATE_DIR = process.env.MUSICLABS_STATE_DIR ?? defaultStateDir();
 const AUTOSAVE = join(STATE_DIR, 'autosave.json');
 
-for (const d of [PROJECTS_DIR, RENDERS_DIR, SAMPLES_DIR, RECORDINGS_DIR, STATE_DIR]) mkdirSync(d, { recursive: true });
+for (const d of [PROJECTS_DIR, RENDERS_DIR, SAMPLES_DIR, RECORDINGS_DIR, IMPORTS_DIR, STATE_DIR]) mkdirSync(d, { recursive: true });
 
 export type Listener = (msg: { type: 'ops'; ops: Op[]; rev: number; origin: string; label?: string } | { type: 'project'; project: Project; rev: number; path: string | null; dirty: boolean }) => void;
 

@@ -15,7 +15,7 @@ import { importFlp } from '../core/flp.js';
 import { encodeWav } from '../core/wav.js';
 import { analyzeMix } from '../core/analysis.js';
 import { emptyProject } from '../core/model.js';
-import { Store, listProjects, RENDERS_DIR, SAMPLES_DIR, PROJECTS_DIR, RECORDINGS_DIR, STATE_DIR, safeName } from './store.js';
+import { Store, listProjects, RENDERS_DIR, SAMPLES_DIR, PROJECTS_DIR, RECORDINGS_DIR, IMPORTS_DIR, STATE_DIR, safeName } from './store.js';
 import { loadSample } from './samples.js';
 import { initLibrary, library, libraryStatus, rescanLibrary, searchLibrary } from './library.js';
 import { AUDIO_EXT, FL_DIR, resolveFlPath, wavFor } from './samples.js';
@@ -411,6 +411,18 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         const z = (n: number) => String(n).padStart(2, '0');
         const stamp = `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}h${z(d.getMinutes())}m${z(d.getSeconds())}s`;
         const file = join(RECORDINGS_DIR, `${safeName(q('name') || 'Gravação')} ${stamp}.wav`);
+        writeFileSync(file, buf);
+        return json(res, 200, { path: file });
+      }
+      case 'POST /api/import': {
+        // arquivo de áudio escolhido no computador (qualquer formato que o ffmpeg leia): salva em ~/MusicLabs/Importados
+        const buf = await rawBody(req);
+        if (!buf.length) throw new Error('Arquivo vazio');
+        const name = safeName(q('name') || 'audio');
+        const ext = (/\.([a-z0-9]{1,5})$/i.exec(name)?.[1] ?? 'wav').toLowerCase();
+        const base = name.replace(/\.[a-z0-9]{1,5}$/i, '');
+        let file = join(IMPORTS_DIR, `${base}.${ext}`);
+        for (let i = 2; existsSync(file); i++) file = join(IMPORTS_DIR, `${base} (${i}).${ext}`);
         writeFileSync(file, buf);
         return json(res, 200, { path: file });
       }

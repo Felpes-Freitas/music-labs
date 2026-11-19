@@ -52,23 +52,32 @@ test('PSOLA muda a altura sem mudar a duração', () => {
   assert.ok(Math.abs(20 * Math.log10(rms(y) / rms(x))) < 2, 'volume preservado');
 });
 
-test('costura escolhe, nota a nota, o take mais afinado', async () => {
-  const { planStitch, renderStitch } = await import('../src/core/stitch.ts');
-  // a mesma frase de 3 notas; cada take erra uma nota diferente
-  const A = sing([[60, 0.5], [62.45, 0.5], [64, 0.5]]); // 2ª nota 45 cents alta
-  const B = sing([[59.6, 0.5], [62, 0.5], [64.4, 0.5]]); // 1ª e 3ª desafinadas
-  const C = sing([[60.05, 0.5], [61.6, 0.5], [64.02, 0.5]]); // 2ª nota baixa
+test('costura mede a distância até a nota pretendida (não até o semitom mais próximo)', async () => {
+  const { planStitch, renderStitch, rescore, tuneToMelody } = await import('../src/core/stitch.ts');
+  // melodia em Dó maior: C D E F. O take B canta a 2ª nota meio tom abaixo (C#),
+  // perfeitamente "afinado" num semitom, mas na nota errada.
+  const A = sing([[60.3, 0.5], [62.1, 0.5], [64, 0.5], [65.35, 0.6]]);
+  const B = sing([[60, 0.5], [61, 0.5], [64.05, 0.5], [65, 0.6]]);
+  const C = sing([[60.1, 0.5], [62.3, 0.5], [63.7, 0.5], [65.05, 0.6]]);
   const tk = (x: Float32Array) => ({ offset: 2, from: 0, to: x.length / SR, ch: [x] });
   const takes = [tk(A), tk(B), tk(C)];
-  const plan = planStitch(takes, SR);
-  const picks = plan.segments.filter((s) => s.take >= 0).map((s) => s.take);
-  // nota 1: A ou C (afinados); nota 2: B; nota 3: A ou C
-  const at = (t: number) => plan.segments.find((s) => t >= s.t0 && t < s.t1)!.take;
-  assert.ok([0, 2].includes(at(2.35)), `nota 1 → take ${at(2.35)} (${JSON.stringify(picks)})`);
-  assert.equal(at(2.85), 1, 'nota 2 → take B');
-  assert.ok([0, 2].includes(at(3.35)), `nota 3 → take ${at(3.35)}`);
-  const [L] = renderStitch(plan, takes, SR);
-  const notes = segmentNotes(trackPitch(L, SR));
-  assert.equal(notes.length, 3);
-  for (const [k, m] of [60, 62, 64].entries()) assert.ok(Math.abs(notes[k].pitch - m) < 0.1, `costurado nota ${k}: ${notes[k].pitch.toFixed(2)}`);
+  const plan = planStitch(takes, SR, null, false);
+  const { keyPcs } = await import('../src/core/key.ts');
+  for (const pc of [0, 2, 4, 5]) assert.ok(keyPcs(plan.detectedKey).includes(pc), `tom detectado contém a melodia: ${JSON.stringify(plan.detectedKey)}`);
+  const seg = (t: number) => plan.segments.find((s) => t >= s.t0 && t < s.t1)!;
+  assert.equal(seg(2.85).target, 62, 'a nota pretendida é Ré');
+  assert.notEqual(seg(2.85).take, 1, 'o take que cantou C# (afinado, mas errado) não é escolhido');
+  assert.equal(seg(2.35).take, 1, 'na 1ª nota o take B é o mais perto do Dó');
+  // a pessoa corrige a melodia: a 3ª nota era para ser Mi bemol (63)
+  seg(3.35).target = 63;
+  rescore(plan, takes, SR);
+  assert.equal(seg(3.35).take, 2, 'com a melodia editada, vale o take que cantou mais baixo');
+  // e a costura sai afinada exatamente na melodia
+  const [L, R] = renderStitch(plan, takes, SR);
+  const [tL] = tuneToMelody(L, R, plan, SR);
+  // altura no meio de cada nota (a costura começa em t = 2 s; notas de 0,5 s a partir de 0,1 s)
+  const tr = trackPitch(tL, SR);
+  const mid = (t0: number, t1: number) => median(Array.from(tr.midi.slice(Math.floor((t0 * SR) / tr.hop), Math.floor((t1 * SR) / tr.hop))).filter((m) => !Number.isNaN(m)));
+  const got = [mid(0.2, 0.5), mid(0.7, 1.0), mid(1.2, 1.5), mid(1.7, 2.1)];
+  for (const [k, m] of [60, 62, 63, 65].entries()) assert.ok(Math.abs(got[k] - m) < 0.12, `costura afinada: ${got.map((g) => g.toFixed(2)).join(' ')}`);
 });
