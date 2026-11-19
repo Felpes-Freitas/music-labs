@@ -667,3 +667,112 @@ function makeEffect(sr: number, type: EffectType, params: Params): Fx {
     case 'tremolo': return new Tremolo(sr, type, params);
   }
 }
+
+// ---------------------------------------------------------------- alta qualidade (reamp)
+
+/** Efeitos que distorcem: geram harmônicos acima de Nyquist e precisam de sobreamostragem. */
+const NONLINEAR: EffectType[] = ['amp', 'overdrive', 'fuzz', 'distortion'];
+const BUTTER8_Q = [0.5098, 0.6013, 0.9, 2.5629];
+
+/** Roda o efeito numa taxa 4x maior, com filtros antialias na subida e na descida. */
+class Oversampled extends Fx {
+  private inner: Fx;
+  private up = [BUTTER8_Q.map(() => new Biquad()), BUTTER8_Q.map(() => new Biquad())];
+  private down = [BUTTER8_Q.map(() => new Biquad()), BUTTER8_Q.map(() => new Biquad())];
+  private bl = new Float32Array(0);
+  private br = new Float32Array(0);
+  constructor(sr: number, type: EffectType, params: Params, private k = 4) {
+    super(sr, type, params);
+    this.inner = createEffect(sr * k, type, params);
+    for (const set of [...this.up, ...this.down]) set.forEach((f, i) => f.setup('lowpass', sr * 0.45, sr * k, BUTTER8_Q[i]));
+  }
+  setParams(params: Params) {
+    super.setParams(params);
+    this.inner?.setParams(params);
+  }
+  process(L: Float32Array, R: Float32Array, n: number, ctx: FxContext) {
+    const k = this.k, m = n * k;
+    if (this.bl.length < m) {
+      this.bl = new Float32Array(m);
+      this.br = new Float32Array(m);
+    }
+    const io: [Float32Array, Float32Array][] = [[L, this.bl], [R, this.br]];
+    io.forEach(([x, b], c) => {
+      const f = this.up[c];
+      for (let i = 0; i < m; i++) {
+        let v = i % k === 0 ? x[i / k] * k : 0; // zeros entre as amostras
+        for (let j = 0; j < 4; j++) v = f[j].process(v);
+        b[i] = v;
+      }
+    });
+    this.inner.process(this.bl.subarray(0, m), this.br.subarray(0, m), m, { ...ctx, sr: this.sr * k });
+    io.forEach(([x, b], c) => {
+      const f = this.down[c];
+      for (let i = 0; i < m; i++) {
+        let v = b[i];
+        for (let j = 0; j < 4; j++) v = f[j].process(v);
+        if (i % k === 0) x[i / k] = v;
+      }
+    });
+  }
+}
+
+/** Efeito para render em alta qualidade (os que distorcem rodam sobreamostrados). */
+export function createEffectHQ(sr: number, type: EffectType, params: Params): Fx {
+  if (!NONLINEAR.includes(type)) return createEffect(sr, type, params);
+  const fx = new Oversampled(sr, type, params);
+  fx.setParams(params);
+  return fx;
+}
+
+/**
+ * Passa um áudio por uma cadeia de efeitos em alta qualidade (reamp). Acrescenta
+ * uma cauda para reverb/delay e corta o silêncio que sobrar no fim.
+ */
+export function renderChain(
+  sr: number,
+  chain: { type: EffectType; enabled: boolean; mix: number; params: Params }[],
+  L: Float32Array,
+  R: Float32Array,
+  opt: { bpm?: number; tailSec?: number; outGainDb?: number } = {},
+): [Float32Array, Float32Array] {
+  const tail = Math.round((opt.tailSec ?? 2) * sr);
+  const n = L.length + tail;
+  const oL = new Float32Array(n), oR = new Float32Array(n);
+  oL.set(L);
+  oR.set(R);
+  const fxs = chain.filter((c) => c.enabled).map((c) => ({ c, fx: createEffectHQ(sr, c.type, c.params) }));
+  const ctx: FxContext = { sr, bpm: opt.bpm ?? 120, insertBus: () => undefined, beat: 0 };
+  const B = 256;
+  const dl = new Float32Array(B), dr = new Float32Array(B);
+  for (let i = 0; i < n; i += B) {
+    const m = Math.min(B, n - i);
+    const l = oL.subarray(i, i + m), r = oR.subarray(i, i + m);
+    ctx.beat = (i / sr) * (ctx.bpm / 60);
+    for (const { c, fx } of fxs) {
+      if (c.mix >= 0.999) fx.process(l, r, m, ctx);
+      else {
+        dl.set(l);
+        dr.set(r);
+        fx.process(l, r, m, ctx);
+        for (let j = 0; j < m; j++) {
+          l[j] = l[j] * c.mix + dl[j] * (1 - c.mix);
+          r[j] = r[j] * c.mix + dr[j] * (1 - c.mix);
+        }
+      }
+    }
+  }
+  const g = Math.pow(10, (opt.outGainDb ?? 0) / 20);
+  if (g !== 1) for (let i = 0; i < n; i++) (oL[i] *= g), (oR[i] *= g);
+  // corta a cauda que ficou em silêncio (abaixo de -66 dB), com um fade curto
+  const floor = Math.pow(10, -66 / 20);
+  let end = n;
+  while (end > L.length && Math.abs(oL[end - 1]) < floor && Math.abs(oR[end - 1]) < floor) end--;
+  const fade = Math.min(end, Math.round(0.01 * sr));
+  for (let i = 0; i < fade; i++) {
+    const k = i / fade;
+    oL[end - 1 - i] *= k;
+    oR[end - 1 - i] *= k;
+  }
+  return [oL.slice(0, end), oR.slice(0, end)];
+}

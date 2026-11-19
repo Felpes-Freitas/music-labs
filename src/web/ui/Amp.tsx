@@ -3,7 +3,7 @@
 // presets do usuário) fica salva no computador, não no projeto.
 
 import { useEffect, useReducer, useRef, useState } from 'preact/hooks';
-import { useApp, state, toggleRecord, toast, emit } from '../state';
+import { useApp, state, toggleRecord, toast, emit, onLive } from '../state';
 import { audio, type RecChannels } from '../audio';
 import { EFFECTS, GUITAR_FX, type ParamDef } from '../../core/registry';
 import type { EffectType, Params } from '../../core/model';
@@ -29,6 +29,9 @@ interface AmpPrefs {
   device: string;
   pick: RecChannels;
   preset: string;
+  smart: boolean;
+  thresholdDb: number;
+  holdSec: number;
 }
 
 const fx = (type: EffectType, params: Params = {}, mix = 1): AmpFx => ({ id: uid('a'), type, enabled: true, mix, params });
@@ -103,6 +106,9 @@ const load = (): AmpPrefs => {
     device: p.device ?? '',
     pick: p.pick ?? 'left',
     preset: p.preset ?? FIRST,
+    smart: p.smart ?? true,
+    thresholdDb: p.thresholdDb ?? -42,
+    holdSec: p.holdSec ?? 1.5,
   };
 };
 const amp = load();
@@ -163,7 +169,13 @@ export function AmpWindow() {
       return;
     }
     recFromAmp = true;
-    toggleRecord(true).then(() => emit());
+    toggleRecord({
+      chain: amp.chain.map(({ type, enabled, mix, params }) => ({ type, enabled, mix, params: { ...params } })),
+      inGainDb: amp.inGain,
+      outGainDb: amp.outGain,
+      pick: amp.pick,
+      smart: amp.smart ? { thresholdDb: amp.thresholdDb, holdSec: amp.holdSec } : null,
+    }).then(() => emit());
   };
   const presetNames = [...Object.keys(PRESETS), ...Object.keys(userPresets())];
   const loadPreset = (name: string) => {
@@ -228,10 +240,23 @@ export function AmpWindow() {
     <Win id="amp" title="Amp" icon="guitar" tools={tools} minW={560} minH={300}>
       <div class="amp">
         <div class="amp-top">
-          <button class={`amp-rec ${recording ? 'on' : ''}`} disabled={!on && !recording} onClick={rec} data-hint="Grava a guitarra (com os efeitos) direto na playlist, a partir da posição atual">
+          <button class={`amp-rec ${recording ? 'on' : ''}`} disabled={!on && !recording} onClick={rec} data-hint="Grava a guitarra direto na playlist, a partir da posição atual; os efeitos entram na gravação em alta qualidade">
             <Icon name="record" size={14} />
             {recording ? 'Parar' : 'Gravar'}
           </button>
+          <div class="amp-smart">
+            <label class="amp-smart-on" data-hint="Só grava quando você toca: cada trecho tocado vira um clipe onde a música estava; o silêncio fica de fora">
+              <input type="checkbox" checked={amp.smart} disabled={recording} onChange={() => ((amp.smart = !amp.smart), commit())} />
+              Só quando tocar
+            </label>
+            {amp.smart && (
+              <>
+                <Knob size={24} value={amp.thresholdDb} min={-70} max={-15} def={-42} label="Sensib." title={`Limiar de detecção: ${amp.thresholdDb.toFixed(0)} dB (mais à esquerda = pega notas mais fracas)`} format={(v) => `${v.toFixed(0)} dB`} onInput={(v) => ((amp.thresholdDb = v), force(undefined))} onCommit={(v) => ((amp.thresholdDb = v), commit())} />
+                <Knob size={24} value={amp.holdSec} min={0.3} max={5} def={1.5} log label="Pausa" title={`Depois de ${amp.holdSec.toFixed(1)} s sem tocar, o take fecha (inclui a cauda dos efeitos)`} format={(v) => `${v.toFixed(1)} s`} onInput={(v) => ((amp.holdSec = v), force(undefined))} onCommit={(v) => ((amp.holdSec = v), commit())} />
+              </>
+            )}
+            {recording && <RecStatus thresholdDb={amp.thresholdDb} />}
+          </div>
           <button class={`amp-mon ${amp.monitor ? 'on' : ''}`} onClick={() => ((amp.monitor = !amp.monitor), commit())} data-hint="Ouvir o amp enquanto toca (desligue se o microfone captar os alto-falantes)">
             Ouvir
           </button>
@@ -263,13 +288,24 @@ export function AmpWindow() {
               </button>
             )}
           </div>
-          {!on && <span class="amp-off">Entrada desligada</span>}
+          {!on ? <span class="amp-off">Entrada desligada</span> : <span class="amp-lat" data-hint="Atraso do retorno (o que você ouve tocando). A gravação usa o sinal cru e reaplica os efeitos em alta qualidade, sem esse atraso.">retorno {audio.monitorLatencyMs ?? '–'} ms</span>}
         </div>
         <Visualizer />
         <Chain />
       </div>
     </Win>
   );
+}
+
+/** Situação da gravação inteligente: esperando, ou qual take está entrando. */
+function RecStatus(p: { thresholdDb: number }) {
+  const [, force] = useReducer((x: number) => x + 1, 0);
+  useEffect(() => onLive(() => force(undefined)), []);
+  const r = audio.liveRecording;
+  if (!r) return null;
+  const live = r.takes.length > 0 && r.takes[r.takes.length - 1].c1 >= r.frames;
+  if (!r.smart) return <span class="amp-status rec">gravando</span>;
+  return live ? <span class="amp-status rec">● take {r.takes.length}</span> : <span class="amp-status">esperando você tocar{r.takes.length ? ` · ${r.takes.length} ${r.takes.length > 1 ? 'takes' : 'take'}` : ''}</span>;
 }
 
 // ---------------------------------------------------------------- visualizador

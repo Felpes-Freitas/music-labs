@@ -10,6 +10,8 @@ import * as A from '../core/actions';
 import { encodeWav } from '../core/wav';
 import type { EngineStatus } from '../core/engine';
 import { getPref } from './prefs';
+import { renderChain } from '../core/effects';
+import type { EffectType, Params } from '../core/model';
 import { audio } from './audio';
 
 export type WindowId = 'rack' | 'piano' | 'playlist' | 'mixer' | 'browser' | 'channel' | 'amp';
@@ -347,41 +349,83 @@ export function togglePlay() {
   else play();
 }
 
-/** Gravar: toca a música em modo song a partir da posição atual e captura o microfone. */
-export async function toggleRecord(fromAmp = false) {
+/** Gravação pelo amp: entrada crua + cadeia para reaplicar em alta qualidade. */
+export interface AmpTake {
+  chain: { type: EffectType; enabled: boolean; mix: number; params: Params }[];
+  inGainDb: number;
+  outGainDb: number;
+  pick: 'stereo' | 'left' | 'right';
+  smart: { thresholdDb: number; holdSec: number } | null;
+}
+let ampTake: AmpTake | null = null;
+
+/** Gravar: toca a música em modo song a partir da posição atual e captura a entrada. */
+export async function toggleRecord(fromAmp: AmpTake | null = null) {
   if (audio.recording) return stop();
   const start = audio.status.mode === 'song' ? Math.max(0, Math.floor(audio.status.tick)) : 0;
   try {
     const track = A.freeTrack(state.project, start, 1e12);
     if (fromAmp) {
-      if (!audio.ampNode) throw new Error('o amp está desligado');
-      await audio.startRecording(start, track, { from: audio.ampNode });
+      const stream = audio.ampStream;
+      if (!stream) throw new Error('o amp está desligado');
+      await audio.startRecording(start, track, { stream, channels: fromAmp.pick, gainDb: fromAmp.inGainDb, smart: fromAmp.smart ?? undefined });
     } else await audio.startRecording(start, track, { deviceId: getPref<string>('rec.device', '') || undefined, channels: getPref('rec.channels', 'stereo') });
+    ampTake = fromAmp;
   } catch (e) {
-    toast(`Não consegui acessar o microfone: ${(e as Error).message}`);
+    toast(`Não consegui acessar a entrada de áudio: ${(e as Error).message}`);
     return;
   }
   state.mode = 'song';
   playingFlag = true;
   audio.play('song', state.patternId, start);
-  toast('Gravando… (Espaço ou ■ para parar)');
+  toast(fromAmp?.smart ? 'Gravação inteligente: toque quando quiser, cada trecho vira um clipe (■ para parar)' : 'Gravando… (Espaço ou ■ para parar)');
   emit();
 }
 
 async function finishRecording() {
   const r = audio.stopRecording();
+  const amp = ampTake;
+  ampTake = null;
   emit();
-  if (!r || r.L.length < r.sr * 0.1) return;
-  try {
-    const wav = encodeWav(r.L, r.R, r.sr, 24);
-    const res = await fetch(`/api/recording?name=${encodeURIComponent(state.project.name)}`, { method: 'POST', headers: { 'content-type': 'audio/wav' }, body: new Blob([wav as BlobPart], { type: 'audio/wav' }) });
-    const d = await res.json();
-    if (!res.ok) throw new Error(d.error);
-    const result = act(A.addAudioClip, { sample: d.path, bar: 1, beat: r.startTick / PPQ, track: r.track + 1, lengthSec: r.L.length / r.sr });
-    if (result) toast(`Gravação salva e colocada na track ${result.track} (${(r.L.length / r.sr).toFixed(1)} s)`);
-  } catch (e) {
-    toast(`Erro ao salvar a gravação: ${(e as Error).message}`);
+  if (!r) return;
+  const takes = r.takes.filter((t) => t.L.length >= r.sr * 0.08);
+  if (!takes.length) {
+    if (amp?.smart) toast('Nada foi tocado: nenhum clipe criado');
+    return;
   }
+  if (amp) toast(`Aplicando os efeitos em alta qualidade (${takes.length} ${takes.length > 1 ? 'takes' : 'take'})…`);
+  let placed = 0;
+  const tps = (state.project.bpm * PPQ) / 60;
+  for (const t of takes) {
+    try {
+      // o retorno usou a cadeia leve; aqui ela roda de novo, sobreamostrada
+      let [L, R] = amp ? renderChain(r.sr, amp.chain, t.L, t.R, { bpm: state.project.bpm, outGainDb: amp.outGainDb, tailSec: 2.5 }) : [t.L, t.R];
+      // a cauda dos efeitos não invade o próximo take da mesma track
+      const next = takes.filter((x) => x.track === t.track && x.tick > t.tick).sort((x, y) => x.tick - y.tick)[0];
+      if (next) {
+        const max = Math.max(t.L.length, Math.floor(((next.tick - t.tick) / tps) * r.sr));
+        if (L.length > max) {
+          L = L.slice(0, max);
+          R = R.slice(0, max);
+          const fade = Math.min(max, Math.round(0.03 * r.sr));
+          for (let i = 0; i < fade; i++) {
+            const k = i / fade;
+            L[max - 1 - i] *= k;
+            R[max - 1 - i] *= k;
+          }
+        }
+      }
+      const wav = encodeWav(L, R, r.sr, 24);
+      const res = await fetch(`/api/recording?name=${encodeURIComponent(state.project.name)}`, { method: 'POST', headers: { 'content-type': 'audio/wav' }, body: new Blob([wav as BlobPart], { type: 'audio/wav' }) });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error);
+      const result = act(A.addAudioClip, { sample: d.path, bar: 1, beat: t.tick / PPQ, track: t.track + 1, lengthSec: L.length / r.sr });
+      if (result) placed++;
+    } catch (e) {
+      toast(`Erro ao salvar a gravação: ${(e as Error).message}`);
+    }
+  }
+  if (placed) toast(placed > 1 ? `${placed} takes gravados e colocados na playlist` : `Gravação colocada na playlist (${(takes[0].L.length / r.sr).toFixed(1)} s)`);
 }
 export function setMode(mode: 'pattern' | 'song') {
   state.mode = mode;
