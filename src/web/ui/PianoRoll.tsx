@@ -1,3 +1,4 @@
+import { playlistFocused } from './Playlist';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { useApp, state, edit, previewEdit, onLive, selectChannel, act, setHint } from '../state';
 import { audio } from '../audio';
@@ -768,7 +769,7 @@ export function PianoRoll() {
   // atalhos de teclado (quando o piano roll é a janela da frente)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!state.windows.piano.open || !pat || !ch) return;
+      if (!state.windows.piano.open || !pat || !ch || playlistFocused()) return; // o último clique foi na playlist: os atalhos são dela
       if ((e.target as HTMLElement).closest('input, select, textarea')) return;
       const w = state.windows;
       const top = Math.max(...Object.values(w).filter((x) => x.open).map((x) => x.z));
