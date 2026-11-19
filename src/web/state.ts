@@ -123,8 +123,35 @@ audio.onStatus = (s) => {
     playingFlag = false;
     emit();
   }
+  if (!s.playing) reloadIfIdle();
 };
 let playingFlag = false;
+
+// ---------------------------------------------------------------- versão da interface
+
+/** Script principal desta página (o nome muda a cada build). */
+const myBuild = ([...document.querySelectorAll('script[type=module]')] as HTMLScriptElement[]).map((x) => /assets\/index-[^"']+\.js/.exec(x.src)?.[0]).find(Boolean) ?? '';
+let reloadPending = false;
+/** O servidor tem uma interface mais nova (foi atualizado): recarrega — mas nunca no meio de uma gravação. */
+function checkBuild() {
+  if (!myBuild) return; // modo de desenvolvimento (vite)
+  fetch('/api/build')
+    .then((r) => r.json())
+    .then((d) => {
+      if (!d.build || d.build === myBuild) return;
+      reloadPending = true;
+      reloadIfIdle();
+    })
+    .catch(() => {});
+}
+function reloadIfIdle() {
+  if (!reloadPending) return;
+  if (audio.status.playing || audio.recording || audio.capturing) return; // tenta de novo ao parar
+  toast('Versão nova do Music Labs: recarregando…');
+  setTimeout(() => location.reload(), 600);
+  reloadPending = false;
+}
+setInterval(checkBuild, 15000);
 
 // ---------------------------------------------------------------- servidor
 
@@ -137,6 +164,7 @@ function connect() {
   ws.onopen = () => {
     state.connected = true;
     emit();
+    checkBuild();
   };
   ws.onclose = () => {
     state.connected = false;
