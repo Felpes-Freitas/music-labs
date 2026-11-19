@@ -15,4 +15,15 @@
 
 ## Pendências maiores
 
-- Hospedar plugins VST/LV2/CLAP (ponte via Carla/yabridge).
+- Hospedar plugins VST/LV2/CLAP (ponte via Carla/yabridge). Em espera: decidir
+  depois como tratar plugins e compatibilidade com código de máquina em geral.
+  Notas para quando voltar ao assunto:
+  - os plugins nativos do FL (Sytrus, Harmor, Gross Beat, Fruity…) usam o formato
+    interno do FL e não abrem fora dele;
+  - caminho possível: carregar o `FL Studio VSTi` / `FL Studio VSTi (Multi)`
+    (VST2 que acompanha o FL, em `Common Files/VST2` no Wine) pelo Carla +
+    yabridge, com saídas separadas indo para inserts do Music Labs;
+  - alguns plugins da Image-Line existem como VST avulso (instalador próprio);
+  - dependências no Linux: `carla`, `pipewire-jack` e yabridge;
+  - limitações esperadas: estabilidade/latência do Wine, só Linux no começo,
+    exportação offline sem os plugins.
