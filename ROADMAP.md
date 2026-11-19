@@ -27,3 +27,36 @@
   - dependências no Linux: `carla`, `pipewire-jack` e yabridge;
   - limitações esperadas: estabilidade/latência do Wine, só Linux no começo,
     exportação offline sem os plugins.
+
+## Plugins nativos e marketplace (ideia, a planejar)
+
+Objetivo: tornar o Music Labs extensível por plugins próprios, simples de criar,
+e tratar as ferramentas atuais como os primeiros plugins.
+
+- **Plugins são repositórios open source no GitHub.** Instalar um plugin = clonar
+  ou baixar um release de um repositório. Um "marketplace" dentro do app lista,
+  busca, instala, atualiza e remove plugins (catálogo pode ser um índice público
+  de repositórios, ou busca por tópico no GitHub, ex.: `music-labs-plugin`).
+- **API de plugins limpa, abstraída e robusta**, para que seja fácil escrever um
+  plugin do zero. Pontos a definir:
+  - manifesto (nome, versão, tipo, versão mínima da API, permissões);
+  - tipos: instrumento, efeito, ferramenta/janela (ex.: um gerador de padrões),
+    analisador, importador/exportador;
+  - DSP: interface de processamento por bloco (`noteOn/noteOff/render`,
+    `process`), parâmetros declarados (já existe `ParamDef` em
+    `src/core/registry.ts`) com automação, presets e estado salvos de graça;
+  - interface: o plugin declara parâmetros e ganha UI automática (knobs, como o
+    `ParamGrid`), ou fornece UI própria com componentes do app (knob, gráfico,
+    teclado, canvas);
+  - acesso ao projeto pela mesma camada de ações/ops (desfazer, sincronia, MCP
+    funcionam sem esforço extra);
+  - ferramentas expostas automaticamente no MCP, para o Claude usar o plugin;
+  - versionamento estável da API e isolamento (o plugin não derruba o app;
+    avaliar rodar em worker/sandbox e pedir permissões explícitas).
+- **Converter tudo o que existe em plugins nativos**: Sampler, Prisma, Synth,
+  Drum Synth, Pluck, FM e os efeitos passam a usar exatamente a mesma API pública
+  (sem atalhos internos), cada um no seu repositório/pasta.
+- **Copiar e modificar**: qualquer plugin pode ser usado como base ("fork" pelo
+  próprio app) para criar outro; ex.: partir do Sampler para fazer algo novo,
+  em vez de começar do zero. Ter um modelo mínimo (template) também.
+- Documentação e exemplos curtos para cada tipo de plugin.
