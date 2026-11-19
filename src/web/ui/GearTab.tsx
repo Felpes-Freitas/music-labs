@@ -7,6 +7,7 @@ import { noteName } from '../../core/model';
 import { set } from '../../core/ops';
 import { edit, previewEdit, setHint } from '../state';
 import { audio } from '../audio';
+import { themeRev } from '../theme';
 import { drawKeyboard, keyAt, keyboardLayout } from './ChannelPiano';
 
 function RootPicker(p: { ch: Channel }) {
@@ -30,7 +31,7 @@ function RootPicker(p: { ch: Channel }) {
     const ro = new ResizeObserver(draw);
     ro.observe(c);
     return () => ro.disconnect();
-  }, [root]);
+  }, [root, themeRev]);
   const pick = (e: PointerEvent) => {
     const c = e.currentTarget as HTMLCanvasElement;
     const r = c.getBoundingClientRect();

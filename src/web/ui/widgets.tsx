@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import { state, focusWindow, closeWindow, emit, act, type WindowId } from '../state';
 import * as A from '../../core/actions';
+import { onTheme, prefs as looks } from '../theme';
 import { Icon } from './icons';
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -149,8 +150,8 @@ export function Win(p: { id: WindowId; title: ComponentChildren; icon?: string; 
     }
     emit();
   };
-  const startDrag = (e: PointerEvent, kind: 'move' | 'size') => {
-    if ((e.target as Element).closest('button, input, select, .knob, .nodrag')) return;
+  const startDrag = (e: PointerEvent, kind: 'move' | 'size', anywhere = false) => {
+    if (!anywhere && (e.target as Element).closest('button, input, select, .knob, .nodrag')) return;
     e.preventDefault();
     focusWindow(p.id);
     const x0 = e.clientX, y0 = e.clientY;
@@ -174,7 +175,19 @@ export function Win(p: { id: WindowId; title: ComponentChildren; icon?: string; 
   };
   const top = Math.max(...Object.values(state.windows).filter((x) => x.open).map((x) => x.z));
   return (
-    <div class={`win win-${p.id} ${w.z === top ? 'focused' : ''}`} style={{ left: `${w.x}px`, top: `${w.y}px`, width: `${w.w}px`, height: `${w.h}px`, zIndex: w.z }} onPointerDown={() => focusWindow(p.id)}>
+    <div class={`win win-${p.id} ${w.z === top ? 'focused' : ''}`} style={{ left: `${w.x}px`, top: `${w.y}px`, width: `${w.w}px`, height: `${w.h}px`, zIndex: w.z }} onPointerDown={() => focusWindow(p.id)}
+      onPointerDownCapture={(e) => {
+        // Alt + arrastar: move a janela de qualquer ponto (Alt + botão direito redimensiona)
+        if (!looks.altDrag || !e.altKey || (e.button !== 0 && e.button !== 2)) return;
+        e.stopPropagation();
+        startDrag(e as any, e.button === 2 ? 'size' : 'move', true);
+      }}
+      onContextMenuCapture={(e) => {
+        if (looks.altDrag && e.altKey) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }}>
       <div class="win-title" onPointerDown={(e) => startDrag(e as any, 'move')} onDblClick={(e) => !(e.target as Element).closest('button, input, select, .knob') && toggleMax()}>
         {p.icon && <Icon name={p.icon} size={13} class="win-icon" />}
         <span class="win-name">{p.title}</span>
@@ -280,6 +293,7 @@ export function useCanvas(
   });
   useEffect(() => () => ro.current?.disconnect(), []);
   useLayoutEffect(paint, deps);
+  useEffect(() => onTheme(paint), []);
   return { ref, paint, paintOverlay, size };
 }
 

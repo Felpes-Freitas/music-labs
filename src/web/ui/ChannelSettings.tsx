@@ -13,6 +13,7 @@ import { ChannelPiano } from './ChannelPiano';
 import { GearTab } from './GearTab';
 import { Icon } from './icons';
 import { decodeWav } from '../../core/wav';
+import { ui, accent } from '../theme';
 
 function Waveform(p: { path: string }) {
   const [peaks, setPeaks] = useState<Float32Array | null>(null);
@@ -42,10 +43,10 @@ function Waveform(p: { path: string }) {
   }, [p.path]);
   const { ref } = useCanvas(
     (ctx, w, h) => {
-      ctx.fillStyle = '#15191c';
+      ctx.fillStyle = ui('#15191c');
       ctx.fillRect(0, 0, w, h);
       if (!peaks) return;
-      ctx.fillStyle = '#e4a23a';
+      ctx.fillStyle = accent();
       for (let i = 0; i < peaks.length; i++) {
         const x = (i / peaks.length) * w;
         const ph = peaks[i] * h * 0.9;

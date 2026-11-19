@@ -9,6 +9,7 @@ import { audio } from '../audio';
 import { edit, onLive, setHint } from '../state';
 import { usePref } from '../prefs';
 import { Icon } from './icons';
+import { ui, accent, themeRev } from '../theme';
 
 const BLACK = new Set([1, 3, 6, 8, 10]);
 
@@ -50,16 +51,16 @@ export function drawKeyboard(ctx: CanvasRenderingContext2D, rects: KeyRect[], li
       const on = lit.has(r.key) || held === r.key;
       if (!black) {
         const g = ctx.createLinearGradient(0, 0, 0, r.h);
-        g.addColorStop(0, on ? '#ffd08a' : '#f4f6f7');
-        g.addColorStop(1, on ? '#f2a93b' : '#d3d8db');
+        g.addColorStop(0, on ? accent(0.45) : ui('#f4f6f7'));
+        g.addColorStop(1, on ? accent() : ui('#d3d8db'));
         ctx.fillStyle = g;
         ctx.fillRect(r.x + 0.5, 0, r.w - 1, r.h);
-        ctx.fillStyle = '#7d878c';
+        ctx.fillStyle = ui('#7d878c');
         ctx.fillRect(r.x + r.w - 0.5, 0, 1, r.h);
       } else {
         const g = ctx.createLinearGradient(0, 0, 0, r.h);
-        g.addColorStop(0, on ? '#ffb347' : '#2b3034');
-        g.addColorStop(1, on ? '#c97f15' : '#0e1012');
+        g.addColorStop(0, on ? accent() : ui('#2b3034'));
+        g.addColorStop(1, on ? accent(-0.2) : ui('#0e1012'));
         ctx.fillStyle = g;
         ctx.fillRect(r.x, 0, r.w, r.h);
       }
@@ -70,7 +71,7 @@ export function drawKeyboard(ctx: CanvasRenderingContext2D, rects: KeyRect[], li
         ctx.fill();
       }
       if (!black && r.key % 12 === 0 && r.w >= 9) {
-        ctx.fillStyle = on ? '#5a3300' : '#7d878c';
+        ctx.fillStyle = on ? accent(-0.65) : ui('#7d878c');
         ctx.font = '8px sans-serif';
         ctx.fillText(noteName(r.key), r.x + 1.5, r.h - 14);
       }
@@ -97,7 +98,7 @@ export function ChannelPiano(p: { ch: Channel }) {
     }
     const ctx = c.getContext('2d')!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#0d1012';
+    ctx.fillStyle = ui('#0d1012');
     ctx.fillRect(0, 0, r.width, r.height);
     // de C1 a C8, ou menos se a janela for estreita (teclas de pelo menos 9 px)
     const octaves = Math.max(2, Math.min(7, Math.floor(r.width / (7 * 10))));
@@ -123,7 +124,7 @@ export function ChannelPiano(p: { ch: Channel }) {
       ro.disconnect();
       off();
     };
-  }, [open, root]);
+  }, [open, root, themeRev]);
 
   const local = (e: PointerEvent) => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();

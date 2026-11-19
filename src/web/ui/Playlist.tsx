@@ -6,6 +6,7 @@ import { set, ins, rem } from '../../core/ops';
 import * as A from '../../core/actions';
 import { Win, IconBtn, useCanvas } from './widgets';
 import { askText } from './Dialog';
+import { ui, accent } from '../theme';
 
 const HEADW = 120;
 const RULER = 22;
@@ -37,14 +38,14 @@ export function Playlist() {
     (ctx, w, h) => {
       const v = view.current;
       const tx = (t: number) => HEADW + (t - v.scrollX) * v.zx;
-      ctx.fillStyle = '#1b2023';
+      ctx.fillStyle = ui('#1b2023');
       ctx.fillRect(0, 0, w, h);
       // linhas de track
       const first = Math.floor(v.scrollY / v.rowH);
       for (let i = first; i < p.tracks.length; i++) {
         const y = RULER + i * v.rowH - v.scrollY;
         if (y > h) break;
-        ctx.fillStyle = i % 2 ? '#20262a' : '#232a2e';
+        ctx.fillStyle = i % 2 ? ui('#20262a') : ui('#232a2e');
         ctx.fillRect(HEADW, y, w - HEADW, v.rowH);
       }
       // grade
@@ -54,7 +55,7 @@ export function Playlist() {
         if (x < HEADW) continue;
         const isBar = t % bar === 0;
         if (!isBar && v.zx * PPQ < 6) continue;
-        ctx.strokeStyle = isBar ? '#3d474d' : '#2a3135';
+        ctx.strokeStyle = isBar ? ui('#3d474d') : ui('#2a3135');
         ctx.beginPath();
         ctx.moveTo(x, RULER);
         ctx.lineTo(x, h);
@@ -73,7 +74,7 @@ export function Playlist() {
         const y = RULER + c.track * v.rowH - v.scrollY;
         const cw = c.len * v.zx;
         if (x + cw < HEADW || x > w || y + v.rowH < RULER || y > h) continue;
-        const col = c.kind === 'audio' ? '#4fb3d9' : c.kind === 'auto' ? '#b58cf0' : pat?.color ?? '#888';
+        const col = c.kind === 'audio' ? '#4fb3d9' : c.kind === 'auto' ? '#b58cf0' : pat?.color ?? ui('#888');
         ctx.globalAlpha = c.muted || p.tracks[c.track]?.mute ? 0.35 : 1;
         ctx.fillStyle = col;
         ctx.fillRect(x, y + 1, cw - 1, 13);
@@ -114,7 +115,7 @@ export function Playlist() {
           ctx.lineTo(x + cw, top + (1 - last.v) * hh);
           ctx.stroke();
           ctx.lineWidth = 1;
-          ctx.fillStyle = '#fff';
+          ctx.fillStyle = ui('#fff');
           for (const pt of c.points) {
             ctx.beginPath();
             ctx.arc(x + pt.t * v.zx, top + (1 - pt.v) * hh, 2.5, 0, Math.PI * 2);
@@ -143,7 +144,7 @@ export function Playlist() {
               }
           }
         }
-        ctx.fillStyle = '#111';
+        ctx.fillStyle = ui('#111');
         ctx.font = '10px sans-serif';
         const label = c.kind === 'audio' ? `♫ ${(c.sample ?? '').split(/[\\/]/).pop()}` : c.kind === 'auto' ? `⤴ ${c.target?.label ?? 'automação'}` : pat?.name ?? '?';
         ctx.fillText(label, x + 3, y + 11);
@@ -155,20 +156,20 @@ export function Playlist() {
         const y = RULER + i * v.rowH - v.scrollY;
         if (y > h) break;
         const t = p.tracks[i];
-        ctx.fillStyle = '#2b3236';
+        ctx.fillStyle = ui('#2b3236');
         ctx.fillRect(0, y, HEADW, v.rowH - 1);
-        ctx.fillStyle = t.mute ? '#444' : '#7cdc6a';
+        ctx.fillStyle = t.mute ? ui('#444') : '#7cdc6a';
         ctx.beginPath();
         ctx.arc(10, y + v.rowH / 2, 4, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = t.mute ? '#777' : '#ddd';
+        ctx.fillStyle = t.mute ? ui('#777') : ui('#ddd');
         ctx.font = '11px sans-serif';
         ctx.fillText(t.name.slice(0, 15), 20, y + v.rowH / 2 + 4);
       }
       // régua
-      ctx.fillStyle = '#2d3539';
+      ctx.fillStyle = ui('#2d3539');
       ctx.fillRect(0, 0, w, RULER);
-      ctx.fillStyle = '#aab';
+      ctx.fillStyle = ui('#aab');
       ctx.font = '10px sans-serif';
       const every = v.zx * bar < 28 ? 4 : 1;
       for (let b = Math.floor(v.scrollX / bar); tx(b * bar) < w; b++) {
@@ -181,9 +182,9 @@ export function Playlist() {
         ctx.fillStyle = '#7fd6ff';
         ctx.fillRect(Math.max(HEADW, tx(p.loop.start)), RULER - 4, (p.loop.end - p.loop.start) * v.zx, 4);
       }
-      ctx.fillStyle = '#2d3539';
+      ctx.fillStyle = ui('#2d3539');
       ctx.fillRect(0, 0, HEADW, RULER);
-      ctx.fillStyle = '#889';
+      ctx.fillStyle = ui('#889');
       ctx.fillText('Tracks', 8, 15);
     },
     [s.version],

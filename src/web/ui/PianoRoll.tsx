@@ -6,6 +6,7 @@ import { set } from '../../core/ops';
 import { SCALES, inScale, pitchClass } from '../../core/theory';
 import * as A from '../../core/actions';
 import { Win, IconBtn, useCanvas } from './widgets';
+import { ui, accent } from '../theme';
 
 const RULER = 24;
 const KEYS = 66;
@@ -108,7 +109,7 @@ export function PianoRoll() {
       const v = view.current;
       const g = geo(w, h);
       const rows = v.rowH;
-      ctx.fillStyle = '#1a1f22';
+      ctx.fillStyle = ui('#1a1f22');
       ctx.fillRect(0, 0, w, h);
 
       // ---------------- grade
@@ -123,16 +124,16 @@ export function PianoRoll() {
         const pc = ((key % 12) + 12) % 12;
         const out = s.scale !== 'chromatic' && !inScale(key, s.scaleRoot, s.scale);
         const root = s.scale !== 'chromatic' && pc === pitchClass(s.scaleRoot);
-        ctx.fillStyle = root ? '#2b3a3c' : out ? '#1b2023' : BLACK.has(pc) ? '#23292d' : '#2a3135';
+        ctx.fillStyle = root ? ui('#2b3a3c') : out ? ui('#1b2023') : BLACK.has(pc) ? ui('#23292d') : ui('#2a3135');
         ctx.fillRect(g.gridL, y, g.gridR - g.gridL, rows);
-        ctx.fillStyle = pc === 0 ? '#424d54' : '#20262a';
+        ctx.fillStyle = pc === 0 ? ui('#424d54') : ui('#20262a');
         ctx.fillRect(g.gridL, y + rows - 1, g.gridR - g.gridL, 1);
       }
       const minor = snap > 1 && snap < PPQ && snap * v.zx >= 5 ? snap : STEP * v.zx >= 5 ? STEP : PPQ;
       const t0 = Math.floor(v.scrollX / minor) * minor;
       for (let t = t0; tickX(t) < g.gridR; t += minor) {
         const x = Math.round(tickX(t)) + 0.5;
-        ctx.strokeStyle = t % bar === 0 ? '#5d6970' : t % PPQ === 0 ? '#3d474e' : '#2c3439';
+        ctx.strokeStyle = t % bar === 0 ? ui('#5d6970') : t % PPQ === 0 ? ui('#3d474e') : ui('#2c3439');
         ctx.lineWidth = t % bar === 0 ? 1.2 : 1;
         ctx.beginPath();
         ctx.moveTo(x, g.gridT);
@@ -145,14 +146,14 @@ export function PianoRoll() {
       if (endX < g.gridR) {
         ctx.fillStyle = 'rgba(0,0,0,0.32)';
         ctx.fillRect(Math.max(g.gridL, endX), g.gridT, g.gridR - endX, g.gridB - g.gridT);
-        ctx.fillStyle = '#e0a03a';
+        ctx.fillStyle = accent();
         ctx.fillRect(endX, g.gridT, 1.5, g.gridB - g.gridT);
       }
       // ghost notes
       if (ghost && pat)
         for (const [cid, list] of Object.entries(pat.notes)) {
           if (cid === ch?.id) continue;
-          const gc = p.channels.find((c) => c.id === cid)?.color ?? '#999';
+          const gc = p.channels.find((c) => c.id === cid)?.color ?? ui('#999');
           ctx.strokeStyle = gc;
           ctx.globalAlpha = 0.35;
           for (const n of list) {
@@ -169,16 +170,16 @@ export function PianoRoll() {
         const nw = Math.max(3, n.len * v.zx - 1);
         if (x + nw < g.gridL || x > g.gridR || y < g.gridT - rows || y > g.gridB) continue;
         const selected = sel.has(n.id);
-        ctx.fillStyle = n.mute ? '#4d5559' : selected ? '#ff8f8f' : shade(color, 0.55 + 0.45 * n.vel);
+        ctx.fillStyle = n.mute ? ui('#4d5559') : selected ? '#ff8f8f' : shade(color, 0.55 + 0.45 * n.vel);
         roundRect(ctx, x, y + 1, nw, rows - 2, 2.5);
         ctx.fill();
         ctx.fillStyle = 'rgba(255,255,255,0.18)';
         ctx.fillRect(x + 1, y + 2, nw - 2, 2);
-        ctx.strokeStyle = selected ? '#fff' : 'rgba(0,0,0,0.55)';
+        ctx.strokeStyle = selected ? ui('#fff') : 'rgba(0,0,0,0.55)';
         roundRect(ctx, x + 0.5, y + 1.5, nw - 1, rows - 3, 2.5);
         ctx.stroke();
         if (n.slide) {
-          ctx.fillStyle = '#111';
+          ctx.fillStyle = ui('#111');
           ctx.beginPath();
           ctx.moveTo(x + nw - 8, y + rows - 3);
           ctx.lineTo(x + nw - 2, y + rows / 2);
@@ -198,7 +199,7 @@ export function PianoRoll() {
       ctx.beginPath();
       ctx.rect(0, g.gridT, KEYS, g.gridB - g.gridT);
       ctx.clip();
-      ctx.fillStyle = '#d9dcde';
+      ctx.fillStyle = ui('#d9dcde');
       ctx.fillRect(0, g.gridT, KEYS, g.gridB - g.gridT);
       // teclas brancas: cada oitava (12 linhas) dividida em 7
       for (let oct = Math.floor(kBot / 12) - 1; oct <= Math.floor(kTop / 12) + 1; oct++) {
@@ -209,12 +210,12 @@ export function PianoRoll() {
           const y1 = bottom - (i + 1) * wh;
           const keyOf = c + [0, 2, 4, 5, 7, 9, 11][i];
           const isPressed = pressed.current === keyOf;
-          ctx.fillStyle = isPressed ? '#f2a93b' : '#e9ecee';
+          ctx.fillStyle = isPressed ? accent() : ui('#e9ecee');
           ctx.fillRect(0, y1, KEYS - 1, wh - 1);
-          ctx.fillStyle = '#9aa1a5';
+          ctx.fillStyle = ui('#9aa1a5');
           ctx.fillRect(0, y1 + wh - 1, KEYS - 1, 1);
           if (i === 0 && rows >= 8) {
-            ctx.fillStyle = '#5c6367';
+            ctx.fillStyle = ui('#5c6367');
             ctx.font = '9px sans-serif';
             ctx.fillText(noteName(c), KEYS - 26, bottom - 4);
           }
@@ -223,17 +224,17 @@ export function PianoRoll() {
       for (let key = kTop; key >= kBot; key--) {
         if (!BLACK.has(((key % 12) + 12) % 12)) continue;
         const y = keyY(key);
-        ctx.fillStyle = pressed.current === key ? '#f2a93b' : '#1b1e20';
+        ctx.fillStyle = pressed.current === key ? accent() : ui('#1b1e20');
         ctx.fillRect(0, y + 1, KEYS * 0.6, rows - 2);
         ctx.fillStyle = 'rgba(255,255,255,0.12)';
         ctx.fillRect(2, y + 2, KEYS * 0.6 - 5, 2);
       }
-      ctx.fillStyle = '#0d1012';
+      ctx.fillStyle = ui('#0d1012');
       ctx.fillRect(KEYS - 1, g.gridT, 1, g.gridB - g.gridT);
       ctx.restore();
 
       // ---------------- régua
-      ctx.fillStyle = '#2b3337';
+      ctx.fillStyle = ui('#2b3337');
       ctx.fillRect(0, 0, w, RULER);
       ctx.save();
       ctx.beginPath();
@@ -245,23 +246,23 @@ export function PianoRoll() {
         const x = Math.round(tickX(t)) + 0.5;
         if (t % bar === 0) {
           const b = t / bar;
-          ctx.fillStyle = '#9aa7ae';
+          ctx.fillStyle = ui('#9aa7ae');
           ctx.fillRect(x, 10, 1, RULER - 10);
           if (b % every === 0) {
-            ctx.fillStyle = '#d8dde0';
+            ctx.fillStyle = ui('#d8dde0');
             ctx.fillText(String(b + 1), x + 3, 11);
           }
         } else if (v.zx * PPQ > 14) {
-          ctx.fillStyle = '#5e6a70';
+          ctx.fillStyle = ui('#5e6a70');
           ctx.fillRect(x, RULER - 6, 1, 6);
           if (v.zx * PPQ > 50) {
-            ctx.fillStyle = '#7b878d';
+            ctx.fillStyle = ui('#7b878d');
             ctx.fillText(`${t / bar + 1 | 0}.${((t % bar) / PPQ) + 1}`, x + 2, RULER - 8);
           }
         }
       }
       // fim do pattern e cabeça
-      ctx.fillStyle = '#e0a03a';
+      ctx.fillStyle = accent();
       const ex = tickX(plen);
       ctx.beginPath();
       ctx.moveTo(ex, RULER);
@@ -269,23 +270,23 @@ export function PianoRoll() {
       ctx.lineTo(ex, RULER - 7);
       ctx.fill();
       ctx.restore();
-      ctx.fillStyle = '#1f2528';
+      ctx.fillStyle = ui('#1f2528');
       ctx.fillRect(0, 0, KEYS, RULER);
       ctx.fillStyle = color;
       ctx.fillRect(4, 6, 4, 12);
-      ctx.fillStyle = '#d8dde0';
+      ctx.fillStyle = ui('#d8dde0');
       ctx.font = '10px sans-serif';
       ctx.fillText((ch?.name ?? '—').slice(0, 9), 12, 16);
 
       // ---------------- faixa de eventos
-      ctx.fillStyle = '#14181a';
+      ctx.fillStyle = ui('#14181a');
       ctx.fillRect(0, g.laneTop - 4, w, g.laneB - g.laneTop + 4);
-      ctx.fillStyle = '#3a454b';
+      ctx.fillStyle = ui('#3a454b');
       ctx.fillRect(0, g.laneTop - 4, w, 3);
-      ctx.fillStyle = '#9aa7ae';
+      ctx.fillStyle = ui('#9aa7ae');
       ctx.font = '10px sans-serif';
       ctx.fillText(lane === 'vel' ? 'Velocity' : 'Pan', 8, g.laneTop + 14);
-      ctx.fillStyle = '#6b777d';
+      ctx.fillStyle = ui('#6b777d');
       ctx.fillText('clique: trocar', 8, g.laneTop + 27);
       ctx.save();
       ctx.beginPath();
@@ -293,14 +294,14 @@ export function PianoRoll() {
       ctx.clip();
       const lh = g.laneB - g.laneTop - 8;
       if (lane === 'pan') {
-        ctx.fillStyle = '#2c3439';
+        ctx.fillStyle = ui('#2c3439');
         ctx.fillRect(KEYS, g.laneTop + 4 + lh / 2, g.gridR - KEYS, 1);
       }
       for (const n of notes) {
         const x = tickX(n.pos);
         if (x < KEYS - 4 || x > g.gridR) continue;
         const selected = sel.has(n.id);
-        ctx.fillStyle = selected ? '#ff8f8f' : n.mute ? '#4d5559' : color;
+        ctx.fillStyle = selected ? '#ff8f8f' : n.mute ? ui('#4d5559') : color;
         if (lane === 'vel') {
           const vh = n.vel * lh;
           ctx.fillRect(x, g.laneB - 4 - vh, 2, vh);
@@ -321,23 +322,23 @@ export function PianoRoll() {
       // ---------------- barras de rolagem
       const cw = contentW() * v.zx;
       const viewW = g.gridR - KEYS;
-      ctx.fillStyle = '#15191b';
+      ctx.fillStyle = ui('#15191b');
       ctx.fillRect(KEYS, h - SB, viewW, SB);
       const hx = KEYS + (v.scrollX * v.zx / cw) * viewW;
       const hw = Math.max(24, (viewW / cw) * viewW);
-      ctx.fillStyle = '#4b585f';
+      ctx.fillStyle = ui('#4b585f');
       roundRect(ctx, hx, h - SB + 2, Math.min(hw, viewW), SB - 4, 3);
       ctx.fill();
       const ch2 = 128 * rows;
       const viewH = g.gridB - g.gridT;
-      ctx.fillStyle = '#15191b';
+      ctx.fillStyle = ui('#15191b');
       ctx.fillRect(g.gridR, g.gridT, SB, viewH);
       const vy = g.gridT + (v.scrollY / ch2) * viewH;
       const vhh = Math.max(24, (viewH / ch2) * viewH);
-      ctx.fillStyle = '#4b585f';
+      ctx.fillStyle = ui('#4b585f');
       roundRect(ctx, g.gridR + 2, vy, SB - 4, Math.min(vhh, viewH), 3);
       ctx.fill();
-      ctx.fillStyle = '#1f2528';
+      ctx.fillStyle = ui('#1f2528');
       ctx.fillRect(0, h - SB, KEYS, SB);
       ctx.fillRect(g.gridR, 0, SB, RULER);
       ctx.fillRect(g.gridR, g.gridB, SB, h - g.gridB);

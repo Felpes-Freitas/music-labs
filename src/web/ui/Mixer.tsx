@@ -7,6 +7,7 @@ import * as A from '../../core/actions';
 import { Knob, Win, dbFmt, panFmt } from './widgets';
 import { ParamGrid } from './ParamGrid';
 import { askText } from './Dialog';
+import { ui, accent } from '../theme';
 
 function Fader(p: { value: number; onInput: (v: number) => void; onCommit: (v: number) => void }) {
   // curva: posição 0..1 -> ganho com 0 dB em ~0.8 e +4.4 dB no topo
@@ -69,7 +70,7 @@ export function Mixer() {
         hv[1] = Math.max(m[1], hv[1] * 0.86);
         const ctx = c.getContext('2d')!;
         const w = c.width, h = c.height;
-        ctx.fillStyle = '#111';
+        ctx.fillStyle = ui('#111');
         ctx.fillRect(0, 0, w, h);
         for (let k = 0; k < 2; k++) {
           const db = 20 * Math.log10(Math.max(hv[k], 1e-5));
