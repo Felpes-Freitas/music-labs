@@ -51,20 +51,44 @@ export async function commitEdit(id: string, L: Float32Array, R: Float32Array, s
     edit([ins(['audios'], { id: nid, name, path, original: path, variantOf: id } satisfies AudioItem)]);
     return nid;
   }
-  const ops: Op[] = [set(['audios', id, 'path'], path)];
+  const ops: Op[] = [set(['audios', id, 'path'], path), set(['audios', id, 'edited'], undefined)];
   for (const c of state.project.clips) if (c.sample === it.path) ops.push(set(['clips', c.id, 'sample'], path));
   edit(ops);
   return id;
 }
 
-/** Volta ao arquivo original (também nos clipes da playlist). */
-export function restoreOriginal(id: string) {
+/** O áudio tem edições (ativas ou desativadas)? */
+export const hasEdits = (id: string) => {
   const it = poolItem(id);
-  if (!it || it.path === it.original) return;
-  const ops: Op[] = [set(['audios', id, 'path'], it.original)];
-  for (const c of state.project.clips) if (c.sample === it.path) ops.push(set(['clips', c.id, 'sample'], it.original));
+  return !!it && (it.path !== it.original || !!it.edited);
+};
+export const editsOn = (id: string) => {
+  const it = poolItem(id);
+  return !!it && it.path !== it.original;
+};
+
+/**
+ * Liga/desliga as edições sem perder nada: desligar volta ao original (guardando a
+ * versão editada); ligar volta à versão editada. Os clipes da playlist acompanham.
+ */
+export function toggleEdits(id: string) {
+  const it = poolItem(id);
+  if (!it) return;
+  let to: string;
+  const ops: Op[] = [];
+  if (it.path !== it.original) {
+    to = it.original;
+    ops.push(set(['audios', id, 'edited'], it.path));
+  } else if (it.edited) {
+    to = it.edited;
+    ops.push(set(['audios', id, 'edited'], undefined));
+  } else return;
+  ops.push(set(['audios', id, 'path'], to));
+  for (const c of state.project.clips) if (c.sample === it.path) ops.push(set(['clips', c.id, 'sample'], to));
   edit(ops);
 }
+/** Compatibilidade: restaurar = desativar as edições (a versão editada fica guardada). */
+export const restoreOriginal = (id: string) => editsOn(id) && toggleEdits(id);
 
 export function removeFromPool(id: string) {
   edit([rem(['audios', id])]);

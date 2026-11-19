@@ -16,7 +16,7 @@ import { accent, ui } from '../theme';
 import { loadAudio, pickAudioFiles, droppedAudio, acceptsAudio } from '../clipaudio';
 import { detectKey, snapToKey, keyPcs, keyLabel, type Key } from '../../core/key';
 import { KeyPicker } from './KeyPicker';
-import { poolItems, poolItem, addToPool, commitEdit, restoreOriginal, sendToPlaylist, startToolRecording, finishToolRecording, importToPool } from '../pool';
+import { poolItems, poolItem, addToPool, commitEdit, hasEdits, editsOn, toggleEdits, sendToPlaylist, startToolRecording, finishToolRecording, importToPool } from '../pool';
 import { getPref, setPref } from '../prefs';
 import { LiveCapture } from './LiveCapture';
 
@@ -43,15 +43,19 @@ let loading = '';
 let sel = -1;
 let recording = false;
 let variant = getPref('tune.variant', true);
+/** Aberto pelo Stitcher: as alterações voltam para o próprio trecho (sem variante). */
+let inPlace = false;
 let preview: { stop: () => void; pos: () => number } | null = null;
 const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((l) => l());
 
 /** Abre um áudio da lista no Afinador. */
-export async function openTuneAudio(id: string) {
+export async function openTuneAudio(id: string, opts: { inPlace?: boolean } = {}) {
   openWindow('tune');
   const it = poolItem(id);
   if (!it) return;
+  // reabrir o mesmo áudio (ex.: depois de aplicar) mantém o modo; outro áudio usa o pedido
+  if (doc?.id !== id || opts.inPlace !== undefined) inPlace = !!opts.inPlace;
   stopPreview();
   loading = `Analisando ${it.name}…`;
   doc = null;
@@ -179,8 +183,9 @@ export function TuneWindow() {
     if (!doc) return;
     const ch = render(doc);
     try {
-      const id = await commitEdit(doc.id, ch[0], ch[1] ?? ch[0], doc.sr, variant);
-      toast(variant ? 'Variante criada na lista de áudios' : 'Alterações aplicadas no áudio (o original continua guardado)');
+      const asVariant = variant && !inPlace;
+      const id = await commitEdit(doc.id, ch[0], ch[1] ?? ch[0], doc.sr, asVariant);
+      toast(inPlace ? 'Aplicado no trecho: o Stitcher já usa a versão nova' : asVariant ? 'Variante criada na lista de áudios' : 'Alterações aplicadas no áudio (o original continua guardado)');
       openTuneAudio(id);
     } catch (e) {
       toast(`Erro ao salvar: ${(e as Error).message}`);
@@ -292,10 +297,11 @@ export function TuneWindow() {
           )}
         </div>
         <div class="tool-bar tool-bar2">
-          <label class="tool-check" data-hint="Marcado: aplicar cria um áudio novo na lista (o atual não muda). Desmarcado: altera o próprio áudio (o original fica guardado e pode ser restaurado)">
+          <label class="tool-check" data-hint={inPlace ? 'Trecho do Stitcher: as alterações voltam para lá (o original continua guardado)' : 'Marcado: aplicar cria um áudio novo na lista (o atual não muda). Desmarcado: altera o próprio áudio (o original fica guardado e pode ser restaurado)'}>
             <input
               type="checkbox"
-              checked={variant}
+              disabled={inPlace}
+              checked={variant && !inPlace}
               onChange={() => {
                 variant = !variant;
                 setPref('tune.variant', variant);
@@ -305,11 +311,11 @@ export function TuneWindow() {
             Criar variante
           </label>
           <button class="tool-main" disabled={!doc || recording || !isEdited(doc)} onClick={apply}>
-            <Icon name="save" size={13} /> {variant ? 'Salvar variante' : 'Aplicar no áudio'}
+            <Icon name="save" size={13} /> {inPlace ? 'Aplicar no trecho do Stitcher' : variant ? 'Salvar variante' : 'Aplicar no áudio'}
           </button>
-          {cur && cur.path !== cur.original && (
-            <button disabled={recording} onClick={() => restoreOriginal(cur.id)} data-hint="Volta este áudio para a gravação original">
-              Restaurar original
+          {cur && hasEdits(cur.id) && (
+            <button class={editsOn(cur.id) ? '' : 'on'} disabled={recording} onClick={() => toggleEdits(cur.id)} data-hint="Liga/desliga as edições já aplicadas neste áudio (nada é perdido: o original e a versão editada ficam guardados)">
+              {editsOn(cur.id) ? 'Desativar edições' : 'Edições desativadas · reativar'}
             </button>
           )}
           <button disabled={!cur || recording} onClick={() => cur && sendToPlaylist(cur.id)} data-hint="Coloca este áudio na playlist (variantes vão logo abaixo do original, se ele estiver lá)">

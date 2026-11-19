@@ -701,3 +701,11 @@ body.alt-drag .win, body.alt-drag .win * { cursor: move !important; }
 .menutree button .mt-label { flex: 1; text-align: left; white-space: nowrap; }
 .menutree button.open { background: var(--hover) !important; }
 .menutree .menu-sep { margin: 3px 8px; }
+/* knob gravando automação: vermelho pulsando; knob com automação na música: ponto */
+.knob.auto-rec .knob-val { stroke: #ff5d5d !important; filter: drop-shadow(0 0 4px rgba(255, 80, 80, 0.8)); }
+.knob.auto-rec .knob-bg { stroke: #ff5d5d; animation: recpulse 1s ease-in-out infinite; }
+.knob.auto-rec .knob-label { color: #ff7070; font-weight: 700; }
+.knob.has-auto { position: relative; }
+.knob.has-auto::after { content: ''; position: absolute; top: 0; right: 2px; width: 5px; height: 5px; border-radius: 50%; background: var(--acc2); box-shadow: 0 0 4px var(--acc2); }
+.pa-badge { height: 16px; padding: 0 4px; font-size: 9px; border: 1px solid var(--acc); color: var(--acc); background: transparent; box-shadow: none; border-radius: 3px; }
+.pa-badge.off { border-color: var(--dim2); color: var(--dim2); text-decoration: line-through; }

@@ -25,6 +25,20 @@ interface AutoEv {
   pass: number;
   tick: number;
   v: number; // 0..1
+  /** Valor do parâmetro antes de mexer (0..1): vale até o momento do primeiro toque. */
+  before?: number;
+}
+
+/** Parâmetros mexidos nesta gravação (os knobs ficam destacados). */
+const touched = new Set<string>();
+export const recTouched = (key: string) => !!rec && touched.has(key);
+
+let autoCache: { v: number; keys: Set<string> } | null = null;
+/** O parâmetro já tem clipe de automação na playlist? */
+export function hasAutomation(key: string) {
+  const p = state.project;
+  if (autoCache?.v !== state.version) autoCache = { v: state.version, keys: new Set(p.clips.filter((c) => c.kind === 'auto' && c.target).map((c) => c.target!.path.join('/'))) };
+  return autoCache.keys.has(key);
 }
 
 let rec: {
@@ -54,6 +68,7 @@ function now(): { tick: number; pass: number } | null {
 
 export function startMidiRec(start: number, region: [number, number] | null) {
   rec = { start, region, notes: [], autos: [] };
+  touched.clear();
 }
 
 /** Nota tocada ao vivo (chamado pelo áudio a cada liveOn/liveOff). */
@@ -69,12 +84,17 @@ export function recNote(on: boolean, ch: string, key: number, vel: number) {
 }
 
 /** Knob mexido durante a gravação. */
-export function recAuto(target: AutoTarget, value: number) {
+const norm = (target: AutoTarget, value: number) =>
+  Math.max(0, Math.min(1, target.log && target.min > 0 ? Math.log(value / target.min) / Math.log(target.max / target.min) : (value - target.min) / (target.max - target.min)));
+
+/** Knob mexido durante a gravação: before = valor que ele tinha antes. */
+export function recAuto(target: AutoTarget, value: number, before?: number) {
   if (!rec) return;
   const t = now();
   if (!t) return;
-  const v = target.log && target.min > 0 ? Math.log(value / target.min) / Math.log(target.max / target.min) : (value - target.min) / (target.max - target.min);
-  rec.autos.push({ target, pass: t.pass, tick: t.tick, v: Math.max(0, Math.min(1, v)) });
+  const key = target.path.join('/');
+  touched.add(key);
+  rec.autos.push({ target, pass: t.pass, tick: t.tick, v: norm(target, value), before: before !== undefined ? norm(target, before) : undefined });
 }
 
 const freeTrack = (p: Project, pos: number, len: number, extra: Clip[]) => {
@@ -88,6 +108,7 @@ const freeTrack = (p: Project, pos: number, len: number, extra: Clip[]) => {
 export function finishMidiRec(stopTick: number) {
   const r = rec;
   rec = null;
+  touched.clear();
   if (!r) return;
   const p = state.project;
   const bar = ticksPerBar(p);
@@ -146,6 +167,13 @@ export function finishMidiRec(stopTick: number) {
       evs.sort((a, b) => a.tick - b.tick);
       // pontos a cada ~1/64 no máximo (os knobs mandam muitos valores)
       const pts: { t: number; v: number }[] = [];
+      // até o primeiro toque, o parâmetro fica como estava
+      const first = evs[0];
+      const t0 = Math.max(0, Math.round(first.tick - from));
+      if (first.before !== undefined) {
+        pts.push({ t: 0, v: first.before });
+        if (t0 > 16) pts.push({ t: t0 - 8, v: first.before }); // longe o bastante para não ser fundido ao primeiro movimento
+      }
       for (const e of evs) {
         const t = Math.max(0, Math.round(e.tick - from));
         if (pts.length && t - pts[pts.length - 1].t < PPQ / 16) pts[pts.length - 1].v = e.v;
