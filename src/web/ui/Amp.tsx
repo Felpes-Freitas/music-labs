@@ -30,6 +30,9 @@ interface AmpPrefs {
   pick: RecChannels;
   preset: string;
   smart: boolean;
+  /** Retorno nativo (fora do navegador, baixa latência) e o tamanho do bloco dele. */
+  native: boolean;
+  buffer: number;
   thresholdDb: number;
   marginDb: number;
   holdSec: number;
@@ -104,6 +107,8 @@ const load = (): AmpPrefs => {
     inGain: p.inGain ?? 0,
     outGain: p.outGain ?? 0,
     monitor: p.monitor ?? true,
+    native: p.native ?? true,
+    buffer: p.buffer ?? 128,
     device: p.device ?? '',
     pick: p.pick ?? 'left',
     preset: p.preset ?? FIRST,
@@ -121,8 +126,38 @@ const listeners = new Set<() => void>();
 function commit() {
   setPref('amp', amp);
   audio.configAmp({ chain: amp.chain, inGain: amp.inGain, outGain: amp.outGain, pick: amp.pick, bpm: state.project.bpm });
-  audio.setAmpMonitor(amp.monitor);
+  // com o retorno nativo, o do navegador fica mudo (só serve para o visualizador)
+  audio.setAmpMonitor(amp.monitor && !(amp.native && nativeOk));
+  syncNative();
   listeners.forEach((l) => l());
+}
+
+// ---------------------------------------------------------------- retorno nativo (servidor, PipeWire)
+
+let nativeOk = false; // o servidor consegue fazer o retorno nativo (Linux + PipeWire)
+let ampOpen = false;
+let nativeTimer = 0;
+let nativeLast = '';
+let sourcesCache: { name: string; description: string }[] = [];
+/** Entrada do PipeWire com o mesmo nome da entrada escolhida no amp (ou a padrão). */
+function nativeSource(devices: { id: string; label: string }[]) {
+  const label = devices.find((d) => d.id === amp.device)?.label ?? '';
+  return sourcesCache.find((s) => s.description === label)?.name ?? '';
+}
+let devicesNow: { id: string; label: string }[] = [];
+/** Manda a cadeia e o estado para o retorno nativo (no máximo ~30 vezes por segundo). */
+function syncNative() {
+  clearTimeout(nativeTimer);
+  nativeTimer = window.setTimeout(() => {
+    const on = nativeOk && ampOpen && amp.native && amp.monitor;
+    const body = on
+      ? { on: true, buffer: amp.buffer, source: nativeSource(devicesNow), pick: amp.pick, inGain: amp.inGain, outGain: amp.outGain, bpm: state.project.bpm, chain: amp.chain }
+      : { on: false };
+    const json = JSON.stringify(body);
+    if (json === nativeLast) return;
+    nativeLast = json;
+    fetch('/api/monitor', { method: 'POST', headers: { 'content-type': 'application/json' }, body: json }).catch(() => {});
+  }, 30);
 }
 
 let recFromAmp = false;
@@ -139,11 +174,24 @@ export function AmpWindow() {
   }, []);
   // liga a entrada quando a janela abre (e quando muda a entrada); desliga ao fechar
   useEffect(() => {
+    ampOpen = open;
     if (!open) {
       audio.stopAmp();
       setOn(false);
+      syncNative();
       return;
     }
+    fetch('/api/monitor')
+      .then((r) => r.json())
+      .then((st) => {
+        nativeOk = !!st.available;
+        return nativeOk ? fetch('/api/monitor/sources').then((r) => r.json()) : [];
+      })
+      .then((list) => {
+        sourcesCache = list;
+        commit();
+      })
+      .catch(() => {});
     let dead = false;
     audio
       .startAmp(amp.device)
@@ -151,7 +199,11 @@ export function AmpWindow() {
         if (dead) return;
         setOn(true);
         commit();
-        audio.inputDevices().then(setDevices);
+        audio.inputDevices().then((d) => {
+          devicesNow = d;
+          setDevices(d);
+          syncNative();
+        });
       })
       .catch((e) => {
         setOn(false);
@@ -291,7 +343,44 @@ export function AmpWindow() {
               </button>
             )}
           </div>
-          {!on ? <span class="amp-off">Entrada desligada</span> : <span class="amp-lat" data-hint="Atraso do retorno (o que você ouve tocando). A gravação usa o sinal cru e reaplica os efeitos em alta qualidade, sem esse atraso.">retorno {audio.monitorLatencyMs ?? '–'} ms</span>}
+          {!on ? (
+            <span class="amp-off">Entrada desligada</span>
+          ) : (
+            <div class="amp-ret" data-hint="Retorno: o som que você ouve enquanto toca. Nativo = direto pelo sistema (PipeWire), bem mais rápido; Navegador = pelo app, mais atrasado. A gravação usa o sinal cru e reaplica os efeitos em alta qualidade, nos dois casos.">
+              {nativeOk && (
+                <div class="seg">
+                  <button class={amp.native ? 'on' : ''} onClick={() => ((amp.native = true), commit())}>
+                    Nativo
+                  </button>
+                  <button class={!amp.native ? 'on' : ''} onClick={() => ((amp.native = false), commit())}>
+                    Navegador
+                  </button>
+                </div>
+              )}
+              {nativeOk && amp.native ? (
+                <label class="amp-buf" data-hint="Tamanho do bloco do retorno, em amostras. Menor = menos atraso; se estalar, aumente. 128 costuma ser seguro; 64 é o mínimo, mas pode estalar.">
+                  <span>Bloco</span>
+                  <input
+                    type="number"
+                    min={32}
+                    max={1024}
+                    step={32}
+                    value={amp.buffer}
+                    onChange={(e) => {
+                      const v = Math.max(32, Math.min(1024, Math.round(Number((e.target as HTMLInputElement).value) || 128)));
+                      amp.buffer = v;
+                      commit();
+                    }}
+                  />
+                  <small>
+                    ≈ {((amp.buffer / 48000) * 1000 * 3).toFixed(1)} ms
+                  </small>
+                </label>
+              ) : (
+                <span class="amp-lat">retorno {audio.monitorLatencyMs ?? '–'} ms</span>
+              )}
+            </div>
+          )}
         </div>
         <Visualizer />
         <Chain />
@@ -532,6 +621,7 @@ function Chain() {
                     onInput={(x) => {
                       f.params = { ...f.params, [d.key]: x };
                       audio.configAmp({ chain, inGain: amp.inGain, outGain: amp.outGain, pick: amp.pick, bpm: state.project.bpm });
+                      syncNative();
                     }}
                     onCommit={(x) => set(i, { params: { ...f.params, [d.key]: x } })}
                   />

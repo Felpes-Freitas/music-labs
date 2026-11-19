@@ -16,6 +16,7 @@ import { encodeWav } from '../core/wav.js';
 import { analyzeMix } from '../core/analysis.js';
 import { emptyProject } from '../core/model.js';
 import { Store, listProjects, RENDERS_DIR, SAMPLES_DIR, PROJECTS_DIR, RECORDINGS_DIR, IMPORTS_DIR, STATE_DIR, safeName } from './store.js';
+import { startMonitor, stopMonitor, monitorStatus, monitorSources } from './monitor.js';
 import { loadSample } from './samples.js';
 import { initLibrary, library, libraryStatus, rescanLibrary, searchLibrary } from './library.js';
 import { AUDIO_EXT, FL_DIR, resolveFlPath, wavFor } from './samples.js';
@@ -413,6 +414,19 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         const file = join(RECORDINGS_DIR, `${safeName(q('name') || 'Gravação')} ${stamp}.wav`);
         writeFileSync(file, buf);
         return json(res, 200, { path: file });
+      }
+      case 'GET /api/monitor':
+        return json(res, 200, monitorStatus());
+      case 'GET /api/monitor/sources':
+        return json(res, 200, await monitorSources());
+      case 'POST /api/monitor': {
+        // retorno nativo do amp: { on, buffer, source, pick, inGain, outGain, bpm, chain }
+        const b = await body(req);
+        if (!b.on) {
+          stopMonitor();
+          return json(res, 200, monitorStatus());
+        }
+        return json(res, 200, startMonitor(b));
       }
       case 'GET /api/latency':
         return json(res, 200, await pwQuantum());

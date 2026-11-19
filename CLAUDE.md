@@ -173,6 +173,12 @@ scripts/     ferramentas de diagnóstico e testes de UI (os _*.mts são temporá
   (`audio.calibrateLatency`: cliques + gravador com horário `ml-recorder-t`; resultado em
   `rec.latencyMs`, usado em `recLatencyFrames()` para alinhar os takes). Notas do teclado
   descontam a latência de saída (`midirec.now`).
+- **Retorno nativo do amp** (`src/server/monitor.ts`, `/api/monitor`): o servidor roda
+  `pw-record` → cadeia de efeitos (mesmo `core/effects`) → `pw-play`, com `node.group`
+  comum (mesmo relógio) e um bloco de reserva na saída. O bloco (amostras) é escolhido
+  no amp ("Bloco", padrão 128; 64 estala nesta máquina). O retorno do navegador fica mudo
+  quando o nativo está ligado (só serve para o visualizador). A entrada do PipeWire é
+  achada pelo nome igual ao da entrada escolhida no amp.
 - **Gravação aditiva no loop**: cada volta fecha um take (`markRec` corta no ponto exato da
   volta) e `placeLiveTake` (state.ts) já coloca o take na playlist como clipe com sample
   `live:…` (áudio enviado direto à engine, efeitos do amp em qualidade de retorno), numa
