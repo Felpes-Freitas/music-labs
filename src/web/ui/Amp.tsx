@@ -119,7 +119,25 @@ const load = (): AmpPrefs => {
   };
 };
 const amp = load();
-const userPresets = () => getPref<Record<string, AmpFx[]>>('amp.presets', {});
+/**
+ * Preset do usuário: a cadeia e também os ajustes de entrada/saída e da gravação
+ * inteligente (o que entra e o que não entra na gravação). Presets antigos eram só a cadeia.
+ */
+interface UserPreset {
+  chain: AmpFx[];
+  inGain?: number;
+  outGain?: number;
+  smart?: boolean;
+  thresholdDb?: number;
+  marginDb?: number;
+  holdSec?: number;
+}
+const userPresets = () => {
+  const raw = getPref<Record<string, AmpFx[] | UserPreset>>('amp.presets', {});
+  const out: Record<string, UserPreset> = {};
+  for (const [k, v] of Object.entries(raw)) out[k] = Array.isArray(v) ? { chain: v } : v;
+  return out;
+};
 
 const listeners = new Set<() => void>();
 /** Grava as preferências, manda a cadeia para o áudio e redesenha. */
@@ -234,7 +252,16 @@ export function AmpWindow() {
   const presetNames = [...Object.keys(PRESETS), ...Object.keys(userPresets())];
   const loadPreset = (name: string) => {
     const u = userPresets()[name];
-    amp.chain = u ? u.map((x) => ({ ...x, id: uid('a'), params: { ...x.params } })) : PRESETS[name]?.() ?? amp.chain;
+    amp.chain = u ? u.chain.map((x) => ({ ...x, id: uid('a'), params: { ...x.params } })) : PRESETS[name]?.() ?? amp.chain;
+    if (u) {
+      // os ajustes guardados com o preset (presets antigos não têm: ficam como estão)
+      if (u.inGain !== undefined) amp.inGain = u.inGain;
+      if (u.outGain !== undefined) amp.outGain = u.outGain;
+      if (u.smart !== undefined) amp.smart = u.smart;
+      if (u.thresholdDb !== undefined) amp.thresholdDb = u.thresholdDb;
+      if (u.marginDb !== undefined) amp.marginDb = u.marginDb;
+      if (u.holdSec !== undefined) amp.holdSec = u.holdSec;
+    }
     amp.preset = name;
     commit();
   };
@@ -242,7 +269,8 @@ export function AmpWindow() {
     const name = await askText({ title: 'Salvar preset do amp', label: 'Nome', value: PRESETS[amp.preset] ? '' : amp.preset, placeholder: 'Meu timbre', ok: 'Salvar' });
     if (!name) return;
     if (PRESETS[name]) return toast('Esse nome é de um preset de fábrica; escolha outro.');
-    setPref('amp.presets', { ...userPresets(), [name]: amp.chain });
+    const preset: UserPreset = { chain: amp.chain, inGain: amp.inGain, outGain: amp.outGain, smart: amp.smart, thresholdDb: amp.thresholdDb, marginDb: amp.marginDb, holdSec: amp.holdSec };
+    setPref('amp.presets', { ...userPresets(), [name]: preset });
     amp.preset = name;
     commit();
     toast(`Preset "${name}" salvo`);
@@ -334,7 +362,7 @@ export function AmpWindow() {
                 </optgroup>
               )}
             </select>
-            <button onClick={savePreset} data-hint="Salvar a cadeia atual como preset">
+            <button onClick={savePreset} data-hint="Salvar como preset: os efeitos, a entrada e a saída e os ajustes da gravação (só quando tocar, limiar, margem, pausa)">
               <Icon name="save" size={13} />
             </button>
             {userPresets()[amp.preset] && (
