@@ -256,14 +256,20 @@ Z…M/Q…P teclado musical, -/= oitava.
   e `accent()`** para seguir o tema (repintam com `onTheme`).
 - **Playlist** (`Playlist.tsx`): clipes de pattern/áudio (forma de onda)/automação (pontos
   editáveis); **área selecionada** (arrastar na régua ou clicar num clipe; faixa
-  destacada; play começa nela). Botão direito **num clipe** sempre apaga (mesmo dentro da
+  destacada; play começa nela). **Pincel** (`state.brush`, como no FL): clicar num clipe de
+  pattern escolhe o pattern; clicar num clipe de áudio (ou num áudio da lista) faz dele o
+  pincel (mesmo trecho do arquivo). **Clique esquerdo no vazio pinta**: arrastando, cada
+  espaço livre por onde o mouse passa ganha uma cópia encostada (para os dois lados,
+  pulando o que já existe); ao soltar vira um passo só de desfazer e a área selecionada
+  passa a ser do primeiro ao último clipe pintado. Arrastar um clipe existente move.
+  Botão direito **num clipe** sempre apaga (mesmo dentro da
   área); **num lugar vazio da área** abre `SelectionMenu.tsx` (Preencher com pattern
   repetido/cortado, Inserir instrumento — Music Labs, presets, biblioteca/FL, ferramentas —,
   apagar), agindo na track clicada. Amp/Afinador/Stitcher abertos por ali guardam
   `state.selTrack`: a gravação do amp e o "Enviar para a playlist" caem nessa track (ou na
   livre logo abaixo) no começo da área; `selTrack` some quando a área muda. Com área
   selecionada, arrastar apagando (botão direito ou borracha) só apaga dentro dela. Arrastar um clipe de áudio para o Stitcher/Afinador envia para lá.
-- **Lista ao lado da playlist** (`Picker.tsx`): Patterns + **Áudios** (lista do projeto),
+- **Lista ao lado da playlist** (`Picker.tsx`): Patterns + **Áudios** (lista do projeto; gravações do amp/microfone entram como "Guitarra N"/"Gravação N" via `addRecordingToPool`),
   largura ajustável arrastando a borda.
 - **Transporte** (`Toolbar.tsx`): PAT/SONG, play, stop, **REC geral** (grava notas ao vivo
   e automações de knobs — `midirec.ts`; com loop cada volta vira um pattern novo em
