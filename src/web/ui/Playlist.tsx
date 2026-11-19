@@ -4,6 +4,7 @@ import { SelectionMenu } from './SelectionMenu';
 import { audio } from '../audio';
 import { PPQ, patternLength, songLength, ticksPerBar, uid, isPatternClip, type Clip, type AutoTarget } from '../../core/model';
 import { set, ins, rem } from '../../core/ops';
+import { autoSnap } from '../../core/snap';
 import * as A from '../../core/actions';
 import { Win, IconBtn, useCanvas } from './widgets';
 import { askText } from './Dialog';
@@ -14,13 +15,20 @@ import { addStitchTakes } from './Stitch';
 /** Janela de ferramenta (Stitcher/Afinador) embaixo do ponteiro, se houver. */
 const toolAt = (x: number, y: number) => (document.elementFromPoint(x, y)?.closest('.win-stitch .tool, .win-tune .tool') as HTMLElement | null) ?? null;
 import { ui, accent } from '../theme';
+import { getPref, setPref } from '../prefs';
 
 const HEADW = 120;
+
+/** O último clique foi na playlist? (atalhos de teclado dela: Delete, Esc, Ctrl+A) */
+let plFocus = false;
+window.addEventListener('pointerdown', (e) => void (plFocus = !!(e.target as Element).closest?.('.win-playlist')), true);
+
 const RULER = 22;
 
 type Drag =
-  | { kind: 'move'; id: string; x0: number; y0: number; orig: Clip; dup: boolean }
-  | { kind: 'resize'; id: string; x0: number; orig: Clip }
+  /** Move o clipe clicado e, junto, os outros selecionados (group: originais de todos). */
+  | { kind: 'move'; id: string; x0: number; y0: number; orig: Clip; dup: boolean; group: Clip[]; only: boolean }
+  | { kind: 'resize'; id: string; x0: number; orig: Clip; side: 'l' | 'r' }
   | { kind: 'point'; id: string; idx: number; orig: Clip }
   | { kind: 'erase' }
   | { kind: 'seek' }
@@ -32,13 +40,51 @@ export function Playlist() {
   const s = useApp();
   const p = s.project;
   const view = useRef({ scrollX: 0, scrollY: 0, zx: 0.12, rowH: 34 });
-  const [snapBeats, setSnapBeats] = useState(true);
+  const [snapMode, setSnapMode] = useState<'auto' | 'beat' | 'bar'>(() => getPref('pl.snap', 'auto'));
   const [tool, setTool] = useState<'draw' | 'erase' | 'slice' | 'mute'>('draw');
   const [menu, setMenu] = useState<{ x: number; y: number; track: number } | null>(null);
   const drag = useRef<Drag | null>(null);
+  /** Clipes selecionados (Ctrl/Shift+clique soma); arrastar um deles move todos. */
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const pickedRef = useRef(picked);
+  pickedRef.current = picked;
   const playTick = useRef(-1);
   const bar = ticksPerBar(p);
-  const snap = snapBeats ? PPQ : bar;
+  /**
+   * Snap da grade. "auto" (padrão) segue o zoom, como no FL: quanto mais perto, mais fino
+   * (compasso → tempo → 1/2 → 1/4 → 1/8 → 1/16 de tempo), sempre com células de ~10 px.
+   */
+  const snapNow = () => {
+    if (snapMode === 'beat') return PPQ;
+    if (snapMode === 'bar') return bar;
+    return autoSnap(view.current.zx, bar);
+  };
+
+  // Delete apaga os clipes selecionados; Esc tira a seleção; Ctrl+A seleciona tudo
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // a playlist fica no fundo: vale o último clique ter sido nela
+      if (!plFocus || !state.windows.playlist.open || (e.target as HTMLElement).closest('input, select, textarea')) return;
+      const sel = pickedRef.current;
+      if ((e.key === 'Delete' || e.key === 'Backspace') && sel.size) {
+        e.preventDefault();
+        edit(state.project.clips.filter((c) => sel.has(c.id)).map((c) => rem(['clips', c.id])));
+        setPicked(new Set());
+      } else if (e.key === 'Escape' && sel.size) setPicked(new Set());
+      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        setPicked(new Set(state.project.clips.map((c) => c.id)));
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  // clipes apagados (botão direito, desfazer...) saem da seleção
+  useEffect(() => {
+    if (!picked.size) return;
+    const ids = new Set(p.clips.map((c) => c.id));
+    if ([...picked].some((id) => !ids.has(id))) setPicked(new Set([...picked].filter((id) => ids.has(id))));
+  }, [s.version]);
 
   useEffect(() => {
     repaintPeaks = () => paint();
@@ -59,13 +105,14 @@ export function Playlist() {
         ctx.fillRect(HEADW, y, w - HEADW, v.rowH);
       }
       // grade
-      const t0 = Math.floor(v.scrollX / PPQ) * PPQ;
-      for (let t = t0; tx(t) < w; t += PPQ) {
+      const g = Math.min(PPQ, snapNow());
+      const t0 = Math.floor(v.scrollX / g) * g;
+      for (let t = t0; tx(t) < w; t += g) {
         const x = Math.round(tx(t)) + 0.5;
         if (x < HEADW) continue;
         const isBar = t % bar === 0;
-        if (!isBar && v.zx * PPQ < 6) continue;
-        ctx.strokeStyle = isBar ? ui('#3d474d') : ui('#2a3135');
+        if (!isBar && v.zx * g < 6) continue;
+        ctx.strokeStyle = isBar ? ui('#3d474d') : t % PPQ === 0 ? ui('#2c3438') : ui('#252c30');
         ctx.beginPath();
         ctx.moveTo(x, RULER);
         ctx.lineTo(x, h);
@@ -170,6 +217,16 @@ export function Playlist() {
         const label = c.kind === 'audio' ? `♫ ${(p.audios ?? []).find((au) => au.path === c.sample)?.name ?? (c.sample ?? '').split(/[\\/]/).pop()}` : c.kind === 'auto' ? `⤴ ${c.target?.label ?? 'automação'}` : pat?.name ?? '?';
         ctx.fillText(label, x + 3, y + 11);
         ctx.restore();
+        if (picked.has(c.id)) {
+          // selecionado: contorno claro e um leve brilho
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = 'rgba(255,255,255,0.12)';
+          ctx.fillRect(x, y + 1, cw - 1, v.rowH - 2);
+          ctx.strokeStyle = ui('#fff');
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(x + 0.75, y + 1.75, cw - 2.5, v.rowH - 3.5);
+          ctx.lineWidth = 1;
+        }
         ctx.globalAlpha = 1;
       }
       // cabeçalho das tracks
@@ -216,7 +273,7 @@ export function Playlist() {
       ctx.fillStyle = ui('#889');
       ctx.fillText('Tracks', 8, 15);
     },
-    [s.version, s.sel],
+    [s.version, s.sel, picked, snapMode],
     (ctx, w, h) => {
       drawRecording(ctx, w, h);
       if (playTick.current < 0) return;
@@ -316,7 +373,10 @@ export function Playlist() {
       const cx = HEADW + (c.pos - v.scrollX) * v.zx;
       const cy = RULER + c.track * v.rowH - v.scrollY;
       const cw = c.len * v.zx;
-      if (x >= cx && x <= cx + cw && y >= cy && y < cy + v.rowH) return { c, edge: x > cx + cw - 6 };
+      if (x >= cx && x <= cx + cw && y >= cy && y < cy + v.rowH) {
+        const edge = cw > 14 && x > cx + cw - 6 ? 'r' : cw > 14 && x < cx + 6 && c.kind !== 'auto' ? 'l' : null;
+        return { c, edge } as { c: Clip; edge: 'l' | 'r' | null };
+      }
     }
     return null;
   };
@@ -328,7 +388,7 @@ export function Playlist() {
     if (y < RULER) {
       if (x < HEADW) return;
       // clique na régua posiciona; arrastar seleciona uma área
-      drag.current = { kind: 'sel', t0: Math.max(0, Math.round(tickAt(x) / snap) * snap), x0: x, moved: false };
+      drag.current = { kind: 'sel', t0: Math.max(0, Math.round(tickAt(x) / snapNow()) * snapNow()), x0: x, moved: false };
       return;
     }
     if (x < HEADW) {
@@ -387,7 +447,7 @@ export function Playlist() {
     }
     if (tool === 'slice') {
       if (!h) return;
-      const at = Math.round(tickAt(x) / snap) * snap;
+      const at = Math.round(tickAt(x) / snapNow()) * snapNow();
       const c = h.c;
       if (at <= c.pos || at >= c.pos + c.len) return;
       const cut = at - c.pos;
@@ -409,6 +469,11 @@ export function Playlist() {
       return;
     }
     if (h) {
+      // Alt+clique: a faixa de tempo do clipe vira a área selecionada (loop, preencher...)
+      if (e.altKey) {
+        setSelection({ start: h.c.pos, end: h.c.pos + h.c.len });
+        return;
+      }
       // o clipe clicado vira o pincel: o próximo clique no vazio coloca ele
       if (isPatternClip(h.c)) selectPattern(h.c.patternId);
       else if (h.c.kind === 'audio' && h.c.sample) {
@@ -423,16 +488,36 @@ export function Playlist() {
         openWindow('rack');
         return;
       }
-      if (h.edge) drag.current = { kind: 'resize', id: h.c.id, x0: x, orig: { ...h.c } };
-      else drag.current = { kind: 'move', id: h.c.id, x0: x, y0: y, orig: { ...h.c }, dup: e.shiftKey };
-      if (e.shiftKey) {
-        // Shift+arrastar duplica o clip
-        const copy = { ...h.c, id: uid('k') };
-        edit([ins(['clips'], copy)]);
-        drag.current = { kind: 'move', id: copy.id, x0: x, y0: y, orig: copy, dup: true };
+      // seleção: Ctrl alterna, Shift soma, clique simples seleciona só ele (ou mantém o grupo para arrastar)
+      const cur = pickedRef.current;
+      let next = cur;
+      if (e.ctrlKey && !e.shiftKey) {
+        next = new Set(cur);
+        if (next.has(h.c.id)) next.delete(h.c.id);
+        else next.add(h.c.id);
+      } else if (e.shiftKey && !e.ctrlKey) next = new Set([...cur, h.c.id]);
+      else if (!cur.has(h.c.id)) next = new Set([h.c.id]);
+      if (next !== cur) setPicked(next);
+      if (!next.has(h.c.id)) return; // Ctrl+clique tirou da seleção
+      if (h.edge) {
+        drag.current = { kind: 'resize', id: h.c.id, x0: x, orig: { ...h.c }, side: h.edge };
+        return;
       }
+      let group = state.project.clips.filter((c) => next.has(c.id)).map((c) => ({ ...c }));
+      if (e.ctrlKey && e.shiftKey) {
+        // Ctrl+Shift+arrastar duplica (os selecionados)
+        const copies = group.map((c) => ({ ...c, id: uid('k') }));
+        edit(copies.map((c) => ins(['clips'], c)));
+        setPicked(new Set(copies.map((c) => c.id)));
+        group = copies;
+        const me = copies[state.project.clips.filter((c) => next.has(c.id)).findIndex((c) => c.id === h.c.id)] ?? copies[0];
+        drag.current = { kind: 'move', id: me.id, x0: x, y0: y, orig: me, dup: true, group, only: false };
+        return;
+      }
+      drag.current = { kind: 'move', id: h.c.id, x0: x, y0: y, orig: { ...h.c }, dup: false, group, only: !e.ctrlKey && !e.shiftKey && cur.has(h.c.id) && cur.size > 1 };
       return;
     }
+    if (pickedRef.current.size) setPicked(new Set());
     // espaço vazio: pinta com o pincel (o pattern selecionado ou o último áudio escolhido)
     const track = trackAt(y);
     if (track < 0 || track >= p.tracks.length) return;
@@ -463,7 +548,7 @@ export function Playlist() {
     };
     let f = d.fr.get(track);
     if (!f) {
-      const pos = Math.max(0, Math.floor(tick / snap) * snap);
+      const pos = Math.max(0, Math.floor(tick / snapNow()) * snapNow());
       if (first || isFree(track, pos, d.len)) put(pos);
       f = { lo: pos, hi: pos + d.len };
       d.fr.set(track, f);
@@ -491,7 +576,7 @@ export function Playlist() {
     const d = drag.current;
     if (!d) {
       const h = y > RULER && x > HEADW ? hit(x, y) : null;
-      (e.currentTarget as HTMLElement).style.cursor = h ? (h.edge ? 'ew-resize' : 'move') : y < RULER ? 'text' : 'crosshair';
+      (e.currentTarget as HTMLElement).style.cursor = h ? (e.altKey ? 'pointer' : h.edge ? 'ew-resize' : 'move') : y < RULER ? 'text' : 'crosshair';
       return;
     }
     const v = view.current;
@@ -512,16 +597,37 @@ export function Playlist() {
     }
     if (d.kind === 'move') {
       // arrastando um áudio por cima do Stitcher/Afinador: destaca a janela (soltar = enviar para lá)
-      const tool = d.orig.kind === 'audio' && !d.dup ? toolAt(e.clientX, e.clientY) : null;
+      const tool = d.orig.kind === 'audio' && !d.dup && d.group.length === 1 ? toolAt(e.clientX, e.clientY) : null;
       document.querySelectorAll('.tool.dropping').forEach((el) => el !== tool && el.classList.remove('dropping'));
       tool?.classList.add('dropping');
-      const dt = Math.round((x - d.x0) / v.zx / snap) * snap;
-      const dtr = Math.round((y - d.y0) / v.rowH);
-      const c = { ...d.orig, pos: Math.max(0, d.orig.pos + dt), track: Math.max(0, Math.min(p.tracks.length - 1, d.orig.track + dtr)) };
-      previewEdit(clipOps(c));
+      const sn = snapNow();
+      // o clipe clicado encaixa na grade; os outros acompanham sem sair da tela
+      let dt = Math.round((d.orig.pos + (x - d.x0) / v.zx) / sn) * sn - d.orig.pos;
+      let dtr = Math.round((y - d.y0) / v.rowH);
+      dt = Math.max(dt, -Math.min(...d.group.map((c) => c.pos)));
+      dtr = Math.max(-Math.min(...d.group.map((c) => c.track)), Math.min(p.tracks.length - 1 - Math.max(...d.group.map((c) => c.track)), dtr));
+      previewEdit(d.group.flatMap((c) => clipOps({ ...c, pos: c.pos + dt, track: c.track + dtr })));
     } else if (d.kind === 'resize') {
-      const end = Math.round((d.orig.pos + d.orig.len + (x - d.x0) / v.zx) / snap) * snap;
-      previewEdit(clipOps({ ...d.orig, len: Math.max(snap, end - d.orig.pos) }));
+      const sn = snapNow();
+      const o = d.orig;
+      if (d.side === 'r') {
+        const end = Math.round((o.pos + o.len + (x - d.x0) / v.zx) / sn) * sn;
+        previewEdit(clipOps({ ...o, len: Math.max(sn, end - o.pos) }));
+      } else {
+        // pela esquerda: o começo anda e o conteúdo fica no lugar (áudio: começa mais adiante no arquivo)
+        const secPerTick = 60 / (p.bpm * PPQ);
+        let pos = Math.round((o.pos + (x - d.x0) / v.zx) / sn) * sn;
+        pos = Math.min(pos, o.pos + o.len - Math.min(sn, o.len));
+        pos = Math.max(0, pos);
+        if (o.kind === 'audio') pos = Math.max(pos, Math.ceil(o.pos - (o.startSec ?? 0) / secPerTick));
+        const dt = pos - o.pos;
+        if (o.kind === 'audio') previewEdit(clipOps({ ...o, pos, len: o.len - dt, startSec: Math.max(0, (o.startSec ?? 0) + dt * secPerTick) }));
+        else {
+          const pat = p.patterns.find((q) => q.id === o.patternId);
+          const plen = pat ? patternLength(p, pat) : o.len;
+          previewEdit(clipOps({ ...o, pos, len: o.len - dt, offset: ((((o.offset + dt) % plen) + plen) % plen) }));
+        }
+      }
     } else if (d.kind === 'erase') {
       // com uma área selecionada, arrastar apagando só pega o que está dentro dela
       const sel = state.sel;
@@ -539,7 +645,7 @@ export function Playlist() {
     else if (d.kind === 'sel') {
       if (!d.moved && Math.abs(x - d.x0) < 4) return;
       d.moved = true;
-      const t1 = Math.max(0, Math.round(tickAt(x) / snap) * snap);
+      const t1 = Math.max(0, Math.round(tickAt(x) / snapNow()) * snapNow());
       setSelection({ start: Math.min(d.t0, t1), end: Math.max(d.t0, t1) });
     }
   };
@@ -564,7 +670,6 @@ export function Playlist() {
       if (!d.placed.length) return;
       previewEdit(d.placed.map((c) => rem(['clips', c.id])));
       edit(d.placed.map((c) => ins(['clips'], c)));
-      setSelection({ start: Math.min(...d.placed.map((c) => c.pos)), end: Math.max(...d.placed.map((c) => c.pos + c.len)) });
       return;
     }
     if (d.kind === 'point') {
@@ -572,15 +677,18 @@ export function Playlist() {
       if (c) edit([set(['clips', c.id, 'points'], c.points ?? [])]);
       return;
     }
-    if (d.kind === 'move' || d.kind === 'resize') {
-      const c = state.project.clips.find((x) => x.id === d.id);
-      if (!c) return;
-      // clique num clipe (sem arrastar): seleciona a faixa de tempo dele
-      if (d.kind === 'move' && !d.dup && c.pos === d.orig.pos && c.track === d.orig.track) {
-        setSelection({ start: c.pos, end: c.pos + c.len });
+    if (d.kind === 'move') {
+      const cur = d.group.map((g) => state.project.clips.find((x) => x.id === g.id)).filter((c): c is Clip => !!c);
+      const same = cur.every((c, i) => c.pos === d.group[i].pos && c.track === d.group[i].track);
+      if (same && !d.dup) {
+        // clique sem arrastar num clipe de um grupo: fica só ele selecionado
+        if (d.only) setPicked(new Set([d.id]));
         return;
       }
-      edit(clipOps(c));
+      edit(cur.flatMap((c) => clipOps(c)));
+    } else if (d.kind === 'resize') {
+      const c = state.project.clips.find((x) => x.id === d.id);
+      if (c) edit(clipOps(c));
     } else if (d.kind === 'sel' && !d.moved && e) {
       // clique simples na régua: tira a seleção e posiciona a agulha
       setSelection(null);
@@ -622,7 +730,11 @@ export function Playlist() {
             <IconBtn icon="slice" on={tool === 'slice'} hint="Fatiar clip no ponto clicado" onClick={() => setTool('slice')} />
           </span>
           <span class="tgroup">
-            <IconBtn icon="magnet" label={snapBeats ? 'tempo' : 'compasso'} hint="Snap da playlist: tempo ou compasso" onClick={() => setSnapBeats(!snapBeats)} />
+            <IconBtn icon="magnet" label={{ auto: 'auto', beat: 'tempo', bar: 'compasso' }[snapMode]} hint="Snap da playlist: auto (segue o zoom, como no FL), tempo ou compasso" onClick={() => {
+              const n = ({ auto: 'beat', beat: 'bar', bar: 'auto' } as const)[snapMode];
+              setSnapMode(n);
+              setPref('pl.snap', n);
+            }} />
             <IconBtn icon="follow" on={s.followPlay} hint="Seguir a reprodução" onClick={() => ((state.followPlay = !state.followPlay), paint())} />
             <IconBtn icon="plus" label="track" hint="Adicionar track" onClick={() => edit([ins(['tracks'], { id: uid('t'), name: `Track ${p.tracks.length + 1}`, color: '#888', mute: false })])} />
           </span>
