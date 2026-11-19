@@ -255,14 +255,20 @@ Z…M/Q…P teclado musical, -/= oitava.
   (estéreo / só entrada 1 / 2); atalhos. Cores via variáveis CSS; **canvas usam `ui('#hex')`
   e `accent()`** para seguir o tema (repintam com `onTheme`).
 - **Playlist** (`Playlist.tsx`): clipes de pattern/áudio (forma de onda)/automação (pontos
-  editáveis); **área selecionada** (arrastar na régua ou clicar num clipe; faixa
-  destacada; play começa nela). **Pincel** (`state.brush`, como no FL): clicar num clipe de
-  pattern escolhe o pattern; clicar num clipe de áudio (ou num áudio da lista) faz dele o
-  pincel (mesmo trecho do arquivo). **Clique esquerdo no vazio pinta**: arrastando, cada
-  espaço livre por onde o mouse passa ganha uma cópia encostada (para os dois lados,
-  pulando o que já existe); ao soltar vira um passo só de desfazer e a área selecionada
-  passa a ser do primeiro ao último clipe pintado. Arrastar um clipe existente move.
-  Botão direito **num clipe** sempre apaga (mesmo dentro da
+  editáveis). **Área selecionada** (faixa destacada; play e loop usam ela): arrastar na
+  régua ou **Alt+clique num clipe** (só isso; pintar ou clicar não seleciona área; com o
+  "Alt+arrastar janelas" ligado, a playlist fica de fora). **Clipes selecionados**
+  (`picked`, contorno claro): clique seleciona um, Ctrl alterna, Shift soma, Ctrl+A tudo;
+  arrastar um move o grupo; Ctrl+Shift+arrastar duplica; Delete apaga; Esc limpa (atalhos
+  valem se o último clique foi na playlist — ela fica no fundo, nunca é a janela da frente).
+  Bordas: direita e **esquerda** redimensionam (esquerda anda o começo e mantém o conteúdo:
+  `startSec` no áudio, `offset` no pattern). **Snap** (`core/snap.ts`, ímã "auto/tempo/
+  compasso", pref `pl.snap`): auto segue o zoom como no FL (compasso … 1/16 de tempo,
+  células ≥ 10 px) e a grade desenhada acompanha. **Pincel** (`state.brush`, como no FL):
+  clicar num clipe de pattern escolhe o pattern; clicar num clipe de áudio (ou num áudio
+  da lista) faz dele o pincel (mesmo trecho do arquivo). **Clique esquerdo no vazio
+  pinta**: arrastando, cada espaço livre por onde o mouse passa ganha uma cópia encostada
+  (para os dois lados, pulando o que já existe); vira um passo só de desfazer. Botão direito **num clipe** sempre apaga (mesmo dentro da
   área); **num lugar vazio da área** abre `SelectionMenu.tsx` (Preencher com pattern
   repetido/cortado, Inserir instrumento — Music Labs, presets, biblioteca/FL, ferramentas —,
   apagar), agindo na track clicada. Amp/Afinador/Stitcher abertos por ali guardam

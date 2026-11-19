@@ -190,6 +190,8 @@ export function Win(p: { id: WindowId; title: ComponentChildren; icon?: string; 
       onPointerDownCapture={(e) => {
         // Alt + arrastar: move a janela de qualquer ponto (Alt + botão direito redimensiona)
         if (!looks.altDrag || !e.altKey || (e.button !== 0 && e.button !== 2)) return;
+        // na playlist, Alt+clique seleciona a área de um clipe
+        if ((e.target as Element).closest?.('.pl-canvas')) return;
         e.stopPropagation();
         startDrag(e as any, e.button === 2 ? 'size' : 'move', true);
       }}
