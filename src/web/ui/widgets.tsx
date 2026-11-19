@@ -405,3 +405,51 @@ function MenuLevel(p: { x: number; y: number; items: MenuItem[]; onClose: () => 
     </>
   );
 }
+
+/**
+ * Painel flutuante preso a um botão: abre embaixo ou em cima dele (onde houver mais
+ * espaço na tela), nunca sai da tela e rola por dentro quando não cabe. Fica por cima
+ * de qualquer janela (não é cortado pela janela onde está o botão).
+ */
+export function Popover(p: { anchor: HTMLElement; onClose: () => void; children: ComponentChildren; class?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [st, setSt] = useState<Record<string, string>>({ visibility: 'hidden', left: '0px', top: '0px' });
+  useLayoutEffect(() => {
+    const place = () => {
+      const el = ref.current;
+      if (!el) return;
+      const a = p.anchor.getBoundingClientRect();
+      const m = 8;
+      const below = window.innerHeight - a.bottom - m, above = a.top - m;
+      el.style.maxHeight = 'none';
+      const natural = el.scrollHeight;
+      const down = below >= natural || below >= above;
+      const maxH = Math.max(120, down ? below - 4 : above - 4);
+      const h = Math.min(natural, maxH);
+      const w = Math.min(el.offsetWidth, window.innerWidth - 2 * m);
+      const left = Math.max(m, Math.min(a.left, window.innerWidth - w - m));
+      setSt({ left: `${left}px`, top: `${down ? a.bottom + 4 : a.top - 4 - h}px`, maxHeight: `${maxH}px`, maxWidth: `${window.innerWidth - 2 * m}px`, visibility: 'visible' });
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [p.anchor]);
+  useEffect(() => {
+    const close = (e: PointerEvent) => {
+      if (ref.current?.contains(e.target as Node) || p.anchor.contains(e.target as Node)) return;
+      p.onClose();
+    };
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && p.onClose();
+    window.addEventListener('pointerdown', close, true);
+    window.addEventListener('keydown', key);
+    return () => {
+      window.removeEventListener('pointerdown', close, true);
+      window.removeEventListener('keydown', key);
+    };
+  }, []);
+  return (
+    <div ref={ref} class={`popover ${p.class ?? ''}`} style={st}>
+      {p.children}
+    </div>
+  );
+}

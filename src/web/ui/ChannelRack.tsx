@@ -5,7 +5,7 @@ import * as A from '../../core/actions';
 import { PRESETS, INSTRUMENTS } from '../../core/registry';
 import { STEP, patternLength, uid, type Channel, type Note, type InstrumentType } from '../../core/model';
 import { set } from '../../core/ops';
-import { Knob, Win, dbFmt, panFmt, ContextMenu } from './widgets';
+import { Knob, Win, dbFmt, panFmt, ContextMenu, Popover } from './widgets';
 import { Icon } from './icons';
 import { askConfirm, askText } from './Dialog';
 
@@ -24,7 +24,7 @@ export function ChannelRack() {
   const pat = p.patterns.find((x) => x.id === s.patternId);
   const steps = pat ? Math.max(16, Math.round(patternLength(p, pat) / STEP)) : 16;
   const [menu, setMenu] = useState<{ x: number; y: number; ch?: Channel } | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState<HTMLElement | null>(null);
   const lastStep = useRef(-1);
   const flashes = useRef(new Map<string, HTMLElement>());
 
@@ -91,7 +91,7 @@ export function ChannelRack() {
       selectChannel(r.id);
       toast(`Canal ${r.name} → insert ${r.insert}`);
     }
-    setAdding(false);
+    setAdding(null);
   };
 
   return (
@@ -190,12 +190,12 @@ export function ChannelRack() {
           })}
         </div>
         <div class="rack-foot">
-          <button class="ibtn" data-hint="Adicionar canal (instrumento, preset ou sample)" onClick={() => setAdding(!adding)}>
+          <button class="ibtn" data-hint="Adicionar canal (instrumento, preset ou sample)" onClick={(e) => setAdding(adding ? null : (e.currentTarget as HTMLElement))}>
             <Icon name="plus" size={12} /> Canal
           </button>
           <span class="hint">Arraste samples do navegador para cá · duplo clique no nome abre o canal</span>
           {adding && (
-            <div class="add-menu">
+            <Popover anchor={adding} onClose={() => setAdding(null)} class="add-menu">
               <div class="add-col">
                 <b>Presets</b>
                 {Object.entries(PRESETS).map(([k, v]) => (
@@ -213,7 +213,7 @@ export function ChannelRack() {
                 ))}
                 <p class="hint">Samples: arraste do navegador para o rack.</p>
               </div>
-            </div>
+            </Popover>
           )}
         </div>
       </div>
