@@ -1,0 +1,74 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { Engine, BLOCK } from '../src/core/engine.ts';
+import { emptyProject, PPQ } from '../src/core/model.ts';
+import { applyOps } from '../src/core/ops.ts';
+import * as A from '../src/core/actions.ts';
+
+const SR = 48000;
+function run(eng: Engine, seconds: number) {
+  const n = Math.round(SR * seconds);
+  const L = new Float32Array(n);
+  const bl = new Float32Array(BLOCK), br = new Float32Array(BLOCK);
+  for (let f = 0; f < n; f += BLOCK) {
+    eng.process(bl, br, BLOCK);
+    L.set(bl.subarray(0, Math.min(BLOCK, n - f)), f);
+  }
+  return L;
+}
+const rms = (x: Float32Array, a: number, b: number) => {
+  let s = 0;
+  for (let i = Math.floor(a); i < Math.floor(b); i++) s += x[i] * x[i];
+  return Math.sqrt(s / Math.max(1, b - a));
+};
+
+test('loop fica na área selecionada', () => {
+  const p = emptyProject();
+  p.bpm = 120; // 1 tempo = 0,5 s; compasso = 2 s
+  const eng = new Engine(SR);
+  eng.setProject(p);
+  eng.setTransport({ region: [PPQ * 4, PPQ * 6], loopOn: true }); // compasso 2, dois tempos
+  eng.play('song', null, PPQ * 4);
+  run(eng, 2.2); // 2,2 s = 4,4 tempos: deu duas voltas na área de 2 tempos
+  assert.ok(eng.loops >= 2, `voltas: ${eng.loops}`);
+  assert.ok(eng.tick >= PPQ * 4 && eng.tick < PPQ * 6, `agulha dentro da área: ${eng.tick}`);
+});
+
+test('sem loop, a seleção só define de onde começa (a música segue)', () => {
+  const p = emptyProject();
+  p.bpm = 120;
+  applyOps(p, A.placePattern(p, { pattern: p.patterns[0].id, track: 1, bar: 1, bars: 8 }).ops);
+  const eng = new Engine(SR);
+  eng.setProject(p);
+  eng.setTransport({ region: [PPQ * 4, PPQ * 6], loopOn: false });
+  eng.play('song', null, PPQ * 4);
+  run(eng, 2);
+  assert.ok(eng.tick > PPQ * 6, `passou do fim da área: ${eng.tick}`);
+});
+
+test('contagem: 3 tempos só de metrônomo e depois a música anda', () => {
+  const p = emptyProject();
+  p.bpm = 120;
+  const eng = new Engine(SR);
+  eng.setProject(p);
+  eng.play('song', null, 0, 3);
+  const x = run(eng, 1.4); // dentro da contagem (1,5 s)
+  assert.equal(eng.tick, 0, 'a música não andou durante a contagem');
+  assert.equal(eng.status().countIn, 1, 'falta 1 tempo');
+  // três cliques: no começo de cada tempo (0; 0,5; 1,0 s)
+  for (const t of [0.01, 0.51, 1.01]) assert.ok(rms(x, t * SR, (t + 0.02) * SR) > 0.05, `clique em ${t}s`);
+  assert.ok(rms(x, 0.2 * SR, 0.45 * SR) < 1e-4, 'silêncio entre os cliques');
+  run(eng, 0.5);
+  assert.ok(eng.tick > 0 && eng.status().countIn === 0, 'depois da contagem a música começa');
+});
+
+test('metrônomo clica a cada tempo durante a música', () => {
+  const p = emptyProject();
+  p.bpm = 120;
+  const eng = new Engine(SR);
+  eng.setProject(p);
+  eng.setTransport({ metronome: true, loopOn: true });
+  eng.play('song', null, 0);
+  const x = run(eng, 1.2);
+  for (const t of [0.01, 0.51, 1.01]) assert.ok(rms(x, t * SR, (t + 0.02) * SR) > 0.05, `clique em ${t}s`);
+});

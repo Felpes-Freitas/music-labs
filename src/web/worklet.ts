@@ -39,7 +39,10 @@ class MusicLabsProcessor extends AudioWorkletProcessor {
           eng.setSampleSet(m.path, m.set);
           break;
         case 'play':
-          eng.play(m.mode, m.patternId, m.tick);
+          eng.play(m.mode, m.patternId, m.tick, m.countIn ?? 0);
+          break;
+        case 'transport':
+          eng.setTransport(m);
           break;
         case 'stop':
           eng.stop(m.rewind !== false);

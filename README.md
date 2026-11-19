@@ -112,6 +112,17 @@ git push --follow-tags
 - **Automação**: botão direito em qualquer knob → "Criar clipe de automação". No clip,
   clique para criar pontos, arraste para mover e use o botão direito para apagar.
   Funciona com volume/pan de canais e do mixer e com parâmetros de instrumentos e efeitos.
+- **Área selecionada**: arraste na régua (ou clique num clipe) para selecionar um trecho;
+  ele fica destacado de cima a baixo e o play começa nele. Botão direito dentro da área:
+  **Preencher com** (repete um pattern, cortando o último), **Inserir instrumento**
+  (Music Labs, presets, instrumentos da biblioteca/FL, Amp, Afinador, Stitcher: cria um
+  pattern novo só com ele ocupando a área) e apagar clipes da área.
+- **Transporte**: **loop** (na área selecionada, ou na música inteira), **metrônomo** e
+  **contagem** (3, 2, 1 antes de gravar).
+- **REC geral**: grava **notas** (teclado do computador, teclado MIDI, piano na tela) e
+  **automações** (knobs mexidos durante a gravação). Com o loop, cada volta vira um pattern
+  novo numa outra track. Voz e instrumentos de áudio ficam com o Amp, o Afinador e o
+  Stitcher.
 - **Mixer**: 16 inserts + master, fader, pan, mute/solo, medidores, roteamento entre
   inserts (buses), até 10 efeitos por insert com dry/wet.
 - **Instrumentos nativos**: Prisma (sintetizador aditivo espectral: filtro harmônico

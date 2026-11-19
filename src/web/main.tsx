@@ -1,7 +1,7 @@
 import { render } from 'preact';
-import { useEffect } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import './style.css';
-import { useApp, emit, state, togglePlay, setMode, undo, redo, openWindow, cycleWindows, fitWindows, api, toast } from './state';
+import { useApp, emit, state, togglePlay, setMode, undo, redo, openWindow, cycleWindows, fitWindows, api, toast, onLive } from './state';
 import { audio } from './audio';
 import { TitleBar, Toolbar } from './ui/Toolbar';
 import { ChannelRack } from './ui/ChannelRack';
@@ -160,6 +160,18 @@ function LogoMark(p: { progress: number | null }) {
   );
 }
 
+/** "3, 2, 1" grande enquanto a contagem antes da gravação roda. */
+function CountInOverlay() {
+  const [n, setN] = useState(0);
+  useEffect(() => onLive((st) => setN(st.countIn)), []);
+  if (!n) return null;
+  return (
+    <div class="countin" key={n}>
+      {n}
+    </div>
+  );
+}
+
 function LoadingScreen() {
   const s = useApp();
   if (!s.loading && !s.needsClick) return null;
@@ -239,6 +251,7 @@ function App() {
         </div>
       </div>
       <LoadingScreen />
+      <CountInOverlay />
       <SettingsHost />
       <DialogHost />
       <div class="toasts">

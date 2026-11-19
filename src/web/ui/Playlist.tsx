@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { useApp, state, edit, previewEdit, onLive, selectPattern, openWindow, setMode, act, setHint } from '../state';
+import { useApp, state, edit, previewEdit, onLive, selectPattern, openWindow, setMode, act, setHint, setSelection } from '../state';
+import { SelectionMenu } from './SelectionMenu';
 import { audio } from '../audio';
 import { PPQ, patternLength, songLength, ticksPerBar, uid, isPatternClip, type Clip, type AutoTarget } from '../../core/model';
 import { set, ins, rem } from '../../core/ops';
@@ -23,7 +24,7 @@ type Drag =
   | { kind: 'point'; id: string; idx: number; orig: Clip }
   | { kind: 'erase' }
   | { kind: 'seek' }
-  | { kind: 'loop'; t0: number };
+  | { kind: 'sel'; t0: number; x0: number; moved: boolean };
 
 export function Playlist() {
   const s = useApp();
@@ -31,6 +32,7 @@ export function Playlist() {
   const view = useRef({ scrollX: 0, scrollY: 0, zx: 0.12, rowH: 34 });
   const [snapBeats, setSnapBeats] = useState(true);
   const [tool, setTool] = useState<'draw' | 'erase' | 'slice' | 'mute'>('draw');
+  const [menu, setMenu] = useState<{ x: number; y: number; track: number } | null>(null);
   const drag = useRef<Drag | null>(null);
   const playTick = useRef(-1);
   const bar = ticksPerBar(p);
@@ -66,6 +68,17 @@ export function Playlist() {
         ctx.moveTo(x, RULER);
         ctx.lineTo(x, h);
         ctx.stroke();
+      }
+      // área selecionada: a faixa inteira, de cima a baixo
+      if (s.sel) {
+        const x0 = tx(s.sel.start), x1 = tx(s.sel.end);
+        ctx.fillStyle = accent();
+        ctx.globalAlpha = 0.1;
+        ctx.fillRect(Math.max(HEADW, x0), RULER, x1 - Math.max(HEADW, x0), h);
+        ctx.globalAlpha = 0.6;
+        if (x0 >= HEADW) ctx.fillRect(x0, RULER, 1, h);
+        ctx.fillRect(x1, RULER, 1, h);
+        ctx.globalAlpha = 1;
       }
       // loop
       if (p.loop) {
@@ -188,12 +201,20 @@ export function Playlist() {
         ctx.fillStyle = '#7fd6ff';
         ctx.fillRect(Math.max(HEADW, tx(p.loop.start)), RULER - 4, (p.loop.end - p.loop.start) * v.zx, 4);
       }
+      if (s.sel) {
+        const x0 = Math.max(HEADW, tx(s.sel.start)), x1 = tx(s.sel.end);
+        ctx.fillStyle = accent();
+        ctx.globalAlpha = 0.35;
+        ctx.fillRect(x0, 0, x1 - x0, RULER);
+        ctx.globalAlpha = 1;
+        ctx.fillRect(x0, RULER - 4, x1 - x0, 4);
+      }
       ctx.fillStyle = ui('#2d3539');
       ctx.fillRect(0, 0, HEADW, RULER);
       ctx.fillStyle = ui('#889');
       ctx.fillText('Tracks', 8, 15);
     },
-    [s.version],
+    [s.version, s.sel],
     (ctx, w, h) => {
       drawRecording(ctx, w, h);
       if (playTick.current < 0) return;
@@ -303,14 +324,18 @@ export function Playlist() {
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     if (y < RULER) {
       if (x < HEADW) return;
-      if (e.shiftKey || e.button === 2) {
-        const t0 = Math.round(tickAt(x) / bar) * bar;
-        drag.current = { kind: 'loop', t0 };
+      // clique na régua posiciona; arrastar seleciona uma área
+      drag.current = { kind: 'sel', t0: Math.max(0, Math.round(tickAt(x) / snap) * snap), x0: x, moved: false };
+      return;
+    }
+    // botão direito dentro da área selecionada: menu (preencher, inserir instrumento)
+    if (e.button === 2 && s.sel && x > HEADW) {
+      const t = tickAt(x);
+      if (t >= s.sel.start && t < s.sel.end) {
+        drag.current = null;
+        setMenu({ x: e.clientX, y: e.clientY, track: Math.max(0, trackAt(y)) });
         return;
       }
-      drag.current = { kind: 'seek' };
-      seek(x);
-      return;
     }
     if (x < HEADW) {
       const t = trackAt(y);
@@ -457,10 +482,11 @@ export function Playlist() {
       const h = hit(x, y);
       if (h) edit([rem(['clips', h.c.id])]);
     } else if (d.kind === 'seek') seek(x);
-    else if (d.kind === 'loop') {
-      const t1 = Math.round(tickAt(x) / bar) * bar;
-      const [a, b] = [Math.min(d.t0, t1), Math.max(d.t0, t1)];
-      previewEdit([set(['loop'], b > a ? { start: a, end: b } : null)]);
+    else if (d.kind === 'sel') {
+      if (!d.moved && Math.abs(x - d.x0) < 4) return;
+      d.moved = true;
+      const t1 = Math.max(0, Math.round(tickAt(x) / snap) * snap);
+      setSelection({ start: Math.min(d.t0, t1), end: Math.max(d.t0, t1) });
     }
   };
 
@@ -486,8 +512,18 @@ export function Playlist() {
     }
     if (d.kind === 'move' || d.kind === 'resize') {
       const c = state.project.clips.find((x) => x.id === d.id);
-      if (c) edit(clipOps(c));
-    } else if (d.kind === 'loop') edit([set(['loop'], state.project.loop ?? null)]);
+      if (!c) return;
+      // clique num clipe (sem arrastar): seleciona a faixa de tempo dele
+      if (d.kind === 'move' && !d.dup && c.pos === d.orig.pos && c.track === d.orig.track) {
+        setSelection({ start: c.pos, end: c.pos + c.len });
+        return;
+      }
+      edit(clipOps(c));
+    } else if (d.kind === 'sel' && !d.moved && e) {
+      // clique simples na régua: tira a seleção e posiciona a agulha
+      setSelection(null);
+      seek(local(e)[0]);
+    }
   };
 
   const onWheel = (e: WheelEvent) => {
@@ -533,6 +569,7 @@ export function Playlist() {
     >
       <div class="pl-wrap">
         <Picker />
+        {menu && s.sel && <SelectionMenu x={menu.x} y={menu.y} track={menu.track} sel={s.sel} onClose={() => setMenu(null)} />}
         <canvas
           ref={ref}
           class="pl-canvas"

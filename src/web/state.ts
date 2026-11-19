@@ -3,7 +3,7 @@
 
 import { useEffect, useReducer } from 'preact/hooks';
 import type { Project } from '../core/model';
-import { emptyProject, findPattern, findChannel, parseNote, PPQ, ticksPerBar } from '../core/model';
+import { emptyProject, findPattern, findChannel, parseNote, PPQ, ticksPerBar, songLength } from '../core/model';
 import { applyOps, type Op } from '../core/ops';
 import type { ActionResult } from '../core/actions';
 import * as A from '../core/actions';
@@ -12,6 +12,8 @@ import type { EngineStatus } from '../core/engine';
 import { getPref } from './prefs';
 import { renderChain } from '../core/effects';
 import type { EffectType, Params } from '../core/model';
+import { startMidiRec, finishMidiRec, recNote, midiRecording } from './midirec';
+import { setPref } from './prefs';
 import { audio } from './audio';
 
 export type WindowId = 'rack' | 'piano' | 'playlist' | 'mixer' | 'browser' | 'channel' | 'amp' | 'tune' | 'stitch';
@@ -77,6 +79,11 @@ export const state = {
   libraryVersion: 0,
   followPlay: true,
   windows: defaultLayout(),
+  /** Área selecionada na playlist (ticks): o play começa nela e o loop fica nela. */
+  sel: null as null | { start: number; end: number },
+  loopOn: getPref('tr.loop', false),
+  metronome: getPref('tr.metronome', false),
+  countIn: getPref('tr.countIn', true),
 };
 
 const listeners = new Set<() => void>();
@@ -332,22 +339,70 @@ export function closeWindow(id: WindowId) {
 export function play(mode = state.mode) {
   state.mode = mode;
   playingFlag = true;
-  audio.play(mode, state.patternId, undefined);
+  // com uma área selecionada, a música começa no início dela
+  audio.play(mode, state.patternId, mode === 'song' && state.sel ? state.sel.start : undefined);
+  emit();
+}
+
+// ---------------------------------------------------------------- área selecionada, loop, metrônomo, contagem
+
+export function setSelection(sel: { start: number; end: number } | null) {
+  state.sel = sel && sel.end > sel.start ? sel : null;
+  audio.transport({ region: state.sel ? [state.sel.start, state.sel.end] : null });
+  emit();
+}
+export function toggleLoop() {
+  state.loopOn = !state.loopOn;
+  setPref('tr.loop', state.loopOn);
+  audio.transport({ loopOn: state.loopOn });
+  emit();
+}
+export function toggleMetronome() {
+  state.metronome = !state.metronome;
+  setPref('tr.metronome', state.metronome);
+  audio.transport({ metronome: state.metronome });
+  emit();
+}
+export function toggleCountIn() {
+  state.countIn = !state.countIn;
+  setPref('tr.countIn', state.countIn);
+  emit();
+}
+audio.transport({ loopOn: state.loopOn, metronome: state.metronome });
+audio.onLive = recNote;
+
+/** Gravar notas e automações (o REC geral): toca a música a partir da seleção/posição. */
+function toggleMidiRecord() {
+  if (midiRecording()) return stop();
+  const p = state.project;
+  const start = state.sel ? state.sel.start : audio.status.mode === 'song' ? Math.max(0, Math.floor(audio.status.tick)) : 0;
+  const end = songLength(p) || ticksPerBar(p) * 4;
+  const region: [number, number] | null = state.loopOn ? (state.sel ? [state.sel.start, state.sel.end] : [0, end]) : null;
+  startMidiRec(start, region);
+  state.mode = 'song';
+  playingFlag = true;
+  audio.play('song', state.patternId, start, state.countIn ? 3 : 0);
+  const ch = p.channels.find((c) => c.id === state.channelId);
+  toast(`Gravando notas${ch ? ` (${ch.name})` : ''} e automações${state.countIn ? ' · contagem 3, 2, 1' : ''} — Espaço ou ■ para parar`);
   emit();
 }
 /** Parar: a primeira vez para a música; parado, corta também as caudas (reverb, eco, notas soltas). */
 export function stop() {
-  if (!audio.status.playing && !audio.recording) {
+  if (midiRecording()) {
+    const tps = (state.project.bpm * PPQ) / 60;
+    finishMidiRec(audio.status.tick + ((performance.now() - audio.statusAt) / 1000) * tps);
+  } else if (!audio.status.playing && !audio.recording) {
     audio.post({ type: 'panic' });
     return;
   }
   audio.stop();
+  audio.status = { ...audio.status, playing: false, countIn: 0 }; // a interface reage já, sem esperar a engine
   playingFlag = false;
   if (audio.recording) finishRecording();
   emit();
 }
 export function togglePlay() {
-  if (audio.status.playing || audio.recording) stop();
+  if (audio.status.playing || audio.recording || midiRecording()) stop();
   else play();
 }
 
@@ -369,8 +424,10 @@ export function smartConfig() {
 }
 
 /** Gravar: toca a música em modo song a partir da posição atual e captura a entrada. */
-export async function toggleRecord(fromAmp: AmpTake | null = null, extra: { smart?: boolean; onDone?: (clipIds: string[]) => void } = {}) {
-  if (audio.recording) return stop();
+export async function toggleRecord(fromAmp: AmpTake | null = null, extra: { smart?: boolean; onDone?: (clipIds: string[]) => void; audio?: boolean } = {}) {
+  if (audio.recording || midiRecording()) return stop();
+  // o REC geral grava notas e automações; áudio (voz, guitarra) fica com o amp e as ferramentas
+  if (!fromAmp && !extra.audio && !extra.smart) return toggleMidiRecord();
   const start = audio.status.mode === 'song' ? Math.max(0, Math.floor(audio.status.tick)) : 0;
   try {
     const track = A.freeTrack(state.project, start, 1e12);
