@@ -33,6 +33,12 @@ export interface StitchSegment {
   sung: (number | null)[];
   /** Distância de cada take até a nota pretendida (cents) ou null. */
   cents: (number | null)[];
+  /** Áudio usado ao montar (índice em takes) quando não é o próprio take (ex.: trecho editado). */
+  src?: number;
+  /** Não mexer na afinação deste pedaço (já foi editado à mão). */
+  noTune?: boolean;
+  /** Escolhido à mão (não muda quando a melodia é reavaliada). */
+  manual?: boolean;
 }
 
 export interface StitchPlan {
@@ -144,6 +150,11 @@ export function rescore(plan: StitchPlan, takes: StitchTake[], sr: number) {
       }
       return w > 0 ? sum / w : null;
     });
+    if (sg.manual) {
+      // escolha feita à mão: só atualiza o desvio, não troca de take
+      if (sg.take >= 0) prev = sg.take;
+      continue;
+    }
     let best = -1;
     sg.cents.forEach((c, k) => {
       if (c === null) return;
@@ -162,7 +173,7 @@ export function mergeSegments(segments: StitchSegment[]): StitchSegment[] {
   const merged: StitchSegment[] = [];
   for (const s of segments) {
     const last = merged[merged.length - 1];
-    if (last && last.take === s.take) last.t1 = s.t1;
+    if (last && last.take === s.take && last.src === s.src && !!last.noTune === !!s.noTune) last.t1 = s.t1;
     else merged.push({ ...s });
   }
   return merged;
@@ -177,7 +188,7 @@ export function renderStitch(plan: StitchPlan, takes: StitchTake[], sr: number, 
   for (let si = 0; si < segs.length; si++) {
     const seg = segs[si];
     if (seg.take < 0) continue;
-    const tk = takes[seg.take];
+    const tk = takes[seg.src ?? seg.take];
     const a = Math.round((seg.t0 - plan.start) * sr), b = Math.round((seg.t1 - plan.start) * sr);
     const fadeIn = si > 0 && segs[si - 1].take >= 0;
     const fadeOut = si + 1 < segs.length && segs[si + 1].take >= 0;
@@ -205,7 +216,7 @@ export function tuneToMelody(L: Float32Array, R: Float32Array, plan: StitchPlan,
   const tr = trackPitch(mono, sr);
   const shift = new Float32Array(tr.midi.length);
   for (const sg of plan.segments) {
-    if (sg.target === null) continue;
+    if (sg.target === null || sg.noTune) continue;
     const f0 = Math.max(0, Math.floor(((sg.t0 - plan.start) * sr) / tr.hop)), f1 = Math.min(tr.midi.length, Math.ceil(((sg.t1 - plan.start) * sr) / tr.hop));
     const v: number[] = [];
     for (let f = f0; f < f1; f++) if (!Number.isNaN(tr.midi[f])) v.push(tr.midi[f]);

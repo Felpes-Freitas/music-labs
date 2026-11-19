@@ -176,6 +176,8 @@ export interface AudioItem {
   original: string;
   /** Variante criada a partir de outro áudio da lista. */
   variantOf?: string;
+  /** Versão editada guardada enquanto as edições estão desativadas (path = original). */
+  edited?: string;
 }
 
 export const MIXER_SIZE = 17; // master + 16 inserts

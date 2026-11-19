@@ -3,7 +3,7 @@ import type { ComponentChildren } from 'preact';
 import { state, focusWindow, closeWindow, emit, act, type WindowId } from '../state';
 import * as A from '../../core/actions';
 import { onTheme, prefs as looks } from '../theme';
-import { recAuto } from '../midirec';
+import { recAuto, recTouched, hasAutomation } from '../midirec';
 import { Icon } from './icons';
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -50,12 +50,21 @@ export function Knob(p: KnobProps) {
     return `M${p0[0]},${p0[1]} A${r},${r} 0 ${large} ${to > from ? 1 : 0} ${p1[0]},${p1[1]}`;
   };
   const start = p.bipolar ? 0 : a0;
+  // gravação de automação: todo movimento do knob (arrastar, roda, duplo clique, botão do meio)
+  const autoKey = p.auto ? p.auto.path.join('/') : '';
+  const rec = (v: number) => p.auto && recAuto({ path: p.auto.path, min: p.min, max: p.max, log: p.log, label: p.auto.label }, v, p.value);
+  const commit = (v: number) => {
+    rec(v);
+    p.onCommit(v);
+  };
+  const recording = !!p.auto && recTouched(autoKey);
+  const automated = !!p.auto && hasAutomation(autoKey);
   const onDown = (e: PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (e.button === 1) {
       // botão do meio: volta ao valor padrão
-      if (p.def !== undefined) p.onCommit(p.def);
+      if (p.def !== undefined) commit(p.def);
       return;
     }
     if (e.button !== 0) return;
@@ -70,7 +79,7 @@ export function Knob(p: KnobProps) {
       last = v;
       setDrag(v);
       p.onInput(v);
-      if (p.auto) recAuto({ path: p.auto.path, min: p.min, max: p.max, log: p.log, label: p.auto.label }, v);
+      rec(v);
     };
     const up = () => {
       el.removeEventListener('pointermove', move as any);
@@ -84,7 +93,7 @@ export function Knob(p: KnobProps) {
   const tip = `${p.label ? p.label + ': ' : ''}${p.format ? p.format(shown) : fmt(shown)} · arraste · duplo clique ou botão do meio: padrão`;
   return (
     <div
-      class="knob"
+      class={`knob ${recording ? 'auto-rec' : ''} ${automated ? 'has-auto' : ''}`}
       data-hint={p.title ? `${p.title}${p.auto ? ' · botão direito: automação' : ''}` : `${tip}${p.auto ? ' · botão direito: automação' : ''}`}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -103,10 +112,10 @@ export function Knob(p: KnobProps) {
         width={size}
         height={size}
         onPointerDown={onDown as any}
-        onDblClick={() => p.def !== undefined && p.onCommit(p.def)}
+        onDblClick={() => p.def !== undefined && commit(p.def)}
         onWheel={(e) => {
           e.preventDefault();
-          p.onCommit(fromNorm(clamp(norm - Math.sign(e.deltaY) * 0.02, 0, 1)));
+          commit(fromNorm(clamp(norm - Math.sign(e.deltaY) * 0.02, 0, 1)));
         }}
       >
         <circle cx={cx} cy={cy} r={r} class="knob-bg" />
@@ -114,7 +123,7 @@ export function Knob(p: KnobProps) {
         {Math.abs(ang - start) > 0.5 && <path d={arc(Math.min(start, ang), Math.max(start, ang))} class="knob-val" style={p.color ? { stroke: p.color } : undefined} />}
         <line x1={cx} y1={cy} x2={polar(cx, cy, r - 3, ang)[0]} y2={polar(cx, cy, r - 3, ang)[1]} class="knob-ptr" />
       </svg>
-      {p.label && <div class="knob-label">{drag !== null ? (p.format ? p.format(shown) : fmt(shown)) : p.label}</div>}
+      {p.label && <div class="knob-label">{drag !== null ? (p.format ? p.format(shown) : fmt(shown)) : recording ? '● AUTO' : p.label}</div>}
     </div>
   );
 }

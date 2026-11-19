@@ -10,11 +10,12 @@ import { useEffect, useReducer, useRef, useState } from 'preact/hooks';
 import { useApp, state, toast, setHint } from '../state';
 import { audio } from '../audio';
 import { noteName } from '../../core/model';
-import { planStitch, renderStitch, rescore, tuneToMelody, type StitchPlan, type StitchTake } from '../../core/stitch';
+import { planStitch, renderStitch, rescore, tuneToMelody, type StitchPlan, type StitchTake, type StitchSegment } from '../../core/stitch';
 import { trackPitch } from '../../core/pitchtrack';
 import { alignOffset } from '../../core/align';
 import { snapToKey, keyLabel, type Key } from '../../core/key';
-import { Win, useCanvas } from './widgets';
+import { Win, useCanvas, MenuTree, type MenuItem } from './widgets';
+import { openTuneAudio } from './Tune';
 import { Icon } from './icons';
 import { ui } from '../theme';
 import { loadAudio, audioClips, pickAudioFiles, droppedAudio, acceptsAudio } from '../clipaudio';
@@ -26,6 +27,15 @@ import { LiveCapture } from './LiveCapture';
 const COLORS = ['#ff5d5d', '#4fc3e8', '#f2c94c', '#6fdc8c', '#b58cf0', '#ff9e57', '#5fd3c4', '#ff7bc0', '#9ccc3a', '#7ba6ff', '#e8a87c', '#c0c0c0'];
 
 /** Áudios (da lista do projeto) que estão no Stitcher. */
+/** Trecho de um áudio aberto no Afinador: um áudio da lista que substitui o pedaço (o take não muda). */
+interface PieceRef {
+  id: string; // áudio da lista
+  start: number; // tempo (s, na costura) da amostra 0 do trecho
+  off?: boolean; // edição desativada: usa o take como estava
+}
+type Seg = StitchSegment & { piece?: PieceRef };
+const pieceAudio = new Map<string, { path: string; ch: Float32Array[] }>();
+
 let ids: string[] = [];
 /** Cor fixa de cada áudio (não muda quando outros entram ou saem). */
 const colorOf = new Map<string, string>();
@@ -70,8 +80,17 @@ function rebuild() {
   final = null;
   savedId = null;
   if (!plan) return;
-  let [L, R] = renderStitch(plan, takes, sr);
-  if (tuneOut) [L, R] = tuneToMelody(L, R, plan, sr);
+  // pedaços editados no Afinador entram como fontes extras, sem afinação automática
+  const extra: StitchTake[] = [];
+  const segs = (plan.segments as Seg[]).map((sg) => {
+    const pa = sg.piece && !sg.piece.off ? pieceAudio.get(sg.piece.id) : undefined;
+    if (!pa) return sg;
+    extra.push({ offset: sg.piece!.start, from: 0, to: pa.ch[0].length / sr, ch: pa.ch });
+    return { ...sg, src: takes.length + extra.length - 1, noTune: true };
+  });
+  const rp = { ...plan, segments: segs };
+  let [L, R] = renderStitch(rp, [...takes, ...extra], sr);
+  if (tuneOut) [L, R] = tuneToMelody(L, R, rp, sr);
   const per = 256;
   const peaks = new Float32Array(Math.ceil(L.length / per));
   for (let i = 0; i < peaks.length; i++) {
@@ -180,6 +199,53 @@ async function toggleRec() {
   changed();
 }
 
+/** Recorta o pedaço do take, põe na lista de áudios e abre no Afinador (as edições voltam para cá). */
+async function openPiece(si: number) {
+  if (!plan) return;
+  const sg = plan.segments[si] as Seg;
+  if (sg.piece && poolItem(sg.piece.id)) return openTuneAudio(sg.piece.id, { inPlace: true });
+  if (sg.take < 0) return toast('Este pedaço é silêncio');
+  const tk = takes[sg.take];
+  const t0 = Math.max(tk.offset + tk.from, sg.t0 - 0.05), t1 = Math.min(tk.offset + tk.to, sg.t1 + 0.05);
+  const a = Math.max(0, Math.round((t0 - tk.offset) * sr)), b = Math.min(tk.ch[0].length, Math.round((t1 - tk.offset) * sr));
+  if (b - a < sr * 0.05) return toast('Pedaço curto demais');
+  const L = tk.ch[0].slice(a, b), R = (tk.ch[1] ?? tk.ch[0]).slice(a, b);
+  try {
+    const name = `${nameOf(sg.take)} · trecho ${si + 1}`;
+    const path = await saveWav(L, R, sr, name);
+    const id = addToPool(path, name, ids[sg.take]);
+    sg.piece = { id, start: tk.offset + a / sr };
+    pieceAudio.set(id, { path, ch: [L, R] });
+    changed();
+    openTuneAudio(id, { inPlace: true });
+  } catch (e) {
+    toast(`Erro: ${(e as Error).message}`);
+  }
+}
+
+/** Recarrega os trechos que mudaram no Afinador e remonta a costura. */
+async function refreshPieces() {
+  if (!plan) return;
+  let dirty = false;
+  for (const sg of plan.segments as Seg[]) {
+    if (!sg.piece) continue;
+    const it = poolItem(sg.piece.id);
+    if (!it) {
+      delete sg.piece;
+      dirty = true;
+      continue;
+    }
+    if (pieceAudio.get(it.id)?.path === it.path) continue;
+    const a = await loadAudio(it.path);
+    pieceAudio.set(it.id, { path: it.path, ch: a.ch });
+    dirty = true;
+  }
+  if (dirty) {
+    rebuild();
+    changed();
+  }
+}
+
 /** Salva o resultado na lista de áudios (uma vez por versão da costura). */
 async function saveResult() {
   if (!final) return null;
@@ -204,6 +270,11 @@ export function StitchWindow() {
   useEffect(() => {
     analyze();
   }, [sig]);
+  // trechos editados no Afinador: quando mudam, a costura se refaz
+  const pieceSig = plan ? (plan.segments as Seg[]).filter((x) => x.piece).map((x) => `${x.piece!.id}:${poolItem(x.piece!.id)?.path ?? '-'}`).join('|') : '';
+  useEffect(() => {
+    refreshPieces();
+  }, [pieceSig]);
   // fecha o menu de adicionar ao clicar fora
   useEffect(() => {
     if (addMenu !== 'menu') return;
@@ -493,7 +564,9 @@ const localX = (e: MouseEvent) => {
 
 /** Onda do resultado, com cada pedaço na cor do áudio de onde veio. */
 function FinalCanvas() {
-  const { ref, paintOverlay } = useCanvas(
+  const [menu, setMenu] = useState<{ x: number; y: number; si: number; t: number } | null>(null);
+  const drag = useRef<{ i: number; lo: number; hi: number } | null>(null);
+  const { ref, paint, paintOverlay } = useCanvas(
     (ctx, w, h) => {
       ctx.fillStyle = ui('#11161a');
       ctx.fillRect(0, 0, w, h);
@@ -503,7 +576,7 @@ function FinalCanvas() {
       ctx.fillStyle = 'rgba(255,255,255,0.06)';
       ctx.fillRect(0, mid, w, 1);
       const per = final.peaks.length / w;
-      for (const sg of plan.segments) {
+      for (const sg of plan.segments as Seg[]) {
         const x0 = ((sg.t0 - plan.start) / span) * w, x1 = ((sg.t1 - plan.start) / span) * w;
         const color = takeColor(sg.take);
         // fundo leve do pedaço + onda na cor do áudio
@@ -517,35 +590,169 @@ function FinalCanvas() {
           const a = Math.min(1, pk * 1.6) * (mid - 3);
           ctx.fillRect(x, mid - a, 1, Math.max(1, a * 2));
         }
-        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        // pedaço editado no Afinador: selo; escolhido à mão: traço em cima
+        if (sg.piece && x1 - x0 > 16) {
+          ctx.fillStyle = sg.piece.off ? 'rgba(255,255,255,0.4)' : '#fff';
+          ctx.font = 'bold 10px sans-serif';
+          ctx.fillText(sg.piece.off ? '✎ off' : '✎', x0 + 4, 12);
+        }
+        if (sg.manual) {
+          ctx.fillStyle = color;
+          ctx.fillRect(x0, 0, x1 - x0, 3);
+        }
+        // divisa entre pedaços (arrastável)
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
         ctx.fillRect(Math.round(x0), 0, 1, h);
+        ctx.fillRect(Math.round(x0) - 2, mid - 6, 5, 12);
       }
     },
     [rev],
     drawHead,
   );
   usePlayhead(paintOverlay);
+  const xOfT = (t: number, w: number) => ((t - plan!.start) / (plan!.end - plan!.start)) * w;
+  /** Divisa perto do ponteiro (índice do pedaço que começa nela). */
+  const boundaryAt = (x: number, w: number) => {
+    if (!plan) return -1;
+    for (let i = 1; i < plan.segments.length; i++) if (Math.abs(xOfT(plan.segments[i].t0, w) - x) < 5) return i;
+    return -1;
+  };
   return (
-    <canvas
-      ref={ref}
-      class="st-canvas"
-      onPointerDown={(e) => {
-        if (!plan) return;
-        const { x, w } = localX(e as unknown as MouseEvent);
-        playFrom((x / w) * (plan.end - plan.start));
-      }}
-      onPointerMove={(e) => {
-        if (!plan) return;
-        const { x, w } = localX(e as unknown as MouseEvent);
-        const si = segAt(plan.start + (x / w) * (plan.end - plan.start));
-        const sg = plan.segments[si];
-        if (!sg) return;
-        setHint(`${sg.target !== null ? noteName(sg.target) + ' · ' : ''}${sg.take >= 0 ? `vem de ${nameOf(sg.take)}` : 'silêncio'} · clique para tocar daqui`);
-      }}
-      style={{ cursor: 'pointer' }}
-      data-hint="Resultado da costura: cada cor é o áudio de onde veio o pedaço. Clique para tocar a partir daí."
-    />
+    <>
+      <canvas
+        ref={ref}
+        class="st-canvas"
+        onContextMenu={(e) => e.preventDefault()}
+        onPointerDown={(e) => {
+          if (!plan) return;
+          const { x, w } = localX(e as unknown as MouseEvent);
+          const t = plan.start + (x / w) * (plan.end - plan.start);
+          if (e.button === 2) {
+            const si = segAt(t);
+            if (si >= 0) setMenu({ x: e.clientX, y: e.clientY, si, t });
+            return;
+          }
+          const b = boundaryAt(x, w);
+          if (b > 0) {
+            // arrastar a divisa: muda onde um pedaço termina e o próximo começa
+            (e.currentTarget as Element).setPointerCapture(e.pointerId);
+            drag.current = { i: b, lo: plan.segments[b - 1].t0 + 0.04, hi: plan.segments[b].t1 - 0.04 };
+            stopPreview();
+            return;
+          }
+          playFrom(t - plan.start);
+        }}
+        onPointerMove={(e) => {
+          if (!plan) return;
+          const { x, w } = localX(e as unknown as MouseEvent);
+          const t = plan.start + (x / w) * (plan.end - plan.start);
+          const d = drag.current;
+          if (d) {
+            const nt = Math.max(d.lo, Math.min(d.hi, t));
+            plan.segments[d.i - 1].t1 = nt;
+            plan.segments[d.i].t0 = nt;
+            setHint(`Corte em ${(nt - plan.start).toFixed(2)} s`);
+            paint();
+            return;
+          }
+          (e.currentTarget as HTMLElement).style.cursor = boundaryAt(x, w) > 0 ? 'ew-resize' : 'pointer';
+          const sg = plan.segments[segAt(t)] as Seg | undefined;
+          if (!sg) return;
+          setHint(`${sg.target !== null ? noteName(sg.target) + ' · ' : ''}${sg.take >= 0 ? `vem de ${nameOf(sg.take)}` : 'silêncio'}${sg.piece ? ' · editado no Afinador' : ''} · clique toca daqui · arraste as divisas para mudar os cortes · botão direito: opções`);
+        }}
+        onPointerUp={() => {
+          if (!drag.current) return;
+          drag.current = null;
+          rebuild();
+          changed();
+        }}
+        data-hint="Resultado: cada cor é o áudio de onde veio o pedaço. Clique para tocar dali; arraste as divisas para mudar os cortes; botão direito num pedaço para trocar o áudio, dividir ou abrir no Afinador."
+      />
+      {menu && plan && <PieceMenu {...menu} onClose={() => setMenu(null)} />}
+    </>
   );
+}
+
+/** Menu do botão direito num pedaço do resultado. */
+function PieceMenu(p: { x: number; y: number; si: number; t: number; onClose: () => void }) {
+  const pl = plan!;
+  const sg = pl.segments[p.si] as Seg;
+  const done = () => {
+    rebuild();
+    changed();
+  };
+  const items: MenuItem[] = [
+    {
+      label: 'Usar o áudio',
+      sub: ids.map((id, k) => ({
+        label: `${nameOf(k)}${sg.cents[k] !== null && sg.cents[k] !== undefined ? ` · ${Math.round(sg.cents[k]!)}c` : ' · sem som aqui'}`,
+        swatch: colorFor(id),
+        run: () => {
+          sg.take = k;
+          sg.manual = true;
+          delete sg.piece; // o trecho editado era do outro áudio
+          done();
+        },
+      })),
+    },
+    {
+      label: 'Dividir aqui',
+      hint: 'Corta este pedaço em dois neste ponto (cada metade pode usar outro áudio)',
+      run: () => {
+        if (p.t - sg.t0 < 0.05 || sg.t1 - p.t < 0.05) return;
+        const b: Seg = { ...sg, t0: p.t, cents: [...sg.cents], sung: [...sg.sung] };
+        delete b.piece;
+        sg.t1 = p.t;
+        delete sg.piece;
+        pl.segments.splice(p.si + 1, 0, b);
+        done();
+      },
+    },
+    ...(p.si + 1 < pl.segments.length
+      ? [
+          {
+            label: 'Juntar com o próximo',
+            hint: 'Tira o corte entre este pedaço e o seguinte (fica o áudio deste)',
+            run: () => {
+              sg.t1 = pl.segments[p.si + 1].t1;
+              delete sg.piece;
+              pl.segments.splice(p.si + 1, 1);
+              done();
+            },
+          },
+        ]
+      : []),
+    { sep: true, label: '' },
+    {
+      label: sg.piece ? 'Abrir este pedaço no Afinador de novo' : 'Abrir este pedaço no Afinador',
+      hint: 'Abre só este trecho no Afinador; o que você aplicar lá volta para cá (o áudio original não muda)',
+      run: () => openPiece(p.si),
+    },
+    ...(sg.piece
+      ? [
+          {
+            label: sg.piece.off ? 'Reativar a edição do Afinador neste pedaço' : 'Desativar a edição do Afinador neste pedaço',
+            run: () => {
+              sg.piece!.off = !sg.piece!.off;
+              done();
+            },
+          },
+        ]
+      : []),
+    ...(sg.manual
+      ? [
+          {
+            label: 'Voltar à escolha automática neste pedaço',
+            run: () => {
+              sg.manual = false;
+              rescore(pl, takes, sr);
+              done();
+            },
+          },
+        ]
+      : []),
+  ];
+  return <MenuTree x={p.x} y={p.y} items={items} onClose={p.onClose} />;
 }
 
 /** Melodia pretendida (arraste uma nota para corrigir). */
@@ -696,6 +903,8 @@ function TakeCanvas(p: { k: number }) {
         if (!sg) return;
         if (sg.cents[p.k] === null || sg.cents[p.k] === undefined) return toast('Este áudio não canta/toca nessa nota');
         sg.take = p.k; // troca manual
+        sg.manual = true;
+        delete (sg as Seg).piece;
         rebuild();
         changed();
       }}

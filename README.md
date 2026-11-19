@@ -104,7 +104,12 @@ git push --follow-tags
   si; o Stitcher detecta o tom, deduz a nota pretendida de cada trecho e usa o áudio que
   chegou mais perto dela. Arraste uma nota da melodia para corrigir; com "Afinar na
   melodia" o resultado sai afinado nessas notas. "Salvar na lista" e "Enviar para a
-  playlist" guardam o resultado.
+  playlist" guardam o resultado. Controle manual: arraste as divisas do resultado para
+  mudar os cortes; botão direito num pedaço para usar outro áudio, dividir, juntar ou
+  **abrir só aquele pedaço no Afinador** — o que for aplicado lá volta para a costura
+  (e pode ser desativado), sem mexer no take original.
+- **Nada é destrutivo**: todo áudio da lista guarda o original; as edições podem ser
+  desativadas e reativadas (selo "ed." na lista, botão no Afinador).
 - **Navegador lateral** recolhível (botão no topo ou Alt+F8).
 - **Configurações** (menu Aparência ou Ctrl+,): temas Grafite, OLED e Adobe, cor de
   destaque com seletor de cor, Alt + arrastar janelas, entrada de gravação e atalhos.
@@ -120,7 +125,10 @@ git push --follow-tags
 - **Transporte**: **loop** (na área selecionada, ou na música inteira), **metrônomo** e
   **contagem** (3, 2, 1 antes de gravar).
 - **REC geral**: grava **notas** (teclado do computador, teclado MIDI, piano na tela) e
-  **automações** (knobs mexidos durante a gravação). Com o loop, cada volta vira um pattern
+  **automações**: qualquer knob mexido (arrastar, roda, duplo clique, botão do meio) vira
+  automação daquele parâmetro a partir daquele momento (antes disso ele fica como estava).
+  O knob fica vermelho com "● AUTO" enquanto grava; knobs que já têm automação ganham um
+  ponto. Com o loop, cada volta vira um pattern
   novo numa outra track. Voz e instrumentos de áudio ficam com o Amp, o Afinador e o
   Stitcher.
 - **Mixer**: 16 inserts + master, fader, pan, mute/solo, medidores, roteamento entre

@@ -7,7 +7,7 @@ import * as A from '../../core/actions';
 import { askText, askConfirm } from './Dialog';
 import { Icon } from './icons';
 import { usePref } from '../prefs';
-import { poolItems, removeFromPool, renameAudio, sendToPlaylist } from '../pool';
+import { poolItems, removeFromPool, renameAudio, sendToPlaylist, toggleEdits } from '../pool';
 import { openTuneAudio } from './Tune';
 
 export function Picker() {
@@ -79,7 +79,15 @@ export function Picker() {
           >
             <Icon name="wave" size={12} class="pa-ico" />
             <span class="pa-name">{a.name}</span>
-            {a.path !== a.original && <span class="pa-badge">ed.</span>}
+            {(a.path !== a.original || a.edited) && (
+              <button
+                class={`pa-badge ${a.path !== a.original ? '' : 'off'}`}
+                data-hint={a.path !== a.original ? 'Editado: clique para desativar as edições (o original toca)' : 'Edições desativadas: clique para reativar'}
+                onClick={(e) => (e.stopPropagation(), toggleEdits(a.id))}
+              >
+                ed.
+              </button>
+            )}
             <span class="pa-acts">
               <button data-hint="Enviar para a playlist" onClick={() => sendToPlaylist(a.id)}>
                 <Icon name="playlist" size={11} />
