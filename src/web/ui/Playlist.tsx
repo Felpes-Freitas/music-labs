@@ -6,6 +6,7 @@ import { set, ins, rem } from '../../core/ops';
 import * as A from '../../core/actions';
 import { Win, IconBtn, useCanvas } from './widgets';
 import { askText } from './Dialog';
+import { openTune } from './Tune';
 import { ui, accent } from '../theme';
 
 const HEADW = 120;
@@ -375,6 +376,10 @@ export function Playlist() {
     }
     if (h) {
       if (isPatternClip(h.c)) selectPattern(h.c.patternId);
+      if (e.detail === 2 && h.c.kind === 'audio') {
+        openTune(h.c.id);
+        return;
+      }
       if (e.detail === 2 && isPatternClip(h.c)) {
         openWindow('rack');
         return;

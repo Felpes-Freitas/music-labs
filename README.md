@@ -84,6 +84,16 @@ git push --follow-tags
   - O retorno roda num contexto de áudio separado, com buffer mínimo e a cadeia leve; a
     gravação guarda o sinal cru e reaplica os efeitos em alta qualidade (amp, overdrive e
     fuzz sobreamostrados 4x) ao fechar cada take.
+- **Afinador** (F11, ou duplo clique num áudio da playlist): mostra cada nota de uma
+  gravação (voz ou instrumento solo) como um bloco na altura cantada. Arraste a nota
+  para outra altura (grade de semitom; Shift livre), duplo clique afina, "Corrigir
+  afinação" leva tudo ao semitom mais próximo e "Retidão" endireita a oscilação dentro
+  das notas. "Salvar como variação" cria um clipe novo logo abaixo do original, que não
+  muda. A mudança de altura preserva a duração (PSOLA).
+- **Stitcher** (F12): marque vários takes da mesma parte e ele monta uma versão final
+  usando, trecho a trecho, o take mais afinado (cortes no começo das notas, com
+  crossfade). Mostra o desvio de cada take em cents e deixa trocar qualquer trecho com
+  um clique. Afinador e Stitcher têm botão Gravar com a gravação inteligente.
 - **Configurações** (menu Aparência ou Ctrl+,): temas Grafite, OLED e Adobe, cor de
   destaque com seletor de cor, Alt + arrastar janelas, entrada de gravação e atalhos.
 - **Parar duas vezes** corta também as caudas de reverb/eco e notas soltas.

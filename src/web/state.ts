@@ -14,7 +14,7 @@ import { renderChain } from '../core/effects';
 import type { EffectType, Params } from '../core/model';
 import { audio } from './audio';
 
-export type WindowId = 'rack' | 'piano' | 'playlist' | 'mixer' | 'browser' | 'channel' | 'amp';
+export type WindowId = 'rack' | 'piano' | 'playlist' | 'mixer' | 'browser' | 'channel' | 'amp' | 'tune' | 'stitch';
 
 export interface WinState {
   /** Geometria anterior quando a janela está maximizada. */
@@ -47,6 +47,8 @@ function defaultLayout(): Record<WindowId, WinState> {
     mixer: { open: false, x: 30, y: Math.max(8, H - 470), w: Math.min(W - 60, 1200), h: 450, z: 5 },
     channel: { open: false, x: Math.min(W - 480, Math.min(720, W * 0.55) + 16), y: 8, w: 470, h: 440, z: 6 },
     amp: { open: false, x: 40, y: Math.max(8, H - 520), w: Math.min(W - 80, 1040), h: Math.min(H - 16, 500), z: 7 },
+    tune: { open: false, x: 30, y: 30, w: Math.min(W - 60, 1100), h: Math.min(H - 60, 560), z: 8 },
+    stitch: { open: false, x: 50, y: 50, w: Math.min(W - 100, 1100), h: Math.min(H - 100, 520), z: 9 },
   };
 }
 
@@ -292,7 +294,7 @@ export function focusWindow(id: WindowId, force = false) {
 }
 /** Tab: traz para a frente a próxima janela aberta (Shift+Tab: a anterior). */
 export function cycleWindows(back = false) {
-  const order: WindowId[] = ['playlist', 'rack', 'piano', 'mixer', 'channel', 'amp'];
+  const order: WindowId[] = ['playlist', 'rack', 'piano', 'mixer', 'channel', 'amp', 'tune', 'stitch'];
   const open = order.filter((id) => state.windows[id].open);
   if (!open.length) return;
   const top = open.reduce((a, b) => (state.windows[b].z > state.windows[a].z ? b : a));
@@ -358,9 +360,16 @@ export interface AmpTake {
   smart: { marginDb: number; holdSec: number; thresholdDb: number; deviceId?: string } | null;
 }
 let ampTake: AmpTake | null = null;
+let recDone: ((clipIds: string[]) => void) | null = null;
+
+/** Configuração da gravação inteligente (a mesma do amp). */
+export function smartConfig() {
+  const a = getPref<{ smart?: boolean; thresholdDb?: number; marginDb?: number; holdSec?: number }>('amp', {});
+  return { marginDb: a.marginDb ?? 10, holdSec: a.holdSec ?? 1.5, thresholdDb: a.thresholdDb ?? -45 };
+}
 
 /** Gravar: toca a música em modo song a partir da posição atual e captura a entrada. */
-export async function toggleRecord(fromAmp: AmpTake | null = null) {
+export async function toggleRecord(fromAmp: AmpTake | null = null, extra: { smart?: boolean; onDone?: (clipIds: string[]) => void } = {}) {
   if (audio.recording) return stop();
   const start = audio.status.mode === 'song' ? Math.max(0, Math.floor(audio.status.tick)) : 0;
   try {
@@ -369,8 +378,12 @@ export async function toggleRecord(fromAmp: AmpTake | null = null) {
       const stream = audio.ampStream;
       if (!stream) throw new Error('o amp está desligado');
       await audio.startRecording(start, track, { stream, channels: fromAmp.pick, gainDb: fromAmp.inGainDb, smart: fromAmp.smart ?? undefined });
-    } else await audio.startRecording(start, track, { deviceId: getPref<string>('rec.device', '') || undefined, channels: getPref('rec.channels', 'stereo') });
+    } else {
+      const deviceId = getPref<string>('rec.device', '') || undefined;
+      await audio.startRecording(start, track, { deviceId, channels: getPref('rec.channels', 'stereo'), smart: extra.smart ? { ...smartConfig(), deviceId } : undefined });
+    }
     ampTake = fromAmp;
+    recDone = extra.onDone ?? null;
   } catch (e) {
     toast(`Não consegui acessar a entrada de áudio: ${(e as Error).message}`);
     return;
@@ -378,7 +391,7 @@ export async function toggleRecord(fromAmp: AmpTake | null = null) {
   state.mode = 'song';
   playingFlag = true;
   audio.play('song', state.patternId, start);
-  toast(fromAmp?.smart ? 'Gravação inteligente: toque quando quiser, cada trecho vira um clipe (■ para parar)' : 'Gravando… (Espaço ou ■ para parar)');
+  toast(fromAmp?.smart || extra.smart ? 'Gravação inteligente: toque quando quiser, cada trecho vira um clipe (■ para parar)' : 'Gravando… (Espaço ou ■ para parar)');
   emit();
 }
 
@@ -386,6 +399,9 @@ async function finishRecording() {
   const r = audio.stopRecording();
   const amp = ampTake;
   ampTake = null;
+  const done = recDone;
+  recDone = null;
+  const ids: string[] = [];
   emit();
   if (!r) return;
   const takes = r.takes.filter((t) => t.L.length >= r.sr * 0.08);
@@ -420,11 +436,15 @@ async function finishRecording() {
       const d = await res.json();
       if (!res.ok) throw new Error(d.error);
       const result = act(A.addAudioClip, { sample: d.path, bar: 1, beat: t.tick / PPQ, track: t.track + 1, lengthSec: L.length / r.sr });
-      if (result) placed++;
+      if (result) {
+        placed++;
+        ids.push((result as { clip: string }).clip);
+      }
     } catch (e) {
       toast(`Erro ao salvar a gravação: ${(e as Error).message}`);
     }
   }
+  if (ids.length) done?.(ids);
   if (placed) toast(placed > 1 ? `${placed} takes gravados e colocados na playlist` : `Gravação colocada na playlist (${(takes[0].L.length / r.sr).toFixed(1)} s)`);
 }
 export function setMode(mode: 'pattern' | 'song') {
