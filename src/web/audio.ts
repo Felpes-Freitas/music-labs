@@ -108,6 +108,8 @@ export class Audio {
       smart: !!r.smart,
       noiseDb: r.noiseDb,
       snrDb: r.snrDb,
+      peakDb: r.peakDb,
+      echoCancel: !!r.smart?.node,
       takes: r.takes.map((t) => ({ tick: t.tick, track: t.track, c0: t.c0, c1: t.c1 ?? r.frames })),
     };
   }
@@ -120,7 +122,7 @@ export class Audio {
   async startRecording(
     startTick: number,
     track: number,
-    opt: { deviceId?: string; channels?: RecChannels; stream?: MediaStream; gainDb?: number; smart?: { marginDb: number; holdSec: number } } = {},
+    opt: { deviceId?: string; channels?: RecChannels; stream?: MediaStream; gainDb?: number; smart?: { marginDb: number; holdSec: number; thresholdDb: number; deviceId?: string } } = {},
   ) {
     await this.resume();
     const ctx = this.ctx!;
@@ -148,9 +150,10 @@ export class Audio {
       skip: latency,
       tps: 0,
       map: [[0, startTick]],
-      smart: opt.smart ? { det: new TakeDetector(sr, opt.smart.marginDb), hold: Math.round(opt.smart.holdSec * sr) } : null,
+      smart: opt.smart ? { det: new TakeDetector(sr, opt.smart.marginDb, 0.12, opt.smart.thresholdDb), hold: Math.round(opt.smart.holdSec * sr), stream: null, node: null } : null,
       noiseDb: null,
       snrDb: null,
+      peakDb: null,
       takes: [],
       lastLoud: 0,
     };
@@ -159,6 +162,22 @@ export class Audio {
     node.port.onmessage = (e) => this.onRecChunk(rec, e.data as Float32Array[]);
     src.connect(node);
     this.rec = rec;
+    if (rec.smart) {
+      // Segunda captura do mesmo microfone, só para detectar: com o cancelamento de eco
+      // do navegador (tira a música que sai dos alto-falantes) e a supressão de ruído.
+      // O áudio gravado continua sendo o cru.
+      try {
+        const dev = opt.smart!.deviceId ?? opt.deviceId;
+        const ds = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false, ...(dev ? { deviceId: { exact: dev } } : {}) } });
+        const dsrc = ctx.createMediaStreamSource(ds);
+        const dnode = new AudioWorkletNode(ctx, 'ml-recorder', { numberOfInputs: 1, numberOfOutputs: 0, channelCount: 1, channelCountMode: 'explicit' });
+        dnode.port.onmessage = (e) => this.detect(rec, (e.data as Float32Array[])[0], true);
+        dsrc.connect(dnode);
+        Object.assign(rec.smart, { stream: ds, node: dnode });
+      } catch {
+        /* sem a captura extra: detecta no sinal cru */
+      }
+    }
   }
 
   /** Anota onde a música está (chamado a cada status da engine). */
@@ -193,19 +212,32 @@ export class Audio {
       r.accN = 0;
     }
     r.frames += c[0].length;
-    if (!r.smart) return;
-    // a detecção analisa uma cópia mono; o áudio gravado não é tocado
+    if (!r.smart || r.smart.node) return;
+    // sem a captura de detecção: analisa uma cópia mono do sinal cru (o gravado não muda)
     const mono = new Float32Array(c[0].length);
     for (let i = 0; i < mono.length; i++) mono[i] = (c[0][i] + c[1][i]) * 0.5;
+    this.detect(r, mono, false);
+  }
+
+  /** Alimenta o detector e abre/fecha takes. ec = veio da captura com cancelamento de eco. */
+  private detect(r: Rec, mono: Float32Array, ec: boolean) {
+    if (!r.smart || this.rec !== r) return;
+    const sr = this.ctx!.sampleRate;
+    if (ec && r.gain !== 1) {
+      const g = new Float32Array(mono.length);
+      for (let i = 0; i < g.length; i++) g[i] = mono[i] * r.gain;
+      mono = g;
+    }
     for (const st of r.smart.det.push(mono)) {
       r.noiseDb = st.noiseDb;
       r.snrDb = st.snrDb;
+      r.peakDb = st.peakDb;
       const last = r.takes[r.takes.length - 1];
       const open = last && last.c1 === null ? last : null;
       if (!open && st.active) {
         // começa um take um pouco antes, para não cortar o ataque da palhetada
         const prevEnd = last ? last.c1! : 0;
-        const c0 = Math.max(r.skip, prevEnd, st.end - 1024 - Math.round(0.04 * sr));
+        const c0 = Math.max(r.skip, prevEnd, st.since - 1024 - Math.round(0.06 * sr));
         const tick = this.tickAt(r, c0 - r.skip);
         r.takes.push({ c0, c1: null, tick, track: this.takeTrack(r, tick) });
         r.lastLoud = st.end;
@@ -234,6 +266,11 @@ export class Audio {
     r.src.disconnect();
     r.node.port.onmessage = null;
     if (r.own) r.stream.getTracks().forEach((t) => t.stop());
+    if (r.smart?.node) {
+      r.smart.node.port.onmessage = null;
+      r.smart.node.disconnect();
+      r.smart.stream?.getTracks().forEach((t) => t.stop());
+    }
     const total = r.frames;
     const L = new Float32Array(total), R = new Float32Array(total);
     let w = 0;
@@ -450,9 +487,10 @@ interface Rec {
   tps: number; // ticks por segundo
   map: [number, number][];
   /** Detector de "está tocando" (com aprendizado do ruído de fundo); só decide os cortes. */
-  smart: { det: TakeDetector; hold: number } | null;
+  smart: { det: TakeDetector; hold: number; stream: MediaStream | null; node: AudioWorkletNode | null } | null;
   noiseDb: number | null;
   snrDb: number | null;
+  peakDb: number | null;
   takes: { c0: number; c1: number | null; tick: number; track: number }[];
   lastLoud: number;
 }

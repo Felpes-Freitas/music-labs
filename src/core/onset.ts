@@ -15,14 +15,18 @@ const HOP = 512;
 export interface DetectorState {
   /** Fim (em amostras) do trecho analisado. */
   end: number;
-  /** Há som acima do ruído. */
+  /** Há som sustentado acima do ruído (batidas curtas não contam). */
   active: boolean;
+  /** Fim do primeiro quadro do trecho ativo atual (para começar o take no ataque). */
+  since: number;
   /** Quanto o som está acima do ruído, em dB. */
   snrDb: number;
   /** Nível do ruído de fundo aprendido (dBFS aproximado). */
   noiseDb: number;
   /** Nível do sinal (dBFS aproximado). */
   levelDb: number;
+  /** Pico do quadro (dBFS). */
+  peakDb: number;
 }
 
 export class TakeDetector {
@@ -40,11 +44,17 @@ export class TakeDetector {
   private riseFast: number;
   private broad = 0; // quadros seguidos com ruído largo acima do aprendido
   private on = false;
+  private run = 0; // quadros seguidos acima do ruído
+  private runStart = 0;
   private wsum = 0;
   constructor(
     private sr: number,
     /** Margem acima do ruído para considerar que começou a tocar (dB). */
     public marginDb = 10,
+    /** Tempo mínimo de som contínuo para contar como tocando (s): ignora batidas e estalos. */
+    public minOnSec = 0.12,
+    /** Limiar de volume (dBFS de pico): abaixo disso nunca conta como tocando. */
+    public thresholdDb = -90,
   ) {
     for (let i = 0; i < N; i++) {
       this.win[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / N);
@@ -107,9 +117,18 @@ export class TakeDetector {
     const toDb = (pw: number) => 10 * Math.log10((2 * pw) / (N * this.wsum) + 1e-12);
     const levelDb = toDb(psum);
     // histerese: abre na margem, fecha 6 dB abaixo dela
-    if (this.on) this.on = snrDb > this.marginDb - 6 && levelDb > -80;
-    else this.on = snrDb > this.marginDb && levelDb > -75;
-    return { end: this.pos, active: this.on, snrDb, noiseDb: toDb(nsum), levelDb };
+    // pico do trecho novo deste quadro, comparado com o limiar de volume do usuário
+    let peak = 0;
+    for (let i = N - HOP; i < N; i++) peak = Math.max(peak, Math.abs(this.buf[i]));
+    const peakDb = 20 * Math.log10(peak + 1e-9);
+    const loud = peakDb > this.thresholdDb - (this.on ? 3 : 0);
+    if (this.on) this.on = loud && snrDb > this.marginDb - 6 && levelDb > -80;
+    else this.on = loud && snrDb > this.marginDb && levelDb > -75;
+    if (this.on) {
+      if (this.run++ === 0) this.runStart = this.pos;
+    } else this.run = 0;
+    const sustained = this.run * HOP >= this.minOnSec * this.sr;
+    return { end: this.pos, active: sustained, since: this.runStart, snrDb, noiseDb: toDb(nsum), levelDb, peakDb };
   }
 }
 

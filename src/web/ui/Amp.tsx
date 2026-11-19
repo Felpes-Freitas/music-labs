@@ -30,6 +30,7 @@ interface AmpPrefs {
   pick: RecChannels;
   preset: string;
   smart: boolean;
+  thresholdDb: number;
   marginDb: number;
   holdSec: number;
 }
@@ -107,6 +108,7 @@ const load = (): AmpPrefs => {
     pick: p.pick ?? 'left',
     preset: p.preset ?? FIRST,
     smart: p.smart ?? true,
+    thresholdDb: p.thresholdDb ?? -45,
     marginDb: p.marginDb ?? 10,
     holdSec: p.holdSec ?? 1.5,
   };
@@ -174,7 +176,7 @@ export function AmpWindow() {
       inGainDb: amp.inGain,
       outGainDb: amp.outGain,
       pick: amp.pick,
-      smart: amp.smart ? { marginDb: amp.marginDb, holdSec: amp.holdSec } : null,
+      smart: amp.smart ? { marginDb: amp.marginDb, holdSec: amp.holdSec, thresholdDb: amp.thresholdDb, deviceId: amp.device || undefined } : null,
     }).then(() => emit());
   };
   const presetNames = [...Object.keys(PRESETS), ...Object.keys(userPresets())];
@@ -251,6 +253,7 @@ export function AmpWindow() {
             </label>
             {amp.smart && (
               <>
+                <Knob size={24} value={amp.thresholdDb} min={-70} max={-6} def={-45} color="#ff7070" label="Limiar" title={`Volume mínimo para virar gravação: ${amp.thresholdDb.toFixed(0)} dB. Abaixo disso nada entra (veja a linha vermelha no visualizador)`} format={(v) => `${v.toFixed(0)} dB`} onInput={(v) => ((amp.thresholdDb = v), force(undefined))} onCommit={(v) => ((amp.thresholdDb = v), commit())} />
                 <Knob size={24} value={amp.marginDb} min={3} max={30} def={10} label="Margem" title={`Quanto acima do ruído de fundo o som precisa estar para abrir um take: ${amp.marginDb.toFixed(0)} dB (menos = pega notas mais fracas; mais = ignora barulhos do ambiente)`} format={(v) => `${v.toFixed(0)} dB acima do ruído`} onInput={(v) => ((amp.marginDb = v), force(undefined))} onCommit={(v) => ((amp.marginDb = v), commit())} />
                 <Knob size={24} value={amp.holdSec} min={0.3} max={5} def={1.5} log label="Pausa" title={`Depois de ${amp.holdSec.toFixed(1)} s sem tocar, o take fecha (inclui a cauda dos efeitos)`} format={(v) => `${v.toFixed(1)} s`} onInput={(v) => ((amp.holdSec = v), force(undefined))} onCommit={(v) => ((amp.holdSec = v), commit())} />
               </>
@@ -305,7 +308,7 @@ function RecStatus() {
   if (!r) return null;
   const live = r.takes.length > 0 && r.takes[r.takes.length - 1].c1 >= r.frames;
   if (!r.smart) return <span class="amp-status rec">gravando</span>;
-  const noise = r.noiseDb !== null && <small class="amp-noise" data-hint="Ruído de fundo aprendido (chiado, ambiente). Ele só é usado para decidir os cortes dos takes; não muda o som gravado.">ruído {Math.round(r.noiseDb)} dB</small>;
+  const noise = r.noiseDb !== null && <small class="amp-noise" data-hint="Ruído de fundo aprendido (chiado, ambiente). Ele só é usado para decidir os cortes dos takes; não muda o som gravado.">ruído {Math.round(r.noiseDb)} dB{r.echoCancel ? ' · sem eco' : ''}</small>;
   return (
     <span class="amp-status-box">
       {live ? <span class="amp-status rec">● take {r.takes.length}</span> : <span class="amp-status">esperando você tocar{r.takes.length ? ` · ${r.takes.length} ${r.takes.length > 1 ? 'takes' : 'take'}` : ''}</span>}
@@ -353,16 +356,32 @@ function Visualizer() {
       ctx.fillStyle = ui('#1f282d');
       ctx.fillRect(0, mid, ww, 1);
       const n = Math.min(h.out.length, Math.floor(ww / 2));
-      // entrada (contorno claro) e saída (cor de destaque), rolando da direita para a esquerda
+      // escala em dB (−60 a 0): sons fracos e o limiar ficam visíveis
+      const sc = (v: number) => Math.max(0, Math.min(1, (20 * Math.log10(v + 1e-9) + 60) / 60)) * (mid - 4);
+      const thr = amp.smart ? Math.pow(10, amp.thresholdDb / 20) : 0;
+      // entrada (contorno: claro acima do limiar) e saída (cor de destaque), rolando da direita para a esquerda
       for (let i = 0; i < n; i++) {
         const x = ww - (n - i) * 2;
-        const a = Math.min(1, h.inp[h.inp.length - n + i]) * (mid - 4);
-        const b = Math.min(1, h.out[h.out.length - n + i]) * (mid - 4);
+        const vin = h.inp[h.inp.length - n + i];
+        const a = sc(vin);
+        const b = sc(h.out[h.out.length - n + i]);
         ctx.fillStyle = accent();
+        ctx.globalAlpha = 0.3;
         ctx.fillRect(x, mid - b, 1.5, Math.max(1, b * 2));
-        ctx.fillStyle = 'rgba(255,255,255,0.35)';
-        ctx.fillRect(x, mid - a - 0.5, 1.5, 1);
-        ctx.fillRect(x, mid + a - 0.5, 1.5, 1);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = !thr ? 'rgba(255,255,255,0.7)' : vin > thr ? '#fff' : 'rgba(255,255,255,0.3)';
+        ctx.fillRect(x, mid - a, 1.5, Math.max(1, a * 2)); // entrada como barra cheia, por cima da saída
+      }
+      if (thr) {
+        // linha do limiar de volume da gravação inteligente
+        const ty = sc(thr);
+        ctx.fillStyle = 'rgba(255,90,90,0.75)';
+        for (let x = 0; x < ww; x += 6) {
+          ctx.fillRect(x, mid - ty, 3, 1);
+          ctx.fillRect(x, mid + ty, 3, 1);
+        }
+        ctx.font = '9px sans-serif';
+        ctx.fillText(`limiar ${amp.thresholdDb.toFixed(0)} dB`, 6, mid - ty - 3);
       }
       // medidores
       const bar = (x: number, v: number, label: string) => {
@@ -377,6 +396,11 @@ function Visualizer() {
         ctx.fillText(label, x + 1, H - 3);
       };
       bar(W - meterW, h.inPk, 'in');
+      if (thr) {
+        const f = Math.max(0, Math.min(1, (amp.thresholdDb + 60) / 60));
+        ctx.fillStyle = '#ff5a5a';
+        ctx.fillRect(W - meterW - 2, 4 + (H - 18) * (1 - f), 16, 1.5);
+      }
       bar(W - meterW + 17, h.outPk, 'out');
     };
     const off = onTheme(() => draw());
