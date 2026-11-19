@@ -165,7 +165,24 @@ export interface Project {
   loop?: { start: number; end: number } | null;
   /** Lista de áudios do projeto (gravações, importados, variantes), como os patterns. */
   audios?: AudioItem[];
+  /** Sessão do Stitcher (áudios, cortes, escolhas, pedaços editados). */
+  stitch?: StitchSession | null;
   meta: { createdAt: string; source?: string; notes?: string };
+}
+
+/** Sessão do Stitcher guardada no projeto. Tempos em segundos, na linha do tempo da costura. */
+export interface StitchSession {
+  ids: string[]; // áudios da lista
+  key: { root: number; scale: string } | null;
+  tune: boolean;
+  segments: {
+    t0: number;
+    t1: number;
+    take: number;
+    target: number | null;
+    manual?: boolean;
+    piece?: { id: string; start: number; off?: boolean };
+  }[];
 }
 
 /** Áudio da lista do projeto. `path` é a versão atual; `original` nunca é apagado. */

@@ -168,6 +168,24 @@ export function rescore(plan: StitchPlan, takes: StitchTake[], sr: number) {
   plan.takeCents = stats.map((s) => (s.w > 0 ? s.sum / s.w : null));
 }
 
+/**
+ * Põe de volta cortes, notas pretendidas e escolhas salvos (sessão guardada no
+ * projeto). As escolhas automáticas são recalculadas (dão o mesmo resultado); as
+ * manuais ficam como estavam.
+ */
+export function restoreSegments(plan: StitchPlan, takes: StitchTake[], sr: number, saved: { t0: number; t1: number; take: number; target: number | null; manual?: boolean }[]) {
+  plan.segments = saved.map((s) => ({
+    t0: s.t0,
+    t1: s.t1,
+    take: s.take < takes.length ? s.take : -1,
+    target: s.target,
+    sung: takes.map((tk) => sungIn(tk, s.t0, s.t1, sr)),
+    cents: [],
+    ...(s.manual ? { manual: true } : {}),
+  }));
+  rescore(plan, takes, sr);
+}
+
 /** Junta trechos vizinhos do mesmo take (use antes de renderStitch). */
 export function mergeSegments(segments: StitchSegment[]): StitchSegment[] {
   const merged: StitchSegment[] = [];

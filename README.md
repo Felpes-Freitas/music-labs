@@ -107,7 +107,9 @@ git push --follow-tags
   playlist" guardam o resultado. Controle manual: arraste as divisas do resultado para
   mudar os cortes; botão direito num pedaço para usar outro áudio, dividir, juntar ou
   **abrir só aquele pedaço no Afinador** — o que for aplicado lá volta para a costura
-  (e pode ser desativado), sem mexer no take original.
+  (e pode ser desativado), sem mexer no take original. A sessão do Stitcher (áudios,
+  tom, cortes, escolhas e pedaços editados) é salva no projeto e volta ao reabrir; desfazer
+  também vale para as mudanças feitas nele.
 - **Nada é destrutivo**: todo áudio da lista guarda o original; as edições podem ser
   desativadas e reativadas (selo "ed." na lista, botão no Afinador).
 - **Navegador lateral** recolhível (botão no topo ou Alt+F8).
