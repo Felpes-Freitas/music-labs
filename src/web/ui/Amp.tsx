@@ -7,6 +7,8 @@ import { useApp, state, toggleRecord, toast, emit, onLive } from '../state';
 import { audio, type RecChannels } from '../audio';
 import { EFFECTS, GUITAR_FX, type ParamDef } from '../../core/registry';
 import type { EffectType, Params } from '../../core/model';
+import { noteName } from '../../core/model';
+import { trackPitch } from '../../core/pitchtrack';
 import { uid } from '../../core/model';
 import { getPref, setPref, usePref } from '../prefs';
 import { Win, Knob, ContextMenu, fmt } from './widgets';
@@ -141,9 +143,13 @@ const userPresets = () => {
 
 const listeners = new Set<() => void>();
 /** Grava as preferências, manda a cadeia para o áudio e redesenha. */
+/** Afinador aberto: o retorno toca a guitarra limpa (sem nenhum efeito). */
+let tunerOpen = false;
+const liveChain = () => (tunerOpen ? [] : amp.chain);
+
 function commit() {
   setPref('amp', amp);
-  audio.configAmp({ chain: amp.chain, inGain: amp.inGain, outGain: amp.outGain, pick: amp.pick, bpm: state.project.bpm });
+  audio.configAmp({ chain: liveChain(), inGain: amp.inGain, outGain: amp.outGain, pick: amp.pick, bpm: state.project.bpm });
   // com o retorno nativo, o do navegador fica mudo (só serve para o visualizador)
   audio.setAmpMonitor(amp.monitor && !(amp.native && nativeOk));
   syncNative();
@@ -169,7 +175,7 @@ function syncNative() {
   nativeTimer = window.setTimeout(() => {
     const on = nativeOk && ampOpen && amp.native && amp.monitor;
     const body = on
-      ? { on: true, buffer: amp.buffer, source: nativeSource(devicesNow), pick: amp.pick, inGain: amp.inGain, outGain: amp.outGain, bpm: state.project.bpm, chain: amp.chain }
+      ? { on: true, buffer: amp.buffer, source: nativeSource(devicesNow), pick: amp.pick, inGain: amp.inGain, outGain: amp.outGain, bpm: state.project.bpm, chain: liveChain() }
       : { on: false };
     const json = JSON.stringify(body);
     if (json === nativeLast) return;
@@ -186,6 +192,12 @@ export function AmpWindow() {
   const [, force] = useReducer((x: number) => x + 1, 0);
   const [devices, setDevices] = useState<{ id: string; label: string }[]>([]);
   const [on, setOn] = useState(false);
+  const [tuner, setTunerState] = useState(false);
+  const setTuner = (v: boolean) => {
+    tunerOpen = v;
+    setTunerState(v);
+    commit();
+  };
   useEffect(() => {
     listeners.add(force as () => void);
     return () => void listeners.delete(force as () => void);
@@ -340,6 +352,9 @@ export function AmpWindow() {
             )}
             {recording && <RecStatus />}
           </div>
+          <button class="amp-tune-btn" disabled={!on} onClick={() => setTuner(true)} data-hint="Afinador de guitarra: enquanto estiver aberto, o retorno toca a guitarra limpa, sem efeitos">
+            <Icon name="tune" size={13} /> Afinar
+          </button>
           <button class={`amp-mon ${amp.monitor ? 'on' : ''}`} onClick={() => ((amp.monitor = !amp.monitor), commit())} data-hint="Ouvir o amp enquanto toca (desligue se o microfone captar os alto-falantes)">
             Ouvir
           </button>
@@ -412,6 +427,7 @@ export function AmpWindow() {
         </div>
         <Visualizer />
         <Chain />
+        {tuner && on && <GuitarTuner onClose={() => setTuner(false)} />}
       </div>
     </Win>
   );
@@ -431,6 +447,93 @@ function RecStatus() {
       {live ? <span class="amp-status rec">● take {r.takes.length}</span> : <span class="amp-status">esperando você tocar{r.takes.length ? ` · ${r.takes.length} ${r.takes.length > 1 ? 'takes' : 'take'}` : ''}</span>}
       {noise}
     </span>
+  );
+}
+
+// ---------------------------------------------------------------- afinador de guitarra
+
+const STRINGS: { name: string; midi: number }[] = [
+  { name: 'E', midi: 40 },
+  { name: 'A', midi: 45 },
+  { name: 'D', midi: 50 },
+  { name: 'G', midi: 55 },
+  { name: 'B', midi: 59 },
+  { name: 'e', midi: 64 },
+];
+
+/** Janelinha de afinação: lê a entrada crua e mostra a nota e quantos cents falta. */
+function GuitarTuner(p: { onClose: () => void }) {
+  const [read, setRead] = useState<{ midi: number; freq: number } | null>(null);
+  useEffect(() => {
+    const tap = audio.ampTap();
+    if (!tap) return;
+    const buf = new Float32Array(tap.an.fftSize);
+    const hist: number[] = [];
+    let raf = 0, last = 0;
+    const tick = (t: number) => {
+      raf = requestAnimationFrame(tick);
+      if (t - last < 70) return;
+      last = t;
+      tap.an.getFloatTimeDomainData(buf);
+      let pk = 0;
+      for (const v of buf) pk = Math.max(pk, Math.abs(v));
+      if (pk < 0.004) {
+        // silêncio: mantém a última leitura um pouco e depois apaga
+        if (hist.length) hist.shift();
+        if (!hist.length) setRead(null);
+        return;
+      }
+      const tr = trackPitch(buf, tap.sr, 60, 1200);
+      const v = Array.from(tr.midi).filter((m) => !Number.isNaN(m));
+      if (v.length < 3) return;
+      v.sort((a, b) => a - b);
+      hist.push(v[v.length >> 1]);
+      if (hist.length > 5) hist.shift();
+      const sm = [...hist].sort((a, b) => a - b)[hist.length >> 1];
+      setRead({ midi: sm, freq: 440 * Math.pow(2, (sm - 69) / 12) });
+    };
+    raf = requestAnimationFrame(tick);
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && p.onClose();
+    window.addEventListener('keydown', key);
+    return () => {
+      cancelAnimationFrame(raf);
+      tap.off();
+      window.removeEventListener('keydown', key);
+    };
+  }, []);
+  const near = read ? Math.round(read.midi) : null;
+  const cents = read ? Math.round((read.midi - near!) * 100) : 0;
+  const inTune = read !== null && Math.abs(cents) <= 4;
+  const str = read ? STRINGS.reduce((b, s) => (Math.abs(s.midi - read.midi) < Math.abs(b.midi - read.midi) ? s : b)) : null;
+  return (
+    <div class="gtuner-back" onPointerDown={(e) => e.target === e.currentTarget && p.onClose()}>
+      <div class="gtuner">
+        <div class="gtuner-head">
+          <b>Afinar guitarra</b>
+          <span class="dim small">ouvindo a entrada limpa, sem efeitos</span>
+          <button class="win-btn win-close" onClick={p.onClose} data-hint="Fechar (Esc)">
+            <Icon name="close" size={12} />
+          </button>
+        </div>
+        <div class={`gtuner-note ${inTune ? 'ok' : ''}`}>{near !== null ? noteName(near).replace(/-?\d+$/, '') : '–'}</div>
+        <div class="gtuner-sub">{read ? `${noteName(near!)} · ${read.freq.toFixed(1)} Hz` : 'Toque uma corda solta'}</div>
+        <div class="gtuner-meter">
+          {[-50, -25, 0, 25, 50].map((c) => (
+            <span class="gtuner-tick" style={{ left: `${50 + c}%` }}>
+              {c > 0 ? `+${c}` : c}
+            </span>
+          ))}
+          <div class="gtuner-zone" />
+          {read && <div class={`gtuner-needle ${inTune ? 'ok' : Math.abs(cents) < 15 ? 'near' : ''}`} style={{ left: `${50 + Math.max(-50, Math.min(50, cents))}%` }} />}
+        </div>
+        <div class="gtuner-hint">{!read ? '' : inTune ? 'Afinada ✓' : cents < 0 ? `Baixa ${-cents} cents — aperte a tarraxa` : `Alta ${cents} cents — afrouxe a tarraxa`}</div>
+        <div class="gtuner-strings">
+          {STRINGS.map((s) => (
+            <span class={str?.midi === s.midi ? 'on' : ''}>{s.name}</span>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -648,7 +751,7 @@ function Chain() {
                     format={fmtParam(d)}
                     onInput={(x) => {
                       f.params = { ...f.params, [d.key]: x };
-                      audio.configAmp({ chain, inGain: amp.inGain, outGain: amp.outGain, pick: amp.pick, bpm: state.project.bpm });
+                      audio.configAmp({ chain: liveChain(), inGain: amp.inGain, outGain: amp.outGain, pick: amp.pick, bpm: state.project.bpm });
                       syncNative();
                     }}
                     onCommit={(x) => set(i, { params: { ...f.params, [d.key]: x } })}

@@ -396,6 +396,15 @@ export class Audio {
     monitor.connect(mon.destination);
     this.amp = { stream, src, node, monitor, deviceId };
   }
+  /** Analisador na entrada crua do amp (afinador de guitarra). Desligue com o retorno de off. */
+  ampTap(): { an: AnalyserNode; sr: number; off: () => void } | null {
+    const a = this.amp;
+    if (!a || !this.mon) return null;
+    const an = this.mon.createAnalyser();
+    an.fftSize = 8192;
+    a.src.connect(an);
+    return { an, sr: this.mon.sampleRate, off: () => a.src.disconnect(an) };
+  }
   stopAmp() {
     const a = this.amp;
     if (!a) return;

@@ -433,7 +433,7 @@ export function Toolbar() {
           <button class={`tr-tog ${s.metronome ? 'on' : ''}`} onClick={toggleMetronome} data-hint="Metrônomo: um clique a cada tempo (mais agudo no começo do compasso)">
             <Icon name="metronome" size={13} />
           </button>
-          <button class={`tr-tog ${s.countIn ? 'on' : ''}`} onClick={toggleCountIn} data-hint="Contagem: ao gravar, conta 3 tempos (3, 2, 1) antes de começar">
+          <button class={`tr-tog ${s.countIn ? 'on' : ''}`} onClick={toggleCountIn} data-hint="Contagem: ao gravar, conta 4 tempos (um compasso) antes de começar">
             <span class="tr-count">321</span>
           </button>
         </div>

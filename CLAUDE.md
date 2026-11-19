@@ -177,6 +177,9 @@ scripts/     ferramentas de diagnóstico e testes de UI (os _*.mts são temporá
   (`audio.calibrateLatency`: cliques + gravador com horário `ml-recorder-t`; resultado em
   `rec.latencyMs`, usado em `recLatencyFrames()` para alinhar os takes). Notas do teclado
   descontam a latência de saída (`midirec.now`).
+- **Afinador de guitarra** (botão "Afinar" no amp, `GuitarTuner` em Amp.tsx): lê a entrada
+  crua (`audio.ampTap()`), mostra nota/cents/corda; enquanto aberto, o retorno toca sem
+  efeitos (`liveChain()` vazia).
 - **Retorno nativo do amp** (`src/server/monitor.ts`, `/api/monitor`): o servidor roda
   `pw-record` → cadeia de efeitos (mesmo `core/effects`) → `pw-play`, com `node.group`
   comum (mesmo relógio) e um bloco de reserva na saída. O bloco (amostras) é escolhido
@@ -193,7 +196,7 @@ scripts/     ferramentas de diagnóstico e testes de UI (os _*.mts são temporá
   track livre a partir da base (nunca em cima de outro clipe) — toca na próxima volta. Ao
   parar, `finishRecording` troca cada prévia pelo arquivo em alta qualidade no mesmo lugar.
   Notas: `midiOnStatus` transforma cada volta em pattern assim que o loop recomeça.
-- **Contagem 3-2-1** (opção `countIn`) vale para o REC geral, o amp (engine `countIn` +
+- **Contagem de 4 tempos** (opção `countIn`, ícone "321") vale para o REC geral, o amp (engine `countIn` +
   `countInSec` no startRecording) e as ferramentas (`countInIfOn` + `startCapture({arm})`).
 
 ### Servidor (`src/server/`)

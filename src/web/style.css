@@ -742,3 +742,24 @@ option, optgroup { background-color: var(--pop); color: var(--text); }
   optgroup { padding: 2px 0; }
   optgroup legend, optgroup::label { display: block; padding: 6px 8px 3px; font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--head); font-weight: 700; }
 }
+/* afinador de guitarra (amp) */
+.amp-tune-btn { height: 28px; display: inline-flex; align-items: center; gap: 5px; padding: 0 10px; }
+.gtuner-back { position: fixed; inset: 0; z-index: 130000; background: var(--veil); display: flex; align-items: center; justify-content: center; }
+.gtuner { width: 420px; background: linear-gradient(var(--card1), var(--card2)); border: 1px solid var(--line2); border-radius: calc(var(--win-rad) + 4px); box-shadow: 0 20px 60px var(--shadow); padding: 14px 18px 18px; display: flex; flex-direction: column; align-items: center; gap: 8px; animation: dlg-in .12s ease-out; }
+.gtuner-head { align-self: stretch; display: flex; align-items: center; gap: 10px; }
+.gtuner-head b { font-size: 13px; }
+.gtuner-head .win-btn { margin-left: auto; }
+.gtuner-note { font-size: 84px; font-weight: 800; line-height: 1; color: var(--text); margin-top: 6px; transition: color .15s; }
+.gtuner-note.ok { color: #6fdc8c; text-shadow: 0 0 24px rgba(111,220,140,.5); }
+.gtuner-sub { color: var(--dim); font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+.gtuner-meter { position: relative; width: 100%; height: 46px; margin-top: 10px; border-top: 1px solid var(--line); }
+.gtuner-tick { position: absolute; top: 4px; transform: translateX(-50%); font-size: 9px; color: var(--dim2); }
+.gtuner-tick::before { content: ''; position: absolute; left: 50%; top: -9px; width: 1px; height: 6px; background: var(--line); }
+.gtuner-zone { position: absolute; left: 46%; width: 8%; top: 18px; height: 22px; background: rgba(111,220,140,.15); border-radius: 3px; }
+.gtuner-needle { position: absolute; top: 14px; width: 4px; height: 30px; margin-left: -2px; border-radius: 2px; background: #ff7070; transition: left .08s linear; }
+.gtuner-needle.near { background: #e8c547; }
+.gtuner-needle.ok { background: #6fdc8c; box-shadow: 0 0 10px rgba(111,220,140,.8); }
+.gtuner-hint { min-height: 16px; color: var(--text2); font-weight: 600; }
+.gtuner-strings { display: flex; gap: 8px; margin-top: 4px; }
+.gtuner-strings span { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-weight: 700; color: var(--dim); }
+.gtuner-strings span.on { border-color: var(--acc); color: var(--acc-ink); background: var(--acc); }

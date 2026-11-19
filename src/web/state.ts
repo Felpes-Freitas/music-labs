@@ -402,10 +402,10 @@ export function toggleCountIn() {
 audio.transport({ loopOn: state.loopOn, metronome: state.metronome });
 audio.recLatencyMs = getPref<number | null>('rec.latencyMs', null);
 
-/** Contagem 3, 2, 1 (se ligada) antes de gravar nas ferramentas que não tocam a música. */
+/** Contagem de 4 tempos (se ligada) antes de gravar nas ferramentas que não tocam a música. */
 export async function countInIfOn() {
   if (!state.countIn) return;
-  await audio.countInClicks(3, state.project.bpm, (n) => {
+  await audio.countInClicks(4, state.project.bpm, (n) => {
     state.countdown = n;
     emit();
   });
@@ -423,9 +423,9 @@ function toggleMidiRecord() {
   startMidiRec(start, region);
   state.mode = 'song';
   playingFlag = true;
-  audio.play('song', state.patternId, start, state.countIn ? 3 : 0);
+  audio.play('song', state.patternId, start, state.countIn ? 4 : 0);
   const ch = p.channels.find((c) => c.id === state.channelId);
-  toast(`Gravando notas${ch ? ` (${ch.name})` : ''} e automações${state.countIn ? ' · contagem 3, 2, 1' : ''} — Espaço ou ■ para parar`);
+  toast(`Gravando notas${ch ? ` (${ch.name})` : ''} e automações${state.countIn ? ' · contagem de 4 tempos' : ''} — Espaço ou ■ para parar`);
   emit();
 }
 /** Parar: a primeira vez para a música; parado, corta também as caudas (reverb, eco, notas soltas). */
@@ -471,7 +471,7 @@ export async function toggleRecord(fromAmp: AmpTake | null = null, extra: { smar
   if (audio.recording || midiRecording()) return stop();
   // o REC geral grava notas e automações; áudio (voz, guitarra) fica com o amp e as ferramentas
   if (!fromAmp && !extra.audio && !extra.smart) return toggleMidiRecord();
-  const countBeats = state.countIn ? 3 : 0;
+  const countBeats = state.countIn ? 4 : 0;
   // como no REC geral: começa na área selecionada (ou onde a agulha está)
   const start = state.sel ? state.sel.start : audio.status.mode === 'song' ? Math.max(0, Math.floor(audio.status.tick)) : 0;
   try {
