@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { useApp, state, edit, previewEdit, onLive, selectPattern, openWindow, setMode, act, setHint, setSelection } from '../state';
+import { useApp, state, edit, previewEdit, onLive, selectPattern, openWindow, setMode, act, setHint, setSelection, setLivePeaksHandler } from '../state';
 import { SelectionMenu } from './SelectionMenu';
 import { audio } from '../audio';
 import { PPQ, patternLength, songLength, ticksPerBar, uid, isPatternClip, type Clip, type AutoTarget } from '../../core/model';
@@ -246,6 +246,7 @@ export function Playlist() {
     const perPx = r.sr / ticksPerSec / v.zx / r.peakFrames; // blocos de pico por pixel
     r.takes.forEach((t, k) => {
       const live = k === r.takes.length - 1 && t.c1 >= r.frames;
+      if (!live) return; // takes fechados já viraram clipes de verdade na playlist
       const x = HEADW + (t.tick - v.scrollX) * v.zx;
       const cw = ((t.c1 - t.c0) / r.sr) * ticksPerSec * v.zx;
       const y = RULER + t.track * v.rowH - v.scrollY;
@@ -624,8 +625,22 @@ export async function loadPeaks(path: string): Promise<{ duration: number; peaks
   return d;
 }
 
+/** Contorno de um áudio que ainda não está no servidor (prévia de take gravado agora). */
+export function setLivePeaks(path: string, L: Float32Array, sr: number) {
+  const n = 2000, per = Math.max(1, Math.floor(L.length / n));
+  const peaks: number[] = [];
+  for (let i = 0; i < L.length; i += per) {
+    let m = 0;
+    for (let j = i; j < Math.min(L.length, i + per); j++) m = Math.max(m, Math.abs(L[j]));
+    peaks.push(m);
+  }
+  peaksCache.set(path, { duration: L.length / sr, peaks, max: Math.max(0.05, ...peaks) });
+  repaintPeaks?.();
+}
+
 /** Contorno do arquivo, se já carregado (senão começa a carregar e repinta depois). */
 function peaksFor(path: string) {
+  if (path.startsWith('live:') && !peaksCache.has(path)) return null;
   const hit = peaksCache.get(path);
   if (hit === undefined) loadPeaks(path).catch(() => {});
   return hit && hit !== 'carregando' ? hit : null;
@@ -645,3 +660,5 @@ function fmtAuto(t: AutoTarget, v: number) {
   if (t.path[t.path.length - 1] === 'volume') return real <= 0.0001 ? '-∞ dB' : `${(20 * Math.log10(real)).toFixed(1)} dB`;
   return Math.abs(real) >= 100 ? real.toFixed(0) : real.toFixed(2);
 }
+
+setLivePeaksHandler(setLivePeaks);

@@ -72,6 +72,26 @@ function now(): { tick: number; pass: number } | null {
 export function startMidiRec(start: number, region: [number, number] | null) {
   rec = { start, region, notes: [], autos: [] };
   touched.clear();
+  committed.clear();
+  lastLoops = 0;
+  nCommitted = { patterns: 0, notes: 0, autos: 0 };
+}
+
+/** Voltas do loop já transformadas em patterns (gravação aditiva). */
+const committed = new Set<number>();
+let lastLoops = 0;
+let nCommitted = { patterns: 0, notes: 0, autos: 0 };
+
+/**
+ * A cada volta do loop, o que foi tocado na volta anterior vira pattern/automação
+ * na hora — e já toca na próxima volta, por baixo do que você tocar agora.
+ */
+export function midiOnStatus(st: { loops: number; playing: boolean; countIn: number }) {
+  if (!rec?.region || !st.playing || st.countIn) return;
+  if (st.loops > lastLoops) {
+    lastLoops = st.loops;
+    commit((pass) => pass < st.loops, rec.region[1], false);
+  }
 }
 
 /** Nota tocada ao vivo (chamado pelo áudio a cada liveOn/liveOff). */
@@ -107,18 +127,29 @@ const freeTrack = (p: Project, pos: number, len: number, extra: Clip[]) => {
   }
 };
 
-/** Para a gravação e transforma o que foi tocado em patterns e clipes de automação. */
+/** Para a gravação e transforma o que ainda não virou pattern. */
 export function finishMidiRec(stopTick: number) {
-  const r = rec;
+  if (!rec) return;
+  commit(() => true, stopTick, true);
   rec = null;
   touched.clear();
+}
+
+/** Transforma em patterns/automações as voltas escolhidas que ainda não foram. */
+function commit(which: (pass: number) => boolean, stopTick: number, final: boolean) {
+  const r = rec;
   if (!r) return;
   const p = state.project;
   const bar = ticksPerBar(p);
-  // notas ainda presas fecham onde a gravação parou
-  for (const n of r.notes) if (n.off === null) n.off = r.region ? r.region[1] : stopTick;
-  const passes = [...new Set([...r.notes.map((n) => n.pass), ...r.autos.map((a) => a.pass)])].sort((a, b) => a - b);
-  if (!passes.length) return toast('Nada foi tocado: nenhuma nota ou automação gravada');
+  const passes = [...new Set([...r.notes.map((n) => n.pass), ...r.autos.map((a) => a.pass)])].filter((x) => which(x) && !committed.has(x)).sort((a, b) => a - b);
+  // notas ainda presas nessas voltas fecham no fim da volta (ou onde a gravação parou)
+  for (const n of r.notes) if (n.off === null && passes.includes(n.pass)) n.off = r.region ? r.region[1] : stopTick;
+  if (!passes.length) {
+    if (final && !nCommitted.patterns && !nCommitted.autos) toast('Nada foi tocado: nenhuma nota ou automação gravada');
+    else if (final) report();
+    return;
+  }
+  passes.forEach((x) => committed.add(x));
   const ops: Op[] = [];
   const newClips: Clip[] = [];
   const newTracks: number[] = [];
@@ -195,8 +226,16 @@ export function finishMidiRec(stopTick: number) {
   for (let t = p.tracks.length; t <= maxTrack; t++) ops.unshift(ins(['tracks'], { id: uid('t'), name: `Track ${t + 1}`, color: color(t), mute: false }));
   edit(ops);
   if (lastPattern) selectPattern(lastPattern);
-  const parts = [nPatterns && `${nNotes} notas em ${nPatterns} ${nPatterns > 1 ? 'patterns' : 'pattern'}`, nAuto && `${nAuto} ${nAuto > 1 ? 'automações' : 'automação'}`].filter(Boolean);
-  toast(`Gravado: ${parts.join(' · ')}`);
+  nCommitted.patterns += nPatterns;
+  nCommitted.notes += nNotes;
+  nCommitted.autos += nAuto;
+  if (final) report();
   void A;
   void songLength;
+}
+
+function report() {
+  const { patterns, notes, autos } = nCommitted;
+  const parts = [patterns && `${notes} notas em ${patterns} ${patterns > 1 ? 'patterns' : 'pattern'}`, autos && `${autos} ${autos > 1 ? 'automações' : 'automação'}`].filter(Boolean);
+  if (parts.length) toast(`Gravado: ${parts.join(' · ')}`);
 }

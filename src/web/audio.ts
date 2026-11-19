@@ -124,7 +124,7 @@ export class Audio {
   async startRecording(
     startTick: number,
     track: number,
-    opt: { deviceId?: string; channels?: RecChannels; stream?: MediaStream; gainDb?: number; smart?: { marginDb: number; holdSec: number; thresholdDb: number; deviceId?: string }; countInSec?: number } = {},
+    opt: { deviceId?: string; channels?: RecChannels; stream?: MediaStream; gainDb?: number; smart?: { marginDb: number; holdSec: number; thresholdDb: number; deviceId?: string }; countInSec?: number; loop?: [number, number] | null; onTakeClosed?: (k: number) => void } = {},
   ) {
     await this.resume();
     const ctx = this.ctx!;
@@ -153,6 +153,9 @@ export class Audio {
       accN: 0,
       skip: latency,
       preroll,
+      loop: opt.loop ?? null,
+      lastLoops: 0,
+      onClose: opt.onTakeClosed ?? (() => {}),
       tps: 0,
       map: [[preroll, startTick]],
       smart: opt.smart ? { det: new TakeDetector(sr, opt.smart.marginDb, 0.12, opt.smart.thresholdDb), hold: Math.round(opt.smart.holdSec * sr), stream: null, node: null } : null,
@@ -188,8 +191,51 @@ export class Audio {
   /** Anota onde a música está (chamado a cada status da engine). */
   private markRec() {
     const r = this.rec;
-    if (r && this.status.playing && !this.status.countIn) r.map.push([r.frames, this.status.tick]);
-    if (r && r.map.length > 4000) r.map.splice(1, 2000);
+    if (!r || !this.status.playing || this.status.countIn) return;
+    // o loop recomeçou: fecha o take no ponto exato da volta e (se ainda estiver gravando) abre outro no começo
+    if (r.loop && this.status.loops > r.lastLoops) {
+      r.lastLoops = this.status.loops;
+      const prev = r.map[r.map.length - 1];
+      const sr = this.ctx!.sampleRate;
+      const wrap = Math.round(prev[0] + ((r.loop[1] - prev[1]) / r.tps) * sr) + r.skip;
+      const last = r.takes[r.takes.length - 1];
+      if (last && last.c1 === null && wrap > last.c0) {
+        last.c1 = wrap;
+        r.onClose(r.takes.length - 1);
+        // gravação normal: a próxima volta é outro take; inteligente: só se você ainda estiver tocando
+        if (!r.smart || r.frames - r.lastLoud < r.smart.hold) r.takes.push({ c0: wrap, c1: null, tick: r.loop[0], track: this.takeTrack(r, r.loop[0]) });
+      }
+      // a volta reinicia a contagem de tempo do mapa
+      r.map.push([wrap - r.skip, r.loop[0]]);
+    }
+    r.map.push([r.frames, this.status.tick]);
+    if (r.map.length > 4000) r.map.splice(1, 2000);
+  }
+
+  /** Áudio de um take (já fechado) da gravação em andamento. */
+  takeAudio(k: number): { L: Float32Array; R: Float32Array; sr: number; tick: number } | null {
+    const r = this.rec;
+    const t = r?.takes[k];
+    if (!r || !t) return null;
+    const c1 = Math.min(r.frames, t.c1 ?? r.frames), c0 = Math.min(c1, t.c0);
+    const L = new Float32Array(c1 - c0), R = new Float32Array(c1 - c0);
+    let pos = 0;
+    for (const ch of r.chunks) {
+      const a = Math.max(c0, pos), b = Math.min(c1, pos + ch[0].length);
+      if (b > a) {
+        L.set(ch[0].subarray(a - pos, b - pos), a - c0);
+        R.set(ch[1].subarray(a - pos, b - pos), a - c0);
+      }
+      pos += ch[0].length;
+      if (pos >= c1) break;
+    }
+    return { L, R, sr: this.ctx!.sampleRate, tick: t.tick };
+  }
+
+  /** Coloca um áudio na engine sem passar pelo servidor (prévia de take, caminho "live:…"). */
+  postLiveSample(path: string, sr: number, ch: Float32Array[]) {
+    this.post({ type: 'sample', path, sr, ch });
+    this.loaded.add(path);
   }
 
   /** Tick da música que estava soando quando a amostra capturada c chegou. */
@@ -248,23 +294,30 @@ export class Audio {
         r.lastLoud = st.end;
       } else if (open) {
         if (st.active) r.lastLoud = st.end;
-        else if (st.end - r.lastLoud > r.smart.hold) open.c1 = st.end;
+        else if (st.end - r.lastLoud > r.smart.hold) {
+          open.c1 = st.end;
+          r.onClose(r.takes.length - 1);
+        }
       }
     }
   }
 
   /** Track do take: a da gravação, ou a seguinte se outro take (em loop) já ocupa o trecho. */
+  /** Track provável de um take novo (a definitiva é escolhida ao colocar o take, com o tamanho real). */
   private takeTrack(r: Rec, tick: number) {
     let t = r.track;
     const sr = this.ctx!.sampleRate;
+    const end = r.loop ? r.loop[1] : tick + r.tps * 4;
+    const p = this.getProject();
     const busy = (track: number) =>
-      r.takes.some((x) => x.track === track && tick >= x.tick && tick < x.tick + (((x.c1 ?? r.frames) - x.c0) / sr) * r.tps);
+      (p?.clips ?? []).some((c) => c.track === track && c.pos < end && c.pos + c.len > tick) ||
+      r.takes.some((x) => x.track === track && x.tick < end && x.tick + (((x.c1 ?? r.frames) - x.c0) / sr) * r.tps > tick);
     while (busy(t)) t++;
     return t;
   }
 
   /** Para a gravação e devolve cada take já recortado e alinhado com a música. */
-  stopRecording(): { sr: number; takes: { tick: number; track: number; L: Float32Array; R: Float32Array }[] } | null {
+  stopRecording(): { sr: number; takes: { k: number; tick: number; track: number; L: Float32Array; R: Float32Array }[] } | null {
     const r = this.rec;
     if (!r) return null;
     this.rec = null;
@@ -285,10 +338,10 @@ export class Audio {
       w += c[0].length;
     }
     const takes = r.takes
-      .map((t) => {
+      .map((t, k) => {
         const c1 = Math.min(total, t.c1 ?? total);
         const c0 = Math.min(c1, t.c0);
-        return { tick: t.tick, track: t.track, L: L.slice(c0, c1), R: R.slice(c0, c1) };
+        return { k, tick: t.tick, track: t.track, L: L.slice(c0, c1), R: R.slice(c0, c1) };
       })
       .filter((t) => t.L.length > 0);
     return { sr: this.ctx!.sampleRate, takes };
@@ -541,7 +594,7 @@ export class Audio {
 
   /** Carrega um arquivo ou um instrumento multi-sample (pasta / .fst) na engine. */
   loadSample(path: string): Promise<void> {
-    if (this.loaded.has(path)) return Promise.resolve();
+    if (this.loaded.has(path) || path.startsWith('live:')) return Promise.resolve();
     let pr = this.loading.get(path);
     if (pr) return pr;
     pr = (async () => {
@@ -675,6 +728,11 @@ interface Rec {
   skip: number;
   /** Amostras capturadas durante a contagem (antes da música começar). */
   preroll: number;
+  /** Área do loop: cada volta fecha um take. */
+  loop: [number, number] | null;
+  lastLoops: number;
+  /** Avisado quando um take fecha (para ele já entrar na playlist e tocar na próxima volta). */
+  onClose: (k: number) => void;
   tps: number; // ticks por segundo
   map: [number, number][];
   /** Detector de "está tocando" (com aprendizado do ruído de fundo); só decide os cortes. */

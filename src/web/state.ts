@@ -3,8 +3,8 @@
 
 import { useEffect, useReducer } from 'preact/hooks';
 import type { Project } from '../core/model';
-import { emptyProject, findPattern, findChannel, parseNote, PPQ, ticksPerBar, songLength } from '../core/model';
-import { applyOps, type Op } from '../core/ops';
+import { emptyProject, findPattern, findChannel, parseNote, PPQ, ticksPerBar, songLength, uid } from '../core/model';
+import { applyOps, set, type Op } from '../core/ops';
 import type { ActionResult } from '../core/actions';
 import * as A from '../core/actions';
 import { encodeWav } from '../core/wav';
@@ -12,7 +12,7 @@ import type { EngineStatus } from '../core/engine';
 import { getPref } from './prefs';
 import { renderChain } from '../core/effects';
 import type { EffectType, Params } from '../core/model';
-import { startMidiRec, finishMidiRec, recNote, midiRecording } from './midirec';
+import { startMidiRec, finishMidiRec, recNote, midiRecording, midiOnStatus } from './midirec';
 import { setPref } from './prefs';
 import { audio } from './audio';
 
@@ -118,6 +118,7 @@ export function onLive(fn: (s: EngineStatus) => void) {
 audio.getProject = () => state.project;
 audio.onStatus = (s) => {
   for (const l of liveListeners) l(s);
+  midiOnStatus(s);
   if (!s.playing && playingFlag) {
     playingFlag = false;
     emit();
@@ -441,13 +442,19 @@ export async function toggleRecord(fromAmp: AmpTake | null = null, extra: { smar
   // o REC geral grava notas e automações; áudio (voz, guitarra) fica com o amp e as ferramentas
   if (!fromAmp && !extra.audio && !extra.smart) return toggleMidiRecord();
   const countBeats = state.countIn ? 3 : 0;
-  const start = audio.status.mode === 'song' ? Math.max(0, Math.floor(audio.status.tick)) : 0;
+  // como no REC geral: começa na área selecionada (ou onde a agulha está)
+  const start = state.sel ? state.sel.start : audio.status.mode === 'song' ? Math.max(0, Math.floor(audio.status.tick)) : 0;
   try {
     const track = A.freeTrack(state.project, start, 1e12);
     if (fromAmp) {
       const stream = audio.ampStream;
       if (!stream) throw new Error('o amp está desligado');
-      await audio.startRecording(start, track, { stream, channels: fromAmp.pick, gainDb: fromAmp.inGainDb, smart: fromAmp.smart ?? undefined, countInSec: (countBeats * 60) / state.project.bpm });
+      recBaseTrack = track;
+      liveTakes.clear();
+      // com loop, cada volta vira um take que entra na playlist assim que fecha (e toca na próxima volta)
+      const p = state.project;
+      const loop: [number, number] | null = state.loopOn ? (state.sel ? [state.sel.start, state.sel.end] : [0, songLength(p) || ticksPerBar(p) * 4]) : null;
+      await audio.startRecording(start, track, { stream, channels: fromAmp.pick, gainDb: fromAmp.inGainDb, smart: fromAmp.smart ?? undefined, countInSec: (countBeats * 60) / state.project.bpm, loop, onTakeClosed: placeLiveTake });
     } else {
       const deviceId = getPref<string>('rec.device', '') || undefined;
       await audio.startRecording(start, track, { deviceId, channels: getPref('rec.channels', 'stereo'), smart: extra.smart ? { ...smartConfig(), deviceId } : undefined });
@@ -465,12 +472,47 @@ export async function toggleRecord(fromAmp: AmpTake | null = null, extra: { smar
   emit();
 }
 
+/** A playlist registra aqui como desenhar a onda de um take que ainda não tem arquivo. */
+export let livePeaks: (path: string, L: Float32Array, sr: number) => void = () => {};
+export const setLivePeaksHandler = (fn: typeof livePeaks) => void (livePeaks = fn);
+
+/** Takes já colocados na playlist durante a gravação (prévia "live:"), por índice do take. */
+const liveTakes = new Map<number, string>();
+let recBaseTrack = 0;
+
+/** Primeira track, a partir de `from`, sem nada no trecho [pos, pos+len). */
+function freeTrackFrom(from: number, pos: number, len: number) {
+  const p = state.project;
+  for (let t = from; ; t++) if (!p.clips.some((c) => c.track === t && c.pos < pos + len && c.pos + c.len > pos)) return t;
+}
+
+/**
+ * Um take acabou de fechar (fim de uma volta do loop, ou pausa na gravação
+ * inteligente): entra já na playlist numa versão rápida, para tocar na próxima volta.
+ */
+function placeLiveTake(k: number) {
+  const a = audio.takeAudio(k);
+  if (!a || a.L.length < a.sr * 0.08) return;
+  const amp = ampTake;
+  const [L, R] = amp ? renderChain(a.sr, amp.chain, a.L, a.R, { bpm: state.project.bpm, outGainDb: amp.outGainDb, tailSec: 0, hq: false }) : [a.L, a.R];
+  const path = `live:${uid('take')}`;
+  audio.postLiveSample(path, a.sr, [L, R]);
+  livePeaks(path, L, a.sr);
+  const tps = (state.project.bpm * PPQ) / 60;
+  const len = Math.max(1, Math.round((L.length / a.sr) * tps));
+  const track = freeTrackFrom(recBaseTrack, Math.round(a.tick), len);
+  const r = act(A.addAudioClip, { sample: path, bar: 1, beat: a.tick / PPQ, track: track + 1, lengthSec: L.length / a.sr });
+  if (r) liveTakes.set(k, (r as { clip: string }).clip);
+}
+
 async function finishRecording() {
   const r = audio.stopRecording();
   const amp = ampTake;
   ampTake = null;
   const done = recDone;
   recDone = null;
+  const live = new Map(liveTakes);
+  liveTakes.clear();
   const ids: string[] = [];
   emit();
   if (!r) return;
@@ -486,29 +528,40 @@ async function finishRecording() {
     try {
       // o retorno usou a cadeia leve; aqui ela roda de novo, sobreamostrada
       let [L, R] = amp ? renderChain(r.sr, amp.chain, t.L, t.R, { bpm: state.project.bpm, outGainDb: amp.outGainDb, tailSec: 2.5 }) : [t.L, t.R];
-      // a cauda dos efeitos não invade o próximo take da mesma track
-      const next = takes.filter((x) => x.track === t.track && x.tick > t.tick).sort((x, y) => x.tick - y.tick)[0];
-      if (next) {
-        const max = Math.max(t.L.length, Math.floor(((next.tick - t.tick) / tps) * r.sr));
-        if (L.length > max) {
-          L = L.slice(0, max);
-          R = R.slice(0, max);
-          const fade = Math.min(max, Math.round(0.03 * r.sr));
-          for (let i = 0; i < fade; i++) {
-            const k = i / fade;
-            L[max - 1 - i] *= k;
-            R[max - 1 - i] *= k;
-          }
+      const clipId = live.get(t.k);
+      const clip = clipId ? state.project.clips.find((c) => c.id === clipId) : undefined;
+      const pos = clip ? clip.pos : Math.round(t.tick);
+      const rawLen = Math.max(1, Math.round((t.L.length / r.sr) * tps));
+      const track = clip ? clip.track : freeTrackFrom(recBaseTrack, pos, rawLen);
+      // a cauda dos efeitos vai até o próximo clipe da mesma track (com um fade curto)
+      const next = state.project.clips.filter((c) => c.track === track && c.id !== clipId && c.pos >= pos + rawLen - 1).sort((x, y) => x.pos - y.pos)[0];
+      const max = next ? Math.max(t.L.length, Math.floor(((next.pos - pos) / tps) * r.sr)) : L.length;
+      if (L.length > max) {
+        L = L.slice(0, max);
+        R = R.slice(0, max);
+        const fade = Math.min(max, Math.round(0.03 * r.sr));
+        for (let i = 0; i < fade; i++) {
+          const g = i / fade;
+          L[max - 1 - i] *= g;
+          R[max - 1 - i] *= g;
         }
       }
       const wav = encodeWav(L, R, r.sr, 24);
       const res = await fetch(`/api/recording?name=${encodeURIComponent(state.project.name)}`, { method: 'POST', headers: { 'content-type': 'audio/wav' }, body: new Blob([wav as BlobPart], { type: 'audio/wav' }) });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error);
-      const result = act(A.addAudioClip, { sample: d.path, bar: 1, beat: t.tick / PPQ, track: t.track + 1, lengthSec: L.length / r.sr });
-      if (result) {
+      const lenTicks = Math.max(1, Math.round((L.length / r.sr) * tps));
+      if (clip) {
+        // a prévia vira o arquivo em alta qualidade, no mesmo lugar
+        edit([set(['clips', clip.id, 'sample'], d.path), set(['clips', clip.id, 'len'], lenTicks)]);
+        ids.push(clip.id);
         placed++;
-        ids.push((result as { clip: string }).clip);
+      } else {
+        const result = act(A.addAudioClip, { sample: d.path, bar: 1, beat: pos / PPQ, track: track + 1, lengthSec: L.length / r.sr });
+        if (result) {
+          placed++;
+          ids.push((result as { clip: string }).clip);
+        }
       }
     } catch (e) {
       toast(`Erro ao salvar a gravação: ${(e as Error).message}`);
