@@ -189,7 +189,9 @@ scripts/     ferramentas de diagnóstico e testes de UI (os _*.mts são temporá
 - **Regra do loop gravando**: só volta se o loop estiver ligado **e** houver área
   selecionada; em qualquer outro caso a engine fica em `endless` (não volta nem para no
   fim da música) até parar. A posição dos takes é dobrada para dentro da área do loop
-  (`tickAt`), mesmo antes de o status da volta chegar.
+  (`tickAt`), mesmo antes de o status da volta chegar. Take cujo ataque (`onset`) veio
+  depois da volta começa no início do loop (`lastWrap`), sem deixar "toco" de pré-ataque
+  no fim da área nem ser posicionado na volta anterior.
 - **Gravação aditiva no loop**: cada volta fecha um take (`markRec` corta no ponto exato da
   volta) e `placeLiveTake` (state.ts) já coloca o take na playlist como clipe com sample
   `live:…` (áudio enviado direto à engine, efeitos do amp em qualidade de retorno), numa
