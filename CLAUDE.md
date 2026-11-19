@@ -64,6 +64,10 @@ Depois de mudanças, reconstruir e reiniciar:
 fuser -k 7717/tcp; sleep 1; (nohup $HOME/.nvm/versions/node/v22.23.4/bin/node build/server.mjs > /tmp/musiclabs.log 2>&1 &)
 ```
 
+A interface se **recarrega sozinha** quando o servidor passa a ter um build novo
+(`/api/build` × script da página; nunca no meio de gravação/reprodução), então o usuário
+não fica com código velho depois de um reinício do servidor. index.html vai sem cache.
+
 Nunca usar `pkill -f ...` (casa com o próprio comando e mata o shell). Use `fuser -k PORTA/tcp`.
 
 **Servidor isolado para testes** (não mexe nos dados do usuário):

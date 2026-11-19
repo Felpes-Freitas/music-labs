@@ -343,6 +343,11 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         return json(res, 200, { instruments: INSTRUMENTS, effects: EFFECTS, presets: PRESETS, scales: Object.keys(SCALES), localSamples: localKit(), localInstruments: localInstruments() });
       case 'GET /api/status':
         return json(res, 200, uiStatus);
+      case 'GET /api/build': {
+        // versão da interface compilada (muda a cada build): a tela se recarrega quando muda
+        const html = existsSync(join(DIST, 'index.html')) ? readFileSync(join(DIST, 'index.html'), 'utf8') : '';
+        return json(res, 200, { build: /assets\/index-[^"']+\.js/.exec(html)?.[0] ?? '' });
+      }
       case 'POST /api/ops': {
         const b = await body(req);
         store.apply(b.ops, b.origin ?? 'http', b.label);
@@ -484,7 +489,9 @@ function serveStatic(pathname: string, res: ServerResponse) {
   }
   let file = join(DIST, decodeURIComponent(pathname));
   if (!file.startsWith(DIST) || !existsSync(file) || statSync(file).isDirectory()) file = join(DIST, 'index.html');
-  res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream' });
+  // a página nunca fica em cache (os arquivos de assets têm nome com hash e podem ficar)
+  const html = extname(file) === '.html';
+  res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', 'cache-control': html ? 'no-cache, no-store' : 'max-age=31536000, immutable' });
   res.end(readFileSync(file));
 }
 
