@@ -8,7 +8,7 @@ import { set } from '../../core/ops';
 import { Knob, IconBtn, dbFmt } from './widgets';
 import { Icon } from './icons';
 import { askConfirm, askText } from './Dialog';
-import { ACCENTS, themes, prefs as looks, setTheme, setAccent, setAltDrag, accentColor, isHex } from '../theme';
+import { openSettings } from './Settings';
 import { ui, accent } from '../theme';
 
 // ---------------------------------------------------------------- ações de arquivo
@@ -69,7 +69,7 @@ async function analyze() {
 
 type Item = { label: string; key?: string; run?: () => void; sub?: Item[]; sep?: boolean; on?: boolean; swatch?: string; hint?: string };
 
-function menus(): Record<string, Item[]> {
+function menus(): Record<string, Item[] | (() => void)> {
   const s = state;
   const pat = s.project.patterns.find((x) => x.id === s.patternId);
   const addChannel = (args: any) => {
@@ -112,40 +112,10 @@ function menus(): Record<string, Item[]> {
       { label: 'Navegador', key: 'Alt+F8', on: s.windows.browser.open, run: () => openWindow('browser', true) },
       { label: 'Mixer', key: 'F9', on: s.windows.mixer.open, run: () => openWindow('mixer', true) },
     ],
-    Aparência: [
-      {
-        label: 'Tema',
-        sub: themes().map((t) => ({ label: t.name, hint: t.hint, on: looks.theme === t.id, run: () => setTheme(t.id) })),
-      },
-      {
-        label: 'Cor de destaque',
-        sub: [
-          { label: 'Padrão do tema', on: looks.accent === null, run: () => setAccent(null) },
-          { sep: true, label: '' },
-          ...ACCENTS.map((a) => ({ label: a.name, swatch: a.color, on: looks.accent?.toLowerCase() === a.color, run: () => setAccent(a.color) })),
-          { sep: true, label: '' },
-          {
-            label: 'Personalizada…',
-            swatch: looks.accent && !ACCENTS.some((a) => a.color === looks.accent?.toLowerCase()) ? looks.accent : undefined,
-            on: !!looks.accent && !ACCENTS.some((a) => a.color === looks.accent?.toLowerCase()),
-            run: async () => {
-              const v = await askText({ title: 'Cor de destaque personalizada', label: 'Cor em hexadecimal (ex.: #ff8a3d)', value: accentColor(), ok: 'Aplicar' });
-              if (!v) return;
-              if (!isHex(v)) return toast('Cor inválida: use o formato #rrggbb');
-              setAccent('#' + v.trim().replace('#', '').toLowerCase());
-            },
-          },
-        ],
-      },
-      { sep: true, label: '' },
-      {
-        label: 'Alt + arrastar move janelas',
-        hint: 'Segure Alt e arraste qualquer ponto de uma janela para movê-la (Alt + botão direito redimensiona)',
-        on: looks.altDrag,
-        run: () => (setAltDrag(!looks.altDrag), emit()),
-      },
-    ],
+    Aparência: () => openSettings('aparencia'),
     Opções: [
+      { label: 'Configurações…', key: 'Ctrl+,', run: () => openSettings('aparencia') },
+      { sep: true, label: '' },
       { label: 'Seguir a reprodução', on: s.followPlay, run: () => ((state.followPlay = !state.followPlay), emit()) },
       { label: 'Ligar o áudio', run: () => audio.start().then(() => toast('Áudio ligado')) },
       { label: 'Pânico (cortar todas as notas)', run: () => audio.post({ type: 'panic' }) },
@@ -187,10 +157,10 @@ function MenuBar() {
     <div class="menubar">
       {Object.entries(m).map(([name, items]) => (
         <div class={`menu ${open === name ? 'open' : ''}`} onPointerEnter={() => open && setOpen(name)}>
-          <button class="menu-btn" onClick={() => setOpen(open === name ? null : name)}>
+          <button class="menu-btn" onClick={() => (typeof items === 'function' ? (setOpen(null), items()) : setOpen(open === name ? null : name))}>
             {name}
           </button>
-          {open === name && (
+          {open === name && typeof items !== 'function' && (
             <div class="menu-drop">
               {items.map((it) =>
                 it.sep ? (

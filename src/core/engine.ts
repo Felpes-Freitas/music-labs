@@ -170,8 +170,22 @@ export class Engine {
     if (rewind) this.tick = this.mode === 'song' && this.project?.loop ? this.project.loop.start : 0;
     for (const c of this.channels.values()) c.inst.allOff();
   }
+  /** Corta tudo: notas e caudas de efeitos (reverb, delay...), recriando os efeitos zerados. */
   panic() {
     for (const c of this.channels.values()) c.inst.hardStop();
+    const p = this.project;
+    if (!p) return;
+    const fresh = (rec: { fx: Fx; autoSig?: string }, params: Record<string, unknown> | undefined) => {
+      rec.fx = createEffect(this.sr, rec.fx.type, (params ?? {}) as any);
+      rec.autoSig = undefined;
+    };
+    for (const [id, st] of this.channels) {
+      const ch = p.channels.find((x) => x.id === id);
+      for (const [eid, rec] of st.fx) fresh(rec, ch?.effects?.find((e) => e.id === eid)?.params);
+    }
+    this.inserts.forEach((st, i) => {
+      for (const [eid, rec] of st.fx) fresh(rec, p.mixer[i]?.effects.find((e) => e.id === eid)?.params);
+    });
   }
 
   /** Nota ao vivo (teclado, clique no piano roll). gate = null segura até liveOff. */

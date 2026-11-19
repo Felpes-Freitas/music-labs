@@ -65,8 +65,12 @@ git push --follow-tags
 - **Clips de áudio**: arraste um áudio do navegador para a playlist; a forma de onda
   aparece no clip, que pode ser movido, cortado e fatiado e vai para o insert escolhido.
 - **Gravação**: o botão vermelho grava do microfone/interface a partir da posição
-  atual, com compensação de latência; o arquivo vai para `~/MusicLabs/Gravações` e
-  vira um clip de áudio.
+  atual, com compensação de latência; a onda aparece na playlist enquanto grava, o
+  arquivo vai para `~/MusicLabs/Gravações` e vira um clip de áudio. Entrada e canais
+  (estéreo, só entrada 1 ou 2) em Configurações → Áudio e gravação.
+- **Configurações** (menu Aparência ou Ctrl+,): temas Grafite, OLED e Adobe, cor de
+  destaque com seletor de cor, Alt + arrastar janelas, entrada de gravação e atalhos.
+- **Parar duas vezes** corta também as caudas de reverb/eco e notas soltas.
 - **Automação**: botão direito em qualquer knob → "Criar clipe de automação". No clip,
   clique para criar pontos, arraste para mover e use o botão direito para apagar.
   Funciona com volume/pan de canais e do mixer e com parâmetros de instrumentos e efeitos.

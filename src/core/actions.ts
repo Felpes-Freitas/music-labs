@@ -412,7 +412,7 @@ export function updateTrack(p: Project, a: { track: number; name?: string; mute?
 // ------------------------------------------------------------ clipes de áudio e automação
 
 /** Primeira track sem clipes no intervalo [pos, pos+len). */
-function freeTrack(p: Project, pos: number, len: number): number {
+export function freeTrack(p: Project, pos: number, len: number): number {
   for (let t = 0; t < p.tracks.length; t++) if (!p.clips.some((c) => c.track === t && c.pos < pos + len && c.pos + c.len > pos)) return t;
   return p.tracks.length;
 }

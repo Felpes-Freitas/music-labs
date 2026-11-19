@@ -189,6 +189,7 @@ export function Playlist() {
     },
     [s.version],
     (ctx, w, h) => {
+      drawRecording(ctx, w, h);
       if (playTick.current < 0) return;
       const v = view.current;
       const x = HEADW + (playTick.current - v.scrollX) * v.zx;
@@ -204,11 +205,50 @@ export function Playlist() {
     },
   );
 
+  /** Clipe sendo gravado: cresce com o tempo e mostra a onda que está chegando. */
+  const drawRecording = (ctx: CanvasRenderingContext2D, w: number, h: number) => {
+    const r = audio.liveRecording;
+    if (!r) return;
+    const v = view.current;
+    const p = state.project;
+    const ticksPerSec = (p.bpm * PPQ) / 60;
+    const x = HEADW + (r.startTick - v.scrollX) * v.zx;
+    const cw = (r.frames / r.sr) * ticksPerSec * v.zx;
+    const y = RULER + r.track * v.rowH - v.scrollY;
+    if (y + v.rowH < RULER || y > h || x > w) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(HEADW, RULER, w - HEADW, h - RULER);
+    ctx.clip();
+    ctx.fillStyle = '#e04848';
+    ctx.fillRect(x, y + 1, Math.max(2, cw - 1), 13);
+    ctx.fillStyle = 'rgba(120,24,24,0.85)';
+    ctx.fillRect(x, y + 14, Math.max(2, cw - 1), v.rowH - 15);
+    // onda: cada pixel pega o maior pico do trecho que ele cobre
+    const mid = y + 14 + (v.rowH - 15) / 2;
+    const amp = (v.rowH - 17) / 2;
+    const perPx = r.sr / ticksPerSec / v.zx / r.peakFrames; // blocos de pico por pixel
+    ctx.fillStyle = '#ffd9d9';
+    const x0 = Math.max(HEADW, Math.floor(x)), x1 = Math.min(w, x + cw);
+    for (let px = x0; px < x1; px++) {
+      const i0 = Math.floor((px - x) * perPx), i1 = Math.max(i0 + 1, Math.floor((px + 1 - x) * perPx));
+      let a = 0;
+      for (let i = i0; i < i1 && i < r.peaks.length; i++) a = Math.max(a, r.peaks[i]);
+      const hh = Math.min(1, a) * amp;
+      ctx.fillRect(px, mid - hh, 1, Math.max(1, hh * 2));
+    }
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 10px sans-serif';
+    if (cw > 50) ctx.fillText(`● Gravando ${(r.frames / r.sr).toFixed(1)} s`, Math.max(HEADW, x) + 3, y + 11);
+    ctx.restore();
+  };
+
   useEffect(
     () =>
       onLive((st) => {
         const t = st.playing && st.mode === 'song' ? st.tick : -1;
-        if (t !== playTick.current) {
+        // gravando, a onda cresce a cada atualização
+        if (t !== playTick.current || audio.liveRecording) {
           playTick.current = t;
           // segue a reprodução (só repinta tudo quando a tela precisa rolar)
           const v = view.current;

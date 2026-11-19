@@ -11,6 +11,7 @@ import { Mixer } from './ui/Mixer';
 import { ChannelSettings } from './ui/ChannelSettings';
 import { Browser, addSampleChannel } from './ui/Browser';
 import { DialogHost, dialogOpen } from './ui/Dialog';
+import { SettingsHost, settingsOpen, openSettings } from './ui/Settings';
 import { applyTheme, onTheme, prefs as looks } from './theme';
 
 applyTheme();
@@ -40,6 +41,8 @@ function isTextField(t: EventTarget | null) {
 
 function onKeyDown(e: KeyboardEvent) {
   if (dialogOpen()) return;
+  if ((e.ctrlKey || e.metaKey) && e.key === ',') return (e.preventDefault(), openSettings());
+  if (settingsOpen()) return;
   const t = e.target as HTMLElement;
   if (isTextField(t)) {
     if (e.key === 'Enter' || e.key === 'Escape') (t as HTMLElement).blur();
@@ -220,6 +223,7 @@ function App() {
         </div>
       </div>
       <LoadingScreen />
+      <SettingsHost />
       <DialogHost />
       <div class="toasts">
         {s.toasts.map((t) => (

@@ -74,3 +74,20 @@ test('automação de parâmetro do instrumento (corte do filtro) muda o timbre',
   assert.deepEqual(t.path, ['channels', ch, 'params', 'cutoff']);
   assert.throws(() => A.autoTarget(p, { channel: ch, param: 'ftype' }), /numérico/);
 });
+
+test('pânico corta a cauda do reverb', () => {
+  const p = emptyProject();
+  const ch = A.addChannel(p, { type: 'synth' } as any);
+  applyOps(p, ch.ops);
+  applyOps(p, A.addEffect(p, { insert: 0, type: 'reverb', params: { size: 1, damp: 0 }, mix: 1 }).ops);
+  const eng = new Engine(SR);
+  eng.setProject(p);
+  const id = (ch.result as { id: string }).id;
+  eng.liveOn(id, 60, 1, PPQ / 4);
+  run(eng, 0.3);
+  const tail = run(eng, 0.2);
+  assert.ok(rms(tail, 0, tail.length) > 1e-4, 'a cauda soa antes do pânico');
+  eng.panic();
+  const after = run(eng, 0.2);
+  assert.ok(rms(after, 0, after.length) < 1e-6, 'silêncio depois do pânico');
+});
