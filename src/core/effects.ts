@@ -734,14 +734,14 @@ export function renderChain(
   chain: { type: EffectType; enabled: boolean; mix: number; params: Params }[],
   L: Float32Array,
   R: Float32Array,
-  opt: { bpm?: number; tailSec?: number; outGainDb?: number } = {},
+  opt: { bpm?: number; tailSec?: number; outGainDb?: number; hq?: boolean } = {},
 ): [Float32Array, Float32Array] {
   const tail = Math.round((opt.tailSec ?? 2) * sr);
   const n = L.length + tail;
   const oL = new Float32Array(n), oR = new Float32Array(n);
   oL.set(L);
   oR.set(R);
-  const fxs = chain.filter((c) => c.enabled).map((c) => ({ c, fx: createEffectHQ(sr, c.type, c.params) }));
+  const fxs = chain.filter((c) => c.enabled).map((c) => ({ c, fx: opt.hq === false ? createEffect(sr, c.type, c.params) : createEffectHQ(sr, c.type, c.params) }));
   const ctx: FxContext = { sr, bpm: opt.bpm ?? 120, insertBus: () => undefined, beat: 0 };
   const B = 256;
   const dl = new Float32Array(B), dr = new Float32Array(B);

@@ -173,6 +173,12 @@ scripts/     ferramentas de diagnóstico e testes de UI (os _*.mts são temporá
   (`audio.calibrateLatency`: cliques + gravador com horário `ml-recorder-t`; resultado em
   `rec.latencyMs`, usado em `recLatencyFrames()` para alinhar os takes). Notas do teclado
   descontam a latência de saída (`midirec.now`).
+- **Gravação aditiva no loop**: cada volta fecha um take (`markRec` corta no ponto exato da
+  volta) e `placeLiveTake` (state.ts) já coloca o take na playlist como clipe com sample
+  `live:…` (áudio enviado direto à engine, efeitos do amp em qualidade de retorno), numa
+  track livre a partir da base (nunca em cima de outro clipe) — toca na próxima volta. Ao
+  parar, `finishRecording` troca cada prévia pelo arquivo em alta qualidade no mesmo lugar.
+  Notas: `midiOnStatus` transforma cada volta em pattern assim que o loop recomeça.
 - **Contagem 3-2-1** (opção `countIn`) vale para o REC geral, o amp (engine `countIn` +
   `countInSec` no startRecording) e as ferramentas (`countInIfOn` + `startCapture({arm})`).
 
