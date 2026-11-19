@@ -72,3 +72,26 @@ test('metrônomo clica a cada tempo durante a música', () => {
   const x = run(eng, 1.2);
   for (const t of [0.01, 0.51, 1.01]) assert.ok(rms(x, t * SR, (t + 0.02) * SR) > 0.05, `clique em ${t}s`);
 });
+
+test('gravando sem área selecionada: não volta nem para no fim da música', () => {
+  const p = emptyProject();
+  p.bpm = 120;
+  applyOps(p, A.placePattern(p, { pattern: p.patterns[0].id, track: 1, bar: 1, bars: 1 }).ops); // música de 1 compasso (2 s)
+  const eng = new Engine(SR);
+  eng.setProject(p);
+  eng.setTransport({ loopOn: true, region: null, endless: true });
+  eng.play('song', null, 0);
+  run(eng, 3);
+  assert.ok(eng.playing && eng.tick > PPQ * 4 && eng.loops === 0, `seguiu em frente: tick ${eng.tick}, voltas ${eng.loops}`);
+});
+
+test('gravando com área e loop: volta na área', () => {
+  const p = emptyProject();
+  p.bpm = 120;
+  const eng = new Engine(SR);
+  eng.setProject(p);
+  eng.setTransport({ loopOn: true, region: [PPQ * 4, PPQ * 6], endless: true });
+  eng.play('song', null, PPQ * 4);
+  run(eng, 1.6);
+  assert.ok(eng.loops >= 1 && eng.tick >= PPQ * 4 && eng.tick < PPQ * 6);
+});

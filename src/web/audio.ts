@@ -247,7 +247,10 @@ export class Audio {
         pt = r.map[i];
         break;
       }
-    return Math.max(0, pt[1] + ((c - pt[0]) / sr) * r.tps);
+    let tick = Math.max(0, pt[1] + ((c - pt[0]) / sr) * r.tps);
+    // a volta do loop pode ainda não ter chegado no status: dobra para dentro da área
+    if (r.loop && tick >= r.loop[1]) tick = r.loop[0] + ((tick - r.loop[1]) % (r.loop[1] - r.loop[0]));
+    return tick;
   }
 
   private onRecChunk(r: Rec, raw: Float32Array[]) {
@@ -653,8 +656,8 @@ export class Audio {
     this.start().then(() => this.post({ type: 'play', mode, patternId, tick, countIn }));
   }
   /** Área selecionada, loop e metrônomo (estado de transporte, fora do projeto). */
-  private tp: { region?: [number, number] | null; loopOn?: boolean; metronome?: boolean } = {};
-  transport(t: { region?: [number, number] | null; loopOn?: boolean; metronome?: boolean }) {
+  private tp: { region?: [number, number] | null; loopOn?: boolean; metronome?: boolean; endless?: boolean } = {};
+  transport(t: { region?: [number, number] | null; loopOn?: boolean; metronome?: boolean; endless?: boolean }) {
     Object.assign(this.tp, t);
     this.post({ type: 'transport', ...t });
   }

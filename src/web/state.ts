@@ -389,8 +389,9 @@ function toggleMidiRecord() {
   if (midiRecording()) return stop();
   const p = state.project;
   const start = state.sel ? state.sel.start : audio.status.mode === 'song' ? Math.max(0, Math.floor(audio.status.tick)) : 0;
-  const end = songLength(p) || ticksPerBar(p) * 4;
-  const region: [number, number] | null = state.loopOn ? (state.sel ? [state.sel.start, state.sel.end] : [0, end]) : null;
+  // loop só com uma área selecionada; sem área, grava sem fim (não volta no fim da música)
+  const region: [number, number] | null = state.loopOn && state.sel ? [state.sel.start, state.sel.end] : null;
+  audio.transport({ endless: true });
   startMidiRec(start, region);
   state.mode = 'song';
   playingFlag = true;
@@ -409,6 +410,7 @@ export function stop() {
     return;
   }
   audio.stop();
+  audio.transport({ endless: false });
   audio.status = { ...audio.status, playing: false, countIn: 0 }; // a interface reage já, sem esperar a engine
   playingFlag = false;
   if (audio.recording) finishRecording();
@@ -453,7 +455,10 @@ export async function toggleRecord(fromAmp: AmpTake | null = null, extra: { smar
       liveTakes.clear();
       // com loop, cada volta vira um take que entra na playlist assim que fecha (e toca na próxima volta)
       const p = state.project;
-      const loop: [number, number] | null = state.loopOn ? (state.sel ? [state.sel.start, state.sel.end] : [0, songLength(p) || ticksPerBar(p) * 4]) : null;
+      // loop só com uma área selecionada; sem área, a gravação segue sem fim (não volta no fim da música)
+      const loop: [number, number] | null = state.loopOn && state.sel ? [state.sel.start, state.sel.end] : null;
+      void p;
+      audio.transport({ endless: true });
       await audio.startRecording(start, track, { stream, channels: fromAmp.pick, gainDb: fromAmp.inGainDb, smart: fromAmp.smart ?? undefined, countInSec: (countBeats * 60) / state.project.bpm, loop, onTakeClosed: placeLiveTake });
     } else {
       const deviceId = getPref<string>('rec.device', '') || undefined;
