@@ -2,6 +2,7 @@
 import workletUrl from './worklet.ts?worker&url';
 import { decodeWav } from '../core/wav';
 import { PPQ, type Project } from '../core/model';
+import { TakeDetector } from '../core/onset';
 import type { Op } from '../core/ops';
 import type { EngineStatus } from '../core/engine';
 
@@ -105,6 +106,8 @@ export class Audio {
       peakFrames: PEAK_FRAMES,
       frames: r.frames,
       smart: !!r.smart,
+      noiseDb: r.noiseDb,
+      snrDb: r.snrDb,
       takes: r.takes.map((t) => ({ tick: t.tick, track: t.track, c0: t.c0, c1: t.c1 ?? r.frames })),
     };
   }
@@ -117,7 +120,7 @@ export class Audio {
   async startRecording(
     startTick: number,
     track: number,
-    opt: { deviceId?: string; channels?: RecChannels; stream?: MediaStream; gainDb?: number; smart?: { thresholdDb: number; holdSec: number } } = {},
+    opt: { deviceId?: string; channels?: RecChannels; stream?: MediaStream; gainDb?: number; smart?: { marginDb: number; holdSec: number } } = {},
   ) {
     await this.resume();
     const ctx = this.ctx!;
@@ -145,7 +148,9 @@ export class Audio {
       skip: latency,
       tps: 0,
       map: [[0, startTick]],
-      smart: opt.smart ? { thr: Math.pow(10, opt.smart.thresholdDb / 20), hold: Math.round(opt.smart.holdSec * sr) } : null,
+      smart: opt.smart ? { det: new TakeDetector(sr, opt.smart.marginDb), hold: Math.round(opt.smart.holdSec * sr) } : null,
+      noiseDb: null,
+      snrDb: null,
       takes: [],
       lastLoud: 0,
     };
@@ -183,26 +188,32 @@ export class Audio {
       const a = Math.max(Math.abs(c[0][i]), Math.abs(c[1][i]));
       if (a > r.acc) r.acc = a;
       if (++r.accN < PEAK_FRAMES) continue;
-      const peak = r.acc;
-      r.peaks.push(peak);
+      r.peaks.push(r.acc);
       r.acc = 0;
       r.accN = 0;
-      if (!r.smart) continue;
-      const end = r.frames + i + 1; // fim deste bloco, em amostras capturadas
-      const open = r.takes.length && r.takes[r.takes.length - 1].c1 === null ? r.takes[r.takes.length - 1] : null;
-      if (!open && peak > r.smart.thr) {
-        // começa um take um pouco antes, para não cortar o ataque da palhetada
-        const prevEnd = r.takes.length ? r.takes[r.takes.length - 1].c1! : 0;
-        const c0 = Math.max(r.skip, prevEnd, end - PEAK_FRAMES - Math.round(0.04 * sr));
-        const tick = this.tickAt(r, c0 - r.skip);
-        r.takes.push({ c0, c1: null, tick, track: this.takeTrack(r, tick) });
-        r.lastLoud = end;
-      } else if (open) {
-        if (peak > r.smart.thr * 0.5) r.lastLoud = end;
-        else if (end - r.lastLoud > r.smart.hold) open.c1 = end;
-      }
     }
     r.frames += c[0].length;
+    if (!r.smart) return;
+    // a detecção analisa uma cópia mono; o áudio gravado não é tocado
+    const mono = new Float32Array(c[0].length);
+    for (let i = 0; i < mono.length; i++) mono[i] = (c[0][i] + c[1][i]) * 0.5;
+    for (const st of r.smart.det.push(mono)) {
+      r.noiseDb = st.noiseDb;
+      r.snrDb = st.snrDb;
+      const last = r.takes[r.takes.length - 1];
+      const open = last && last.c1 === null ? last : null;
+      if (!open && st.active) {
+        // começa um take um pouco antes, para não cortar o ataque da palhetada
+        const prevEnd = last ? last.c1! : 0;
+        const c0 = Math.max(r.skip, prevEnd, st.end - 1024 - Math.round(0.04 * sr));
+        const tick = this.tickAt(r, c0 - r.skip);
+        r.takes.push({ c0, c1: null, tick, track: this.takeTrack(r, tick) });
+        r.lastLoud = st.end;
+      } else if (open) {
+        if (st.active) r.lastLoud = st.end;
+        else if (st.end - r.lastLoud > r.smart.hold) open.c1 = st.end;
+      }
+    }
   }
 
   /** Track do take: a da gravação, ou a seguinte se outro take (em loop) já ocupa o trecho. */
@@ -438,7 +449,10 @@ interface Rec {
   skip: number;
   tps: number; // ticks por segundo
   map: [number, number][];
-  smart: { thr: number; hold: number } | null;
+  /** Detector de "está tocando" (com aprendizado do ruído de fundo); só decide os cortes. */
+  smart: { det: TakeDetector; hold: number } | null;
+  noiseDb: number | null;
+  snrDb: number | null;
   takes: { c0: number; c1: number | null; tick: number; track: number }[];
   lastLoud: number;
 }

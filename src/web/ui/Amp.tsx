@@ -30,7 +30,7 @@ interface AmpPrefs {
   pick: RecChannels;
   preset: string;
   smart: boolean;
-  thresholdDb: number;
+  marginDb: number;
   holdSec: number;
 }
 
@@ -107,7 +107,7 @@ const load = (): AmpPrefs => {
     pick: p.pick ?? 'left',
     preset: p.preset ?? FIRST,
     smart: p.smart ?? true,
-    thresholdDb: p.thresholdDb ?? -42,
+    marginDb: p.marginDb ?? 10,
     holdSec: p.holdSec ?? 1.5,
   };
 };
@@ -174,7 +174,7 @@ export function AmpWindow() {
       inGainDb: amp.inGain,
       outGainDb: amp.outGain,
       pick: amp.pick,
-      smart: amp.smart ? { thresholdDb: amp.thresholdDb, holdSec: amp.holdSec } : null,
+      smart: amp.smart ? { marginDb: amp.marginDb, holdSec: amp.holdSec } : null,
     }).then(() => emit());
   };
   const presetNames = [...Object.keys(PRESETS), ...Object.keys(userPresets())];
@@ -251,11 +251,11 @@ export function AmpWindow() {
             </label>
             {amp.smart && (
               <>
-                <Knob size={24} value={amp.thresholdDb} min={-70} max={-15} def={-42} label="Sensib." title={`Limiar de detecção: ${amp.thresholdDb.toFixed(0)} dB (mais à esquerda = pega notas mais fracas)`} format={(v) => `${v.toFixed(0)} dB`} onInput={(v) => ((amp.thresholdDb = v), force(undefined))} onCommit={(v) => ((amp.thresholdDb = v), commit())} />
+                <Knob size={24} value={amp.marginDb} min={3} max={30} def={10} label="Margem" title={`Quanto acima do ruído de fundo o som precisa estar para abrir um take: ${amp.marginDb.toFixed(0)} dB (menos = pega notas mais fracas; mais = ignora barulhos do ambiente)`} format={(v) => `${v.toFixed(0)} dB acima do ruído`} onInput={(v) => ((amp.marginDb = v), force(undefined))} onCommit={(v) => ((amp.marginDb = v), commit())} />
                 <Knob size={24} value={amp.holdSec} min={0.3} max={5} def={1.5} log label="Pausa" title={`Depois de ${amp.holdSec.toFixed(1)} s sem tocar, o take fecha (inclui a cauda dos efeitos)`} format={(v) => `${v.toFixed(1)} s`} onInput={(v) => ((amp.holdSec = v), force(undefined))} onCommit={(v) => ((amp.holdSec = v), commit())} />
               </>
             )}
-            {recording && <RecStatus thresholdDb={amp.thresholdDb} />}
+            {recording && <RecStatus />}
           </div>
           <button class={`amp-mon ${amp.monitor ? 'on' : ''}`} onClick={() => ((amp.monitor = !amp.monitor), commit())} data-hint="Ouvir o amp enquanto toca (desligue se o microfone captar os alto-falantes)">
             Ouvir
@@ -298,14 +298,20 @@ export function AmpWindow() {
 }
 
 /** Situação da gravação inteligente: esperando, ou qual take está entrando. */
-function RecStatus(p: { thresholdDb: number }) {
+function RecStatus() {
   const [, force] = useReducer((x: number) => x + 1, 0);
   useEffect(() => onLive(() => force(undefined)), []);
   const r = audio.liveRecording;
   if (!r) return null;
   const live = r.takes.length > 0 && r.takes[r.takes.length - 1].c1 >= r.frames;
   if (!r.smart) return <span class="amp-status rec">gravando</span>;
-  return live ? <span class="amp-status rec">● take {r.takes.length}</span> : <span class="amp-status">esperando você tocar{r.takes.length ? ` · ${r.takes.length} ${r.takes.length > 1 ? 'takes' : 'take'}` : ''}</span>;
+  const noise = r.noiseDb !== null && <small class="amp-noise" data-hint="Ruído de fundo aprendido (chiado, ambiente). Ele só é usado para decidir os cortes dos takes; não muda o som gravado.">ruído {Math.round(r.noiseDb)} dB</small>;
+  return (
+    <span class="amp-status-box">
+      {live ? <span class="amp-status rec">● take {r.takes.length}</span> : <span class="amp-status">esperando você tocar{r.takes.length ? ` · ${r.takes.length} ${r.takes.length > 1 ? 'takes' : 'take'}` : ''}</span>}
+      {noise}
+    </span>
+  );
 }
 
 // ---------------------------------------------------------------- visualizador

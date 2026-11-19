@@ -355,7 +355,7 @@ export interface AmpTake {
   inGainDb: number;
   outGainDb: number;
   pick: 'stereo' | 'left' | 'right';
-  smart: { thresholdDb: number; holdSec: number } | null;
+  smart: { marginDb: number; holdSec: number } | null;
 }
 let ampTake: AmpTake | null = null;
 

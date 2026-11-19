@@ -594,3 +594,5 @@ body.alt-drag .win, body.alt-drag .win * { cursor: move !important; }
 .amp-status { font-size: 11px; color: var(--dim); white-space: nowrap; }
 .amp-status.rec { color: #ff7070; font-weight: 700; }
 .amp-lat { font-size: 10.5px; color: var(--dim2); font-family: 'JetBrains Mono', monospace; }
+.amp-status-box { display: flex; flex-direction: column; line-height: 1.25; }
+.amp-noise { font-size: 9.5px; color: var(--dim2); font-family: 'JetBrains Mono', monospace; }
