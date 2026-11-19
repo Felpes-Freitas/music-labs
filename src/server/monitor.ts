@@ -3,7 +3,7 @@
 // aqui o caminho é pw-record → Node (mesmo código de efeitos do app) → pw-play, com o
 // tamanho de bloco escolhido pelo usuário. A gravação continua no app (sinal cru).
 
-import { spawn, execFile, type ChildProcess } from 'node:child_process';
+import { spawn, execFile, execFileSync, type ChildProcess } from 'node:child_process';
 import { createEffect, type Fx } from '../core/effects.js';
 import type { EffectType, Params } from '../core/model.js';
 
@@ -86,12 +86,44 @@ export function monitorStatus() {
   return { available: process.platform === 'linux', running, buffer: cfg?.buffer ?? 0, ms: cfg ? +((cfg.buffer / SR) * 1000).toFixed(2) : 0, dropped };
 }
 
+/** Encerra um processo do retorno de verdade (o pw-play ignora SIGINT com a entrada aberta). */
+function kill(cp: ChildProcess | null) {
+  if (!cp || cp.exitCode !== null) return;
+  try {
+    cp.stdin?.end();
+  } catch {
+    /* já fechado */
+  }
+  cp.kill('SIGTERM');
+  setTimeout(() => cp.exitCode === null && cp.kill('SIGKILL'), 400);
+}
+
 export function stopMonitor() {
   running = false;
-  rec?.kill('SIGINT');
-  play?.kill('SIGINT');
+  kill(rec);
+  kill(play);
   rec = play = null;
   leftover = Buffer.alloc(0);
+}
+
+/**
+ * Retornos que sobraram de um servidor anterior (fechado sem limpar) continuam
+ * tocando por cima do novo. Na primeira vez, mata os pw-play/pw-record do retorno
+ * que não são filhos deste processo.
+ */
+let swept = false;
+function sweepOrphans() {
+  if (swept || process.platform !== 'linux') return;
+  swept = true;
+  try {
+    const out = execFileSync('ps', ['-eo', 'pid=,ppid=,args='], { encoding: 'utf8' });
+    for (const line of out.split('\n')) {
+      const m = line.trim().match(/^(\d+)\s+(\d+)\s+(pw-play|pw-record)\s.*musiclabs-retorno/);
+      if (m && Number(m[2]) !== process.pid) process.kill(Number(m[1]), 'SIGKILL');
+    }
+  } catch {
+    /* sem ps: segue */
+  }
 }
 
 /** Liga (ou atualiza) o retorno. Mudar o bloco ou a entrada reinicia os processos. */
@@ -99,6 +131,7 @@ export function startMonitor(c: MonitorConfig) {
   cfg = { ...c, buffer: Math.max(16, Math.min(2048, Math.round(c.buffer))) };
   applyChain(cfg);
   if (running && startedWith.buffer === cfg.buffer && startedWith.source === cfg.source) return monitorStatus();
+  sweepOrphans();
   stopMonitor();
   const lat = String(cfg.buffer); // em amostras (pw-cat não entende "n/taxa")
   const common = ['--format', 'f32', '--channels', '2', '--rate', String(SR), '--latency', lat];
@@ -151,4 +184,7 @@ export function monitorSources(): Promise<{ name: string; description: string }[
   );
 }
 
-process.once('exit', () => stopMonitor());
+process.once('exit', () => {
+  rec?.kill('SIGKILL');
+  play?.kill('SIGKILL');
+});

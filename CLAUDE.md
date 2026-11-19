@@ -302,6 +302,14 @@ Z…M/Q…P teclado musical, -/= oitava.
   `options snd-hda-intel model=aspire-headset-mic` em `/etc/modprobe.d/headset-mic.conf`
   + reboot (desfazer apagando o arquivo), ou usar uma placa de som USB. O volume de
   captura do sistema foi subido para 70% durante os testes.
+- **Vazamento do fone na gravação**: guitarra (cabo P10→P2) e fone ficam no mesmo
+  conector combo do notebook (`Mic Jack: on`, porta `analog-input-mic`). O terra
+  compartilhado do P2 de 4 polos faz o som do fone (metrônomo, música, retorno) vazar
+  para a entrada — é diafonia de hardware, não do app. Solução real: interface/placa
+  USB (entrada e saída separadas) ou ouvir por outra saída (Bluetooth/HDMI).
+- Retorno nativo: `stopMonitor` fecha a entrada, manda SIGTERM e SIGKILL após 400 ms
+  (o pw-play ignorava SIGINT e sobravam vários retornos tocando juntos);
+  `sweepOrphans` mata, no primeiro início, os `musiclabs-retorno` de servidores antigos.
 
 ---
 
