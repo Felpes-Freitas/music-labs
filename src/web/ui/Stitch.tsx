@@ -1,9 +1,11 @@
 // Stitcher: junta várias gravações da mesma parte numa só, usando em cada trecho
-// o take que chegou mais perto da nota que se queria cantar. A melodia (a nota
-// pretendida de cada trecho) é deduzida do tom e do consenso entre os takes, e
-// pode ser corrigida arrastando as notas na faixa de cima.
+// o take que chegou mais perto da nota que se queria cantar.
+//
+// Em cima fica o resultado (a onda final, cada pedaço pintado com a cor do áudio
+// de onde veio; clique para tocar dali), logo abaixo a melodia (arraste uma nota
+// para corrigir) e embaixo a lista dos áudios, cada um com a sua cor.
 
-import { useEffect, useReducer, useRef } from 'preact/hooks';
+import { useEffect, useReducer, useRef, useState } from 'preact/hooks';
 import { useApp, state, toggleRecord, toast, setHint } from '../state';
 import { audio } from '../audio';
 import type { Clip } from '../../core/model';
@@ -13,47 +15,82 @@ import { trackPitch } from '../../core/pitchtrack';
 import { snapToKey, keyLabel, type Key } from '../../core/key';
 import { Win, useCanvas } from './widgets';
 import { Icon } from './icons';
-import { accent, ui } from '../theme';
+import { ui } from '../theme';
 import { loadAudio, audioClips, clipName, trackBelow, saveAsClip, ticksPerSec, pickAudioFiles, uploadFiles, placeAudios, playheadTick, droppedAudio, acceptsAudio } from '../clipaudio';
 import { KeyPicker } from './KeyPicker';
 import { getPref, setPref } from '../prefs';
 
-const COLORS = ['#f2a93b', '#4fc3e8', '#a77bff', '#6fdc8c', '#ff7b8a', '#e8d36a', '#5fd3c4', '#ff9e57', '#c0e05a', '#e07bd8', '#7ba6ff', '#ffb3a0'];
-const col = (k: number) => COLORS[k % COLORS.length];
+const COLORS = ['#ff5d5d', '#4fc3e8', '#f2c94c', '#6fdc8c', '#b58cf0', '#ff9e57', '#5fd3c4', '#ff7bc0', '#9ccc3a', '#7ba6ff', '#e8a87c', '#c0c0c0'];
 
 let ids: string[] = [];
+/** Cor fixa de cada áudio (não muda quando outros entram ou saem). */
+const colorOf = new Map<string, string>();
 let plan: StitchPlan | null = null;
 let takes: StitchTake[] = [];
 let sr = 48000;
 let busy = '';
 let key: Key | null = null;
 let tuneOut = getPref('stitch.tune', true);
+/** Áudio final já montado (refeito quando a costura muda). */
+let final: { L: Float32Array; R: Float32Array; peaks: Float32Array } | null = null;
+let rev = 0;
 let preview: { stop: () => void; pos: () => number } | null = null;
 const trackCache = new Map<string, ReturnType<typeof trackPitch>>();
 const listeners = new Set<() => void>();
-const changed = () => listeners.forEach((l) => l());
+const changed = () => {
+  rev++;
+  listeners.forEach((l) => l());
+};
+
+const colorFor = (id: string) => {
+  if (!colorOf.has(id)) {
+    const used = new Set(colorOf.values());
+    colorOf.set(id, COLORS.find((c) => !used.has(c)) ?? COLORS[colorOf.size % COLORS.length]);
+  }
+  return colorOf.get(id)!;
+};
+const takeColor = (k: number) => (k >= 0 && ids[k] ? colorFor(ids[k]) : '#666');
 
 function stopPreview() {
   preview?.stop();
   preview = null;
 }
 
-/** Analisa os takes escolhidos e monta o plano da costura. */
+/** Remonta o áudio final (com a afinação na melodia, se ligada). */
+function rebuild() {
+  stopPreview();
+  final = null;
+  if (!plan) return;
+  let [L, R] = renderStitch(plan, takes, sr);
+  if (tuneOut) [L, R] = tuneToMelody(L, R, plan, sr);
+  const per = 256;
+  const peaks = new Float32Array(Math.ceil(L.length / per));
+  for (let i = 0; i < peaks.length; i++) {
+    let m = 0;
+    for (let j = i * per; j < Math.min(L.length, (i + 1) * per); j++) m = Math.max(m, Math.abs(L[j]), Math.abs(R[j]));
+    peaks[i] = m;
+  }
+  final = { L, R, peaks };
+}
+
+/** Analisa os takes e monta o plano da costura. */
 async function analyze() {
   stopPreview();
   const p = state.project;
   const clips = ids.map((id) => p.clips.find((c) => c.id === id)).filter((c): c is Clip => !!c?.sample);
   ids = clips.map((c) => c.id);
+  ids.forEach(colorFor);
   plan = null;
+  final = null;
   takes = [];
   if (clips.length < 2) return changed();
-  busy = `Analisando a afinação de ${clips.length} takes…`;
+  busy = `Analisando a afinação de ${clips.length} áudios…`;
   changed();
   try {
     const tps = ticksPerSec(p);
     const loaded = await Promise.all(clips.map((c) => loadAudio(c.sample!)));
     sr = loaded[0].sr;
-    if (loaded.some((a) => a.sr !== sr)) throw new Error('os takes têm taxas de amostragem diferentes');
+    if (loaded.some((a) => a.sr !== sr)) throw new Error('os áudios têm taxas de amostragem diferentes');
     await new Promise((r) => setTimeout(r, 0));
     takes = clips.map((c, k) => {
       const a = loaded[k];
@@ -68,6 +105,7 @@ async function analyze() {
       return { offset: c.pos / tps - from, from, to: from + c.len / tps, ch: a.ch, track: tr };
     });
     plan = planStitch(takes, sr, key, false);
+    rebuild();
   } catch (e) {
     toast(`Stitcher: ${(e as Error).message}`);
   }
@@ -75,10 +113,11 @@ async function analyze() {
   changed();
 }
 
-/** Adiciona takes (por exemplo, os que acabaram de ser gravados ou importados). */
+/** Adiciona áudios da playlist (por id de clipe). */
 export function addStitchTakes(newIds: string[]) {
+  const before = ids.length;
   ids = [...new Set([...ids, ...newIds])];
-  analyze();
+  if (ids.length !== before) analyze();
 }
 
 async function importPaths(paths: string[]) {
@@ -95,63 +134,73 @@ async function importPaths(paths: string[]) {
   }
 }
 
-function render(): [Float32Array, Float32Array] | null {
-  if (!plan) return null;
-  const [L, R] = renderStitch(plan, takes, sr);
-  return tuneOut ? tuneToMelody(L, R, plan, sr) : [L, R];
+/** Toca o resultado a partir de t segundos (do começo da costura). */
+function playFrom(t: number) {
+  stopPreview();
+  if (!final) return;
+  preview = audio.playBuffer([final.L, final.R], sr, Math.max(0, Math.min(t, final.L.length / sr - 0.01)), () => {
+    preview = null;
+    listeners.forEach((l) => l());
+  });
+  listeners.forEach((l) => l());
 }
 
 export function StitchWindow() {
   const s = useApp();
   const [, force] = useReducer((x: number) => x + 1, 0);
+  const [addMenu, setAddMenu] = useState<null | 'menu' | 'playlist'>(null);
   useEffect(() => {
     listeners.add(force as () => void);
     return () => void listeners.delete(force as () => void);
   }, []);
-  // takes apagados da playlist saem da lista
+  // áudios apagados da playlist saem do Stitcher
   useEffect(() => {
     if (ids.some((id) => !s.project.clips.some((c) => c.id === id))) analyze();
   }, [s.version]);
-  // os takes escolhidos primeiro, na ordem das faixas; depois os outros áudios
-  const rank = (c: Clip) => (ids.includes(c.id) ? ids.indexOf(c.id) : 1e6 + c.track);
-  const clips = audioClips(s.project).sort((a, b) => rank(a) - rank(b) || a.pos - b.pos);
+  // fecha o menu de adicionar ao clicar fora
+  useEffect(() => {
+    if (addMenu !== 'menu') return;
+    const close = () => setAddMenu(null);
+    setTimeout(() => window.addEventListener('pointerdown', close, { once: true }), 0);
+    return () => window.removeEventListener('pointerdown', close);
+  }, [addMenu]);
   const recording = audio.recording;
-  const toggle = (id: string) => {
-    ids = ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
-    analyze();
-  };
   const rec = () => {
     if (audio.recording) return toggleRecord();
     toggleRecord(null, { smart: true, onDone: addStitchTakes });
   };
-  const play = () => {
-    if (preview) return stopPreview(), changed();
-    const out = render();
-    if (!out) return;
-    preview = audio.playBuffer(out, sr, 0, () => {
-      preview = null;
-      changed();
-    });
-    changed();
+  const fromPc = async () => {
+    setAddMenu(null);
+    const files = await pickAudioFiles(true);
+    if (!files.length) return;
+    try {
+      importPaths(await uploadFiles(files));
+    } catch (err) {
+      toast(`Stitcher: ${(err as Error).message}`);
+    }
   };
   const save = async () => {
-    const out = render();
-    if (!plan || !out) return;
+    if (!plan || !final) return;
     const p = state.project;
     const tps = ticksPerSec(p);
     const tick = Math.round(plan.start * tps), len = Math.round((plan.end - plan.start) * tps);
     const lowest = Math.max(...ids.map((id) => p.clips.find((c) => c.id === id)?.track ?? 0));
     const first = p.clips.find((c) => c.id === ids[0]);
     try {
-      const id = await saveAsClip(out[0], out[1], sr, 'Costura', { tick, track: trackBelow(p, lowest, tick, len), insert: first?.insert });
-      if (id) toast('Costura salva abaixo dos takes');
+      const id = await saveAsClip(final.L, final.R, sr, 'Costura', { tick, track: trackBelow(p, lowest, tick, len), insert: first?.insert });
+      if (id) toast('Costura salva na playlist, abaixo dos áudios usados');
     } catch (e) {
       toast(`Erro ao salvar a costura: ${(e as Error).message}`);
     }
   };
   const used = plan ? new Set(plan.segments.filter((x) => x.take >= 0).map((x) => x.take)) : new Set<number>();
+  const remove = (id: string) => {
+    ids = ids.filter((x) => x !== id);
+    analyze();
+  };
+  const dur = plan ? plan.end - plan.start : 0;
   return (
-    <Win id="stitch" title="Stitcher" icon="stitch" minW={680} minH={320}>
+    <Win id="stitch" title="Stitcher" icon="stitch" minW={680} minH={360}>
       <div
         class="tool"
         onDragOver={(e) => acceptsAudio(e) && (e.preventDefault(), (e.currentTarget as HTMLElement).classList.add('dropping'))}
@@ -169,28 +218,27 @@ export function StitchWindow() {
         }}
       >
         <div class="tool-bar">
+          <div class="st-add">
+            <button class="st-add-btn" onClick={() => setAddMenu(addMenu ? null : 'menu')} data-hint="Adicionar áudios: do computador ou da playlist (também dá para arrastar um arquivo ou um clipe da playlist para esta janela)">
+              <Icon name="plus" size={13} /> Adicionar áudio <Icon name="down" size={9} />
+            </button>
+            {addMenu === 'menu' && (
+              <div class="st-pop" onPointerDown={(e) => e.stopPropagation()}>
+                <button onClick={fromPc}>
+                  <Icon name="folder" size={13} /> Do computador…
+                </button>
+                <button onClick={() => setAddMenu('playlist')}>
+                  <Icon name="playlist" size={13} /> Da playlist…
+                </button>
+              </div>
+            )}
+            {addMenu === 'playlist' && <FromPlaylist onClose={() => setAddMenu(null)} />}
+          </div>
           <button class={`amp-rec ${recording ? 'on' : ''}`} onClick={rec} data-hint="Grava (só quando você canta/toca); cada take entra aqui. Dica: ligue a região de loop e grave a mesma parte várias vezes">
             <Icon name="record" size={14} />
             {recording ? 'Parar' : 'Gravar'}
           </button>
-          <button
-            class="tool-open"
-            onClick={async () => {
-              const files = await pickAudioFiles(true);
-              if (!files.length) return;
-              try {
-                importPaths(await uploadFiles(files));
-              } catch (err) {
-                toast(`Stitcher: ${(err as Error).message}`);
-              }
-            }}
-            data-hint="Importar vários áudios do computador (os takes são alinhados entre si). Também dá para arrastar arquivos para esta janela"
-          >
-            <Icon name="folder" size={13} /> Importar áudios…
-          </button>
-          <button class={preview ? 'on' : ''} disabled={!plan} onClick={play} data-hint="Ouvir a costura">
-            <Icon name={preview ? 'stop' : 'play'} size={12} /> Ouvir
-          </button>
+          <span class="tool-sep" />
           {plan && (
             <KeyPicker
               value={key}
@@ -201,184 +249,137 @@ export function StitchWindow() {
               }}
             />
           )}
-          <label class="tool-check" data-hint="Depois de costurar, leva cada nota exatamente para a nota da melodia (mantém o vibrato)">
+          <label class="tool-check" data-hint="Leva cada nota do resultado exatamente para a nota da melodia (mantém o vibrato)">
             <input
               type="checkbox"
               checked={tuneOut}
               onChange={() => {
                 tuneOut = !tuneOut;
                 setPref('stitch.tune', tuneOut);
-                stopPreview();
+                rebuild();
                 changed();
               }}
             />
             Afinar na melodia
           </label>
-          <button disabled={!plan} onClick={() => analyze()} data-hint="Refaz a melodia e a escolha dos takes do zero (desfaz edições)">
+          <button disabled={!plan} onClick={() => analyze()} data-hint="Refaz a melodia e a escolha dos pedaços do zero (desfaz edições)">
             Recomeçar
           </button>
-          <span class="tool-info">{plan ? `${plan.segments.length} notas · ${used.size} de ${takes.length} takes usados` : ''}</span>
-          <button class="tool-main" disabled={!plan} onClick={save} data-hint="Cria um clipe com a costura abaixo dos takes (os takes não mudam)">
+          <button class="tool-main" disabled={!final} onClick={save} data-hint="Cria um clipe com o resultado na playlist (os áudios originais não mudam)">
             <Icon name="save" size={13} /> Salvar costura
           </button>
         </div>
-        <div class="stitch-body">
-          <div class="stitch-list">
-            <div class="stitch-list-head">
-              Takes
-              {clips.length > 1 && (
-                <button
-                  class="stitch-all"
-                  onClick={() => {
-                    ids = ids.length === clips.length ? [] : clips.map((c) => c.id);
-                    analyze();
-                  }}
-                >
-                  {ids.length === clips.length ? 'nenhum' : 'todos'}
-                </button>
-              )}
-            </div>
-            {clips.length === 0 && <div class="tool-empty small">Nenhum áudio ainda. Importe, arraste arquivos para cá ou grave.</div>}
-            {clips.map((c) => {
-              const k = ids.indexOf(c.id);
-              const cents = k >= 0 && plan ? plan.takeCents[k] : null;
-              return (
-                <label class={`stitch-take ${k >= 0 ? 'on' : ''}`} data-hint={`${clipName(c)} · track ${c.track + 1}`}>
-                  <input type="checkbox" checked={k >= 0} onChange={() => toggle(c.id)} />
-                  {k >= 0 && <span class="stitch-dot" style={{ background: col(k) }} />}
-                  <span class="stitch-name">{clipName(c)}</span>
-                  {cents !== null && cents !== undefined && (
-                    <span class={`stitch-cents ${cents < 15 ? 'good' : cents < 35 ? 'mid' : 'bad'}`} data-hint="Distância média até a melodia">
-                      ±{Math.round(cents)}c
-                    </span>
-                  )}
-                </label>
-              );
-            })}
+        {busy ? (
+          <div class="tool-empty">{busy}</div>
+        ) : !plan ? (
+          <div class="tool-empty">
+            {ids.length === 1 ? 'Adicione pelo menos mais um áudio da mesma parte.' : 'Adicione dois ou mais áudios da mesma parte (do computador, da playlist ou gravando). Também dá para arrastar arquivos ou clipes da playlist para cá.'}
           </div>
-          {busy ? (
-            <div class="tool-empty">{busy}</div>
-          ) : plan ? (
-            <div class="stitch-lanes">
-              <Lanes />
+        ) : (
+          <div class="st-main">
+            <div class="st-row st-final">
+              <div class="st-label">
+                <button class={`st-play ${preview ? 'on' : ''}`} onClick={() => (preview ? (stopPreview(), changed()) : playFrom(0))} data-hint="Tocar o resultado do começo (ou clique em qualquer ponto da onda)">
+                  <Icon name={preview ? 'stop' : 'play'} size={14} />
+                </button>
+                <div>
+                  <b>Resultado</b>
+                  <small>
+                    {dur.toFixed(1)} s · {used.size} de {takes.length} áudios usados
+                  </small>
+                </div>
+              </div>
+              <FinalCanvas />
             </div>
-          ) : (
-            <div class="tool-empty">Marque dois ou mais takes da mesma parte, importe vários áudios ou arraste arquivos para cá.</div>
-          )}
-        </div>
+            <div class="st-row st-mel">
+              <div class="st-label">
+                <div>
+                  <b>Melodia</b>
+                  <small>{keyLabel(plan.key)} · arraste para corrigir</small>
+                </div>
+              </div>
+              <MelodyCanvas />
+            </div>
+            <div class="st-list">
+              {ids.map((id, k) => {
+                const c = state.project.clips.find((x) => x.id === id);
+                const cents = plan!.takeCents[k];
+                const inUse = used.has(k);
+                return (
+                  <div class={`st-row st-take ${inUse ? 'used' : 'unused'}`} key={id}>
+                    <div class="st-label">
+                      <span class="st-swatch" style={{ background: colorFor(id) }} />
+                      <div class="st-name">
+                        <b>{c ? clipName(c) : '?'}</b>
+                        <small>
+                          {inUse ? `${plan!.segments.filter((x) => x.take === k).length} pedaços usados` : 'não usado'}
+                          {cents !== null && (
+                            <span class={`stitch-cents ${cents < 15 ? 'good' : cents < 35 ? 'mid' : 'bad'}`} data-hint="Distância média até a melodia">
+                              {' '}
+                              · ±{Math.round(cents)}c
+                            </span>
+                          )}
+                        </small>
+                      </div>
+                      <button class="pedal-x" data-hint="Tirar este áudio do Stitcher (continua na playlist)" onClick={() => remove(id)}>
+                        <Icon name="close" size={10} />
+                      </button>
+                    </div>
+                    <TakeCanvas k={k} />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </Win>
   );
 }
 
-const MEL = 130; // altura da faixa da melodia
-const LANE = 42;
-
-function Lanes() {
-  const pl = plan!;
-  const names = ids.map((id) => {
-    const c = state.project.clips.find((x) => x.id === id);
-    return c ? clipName(c) : '';
-  });
-  const view = useRef({ zx: 100, lo: 55, hi: 72 });
-  const drag = useRef<{ si: number; y0: number; orig: number } | null>(null);
-  const melRow = () => (MEL - 18) / Math.max(1, view.current.hi - view.current.lo);
-  const melY = (m: number) => 14 + (view.current.hi - m) * melRow();
-  const xOf = (t: number) => (t - pl.start) * view.current.zx;
-  const { ref, paint, paintOverlay } = useCanvas(
-    (ctx, w, h) => {
-      const v = view.current;
-      v.zx = (w - 8) / Math.max(0.5, pl.end - pl.start);
-      const targets = pl.segments.map((s) => s.target).filter((t): t is number => t !== null);
-      if (!drag.current && targets.length) {
-        v.lo = Math.min(...targets) - 2;
-        v.hi = Math.max(...targets) + 2;
-      }
-      ctx.fillStyle = ui('#1a1f22');
-      ctx.fillRect(0, 0, w, h);
-      // ---- melodia: linhas das notas, blocos com a nota pretendida
-      ctx.fillStyle = ui('#14191b');
-      ctx.fillRect(0, 0, w, MEL);
-      const rh = melRow();
-      ctx.font = '9px sans-serif';
-      for (let m = Math.ceil(v.lo); m <= v.hi; m++) {
-        const y = melY(m);
-        ctx.fillStyle = m % 12 === 0 ? ui('#2f383d') : ui('#1e2528');
-        ctx.fillRect(0, y, w, 1);
-      }
-      pl.segments.forEach((sg, si) => {
-        if (sg.target === null) return;
-        const x0 = xOf(sg.t0), x1 = xOf(sg.t1);
-        // o que o take escolhido cantou (traço fino) e a nota pretendida (bloco)
-        const sung = sg.take >= 0 ? sg.sung[sg.take] : null;
-        if (sung !== null) {
-          ctx.fillStyle = 'rgba(255,255,255,0.35)';
-          ctx.fillRect(x0 + 2, melY(sung) - 1, Math.max(2, x1 - x0 - 4), 2);
-        }
-        const y = melY(sg.target) - rh * 0.4;
-        ctx.fillStyle = sg.take >= 0 ? col(sg.take) : '#777';
-        ctx.globalAlpha = drag.current?.si === si ? 1 : 0.85;
-        ctx.fillRect(x0 + 1, y, Math.max(3, x1 - x0 - 2), Math.max(6, rh * 0.8));
-        ctx.globalAlpha = 1;
-        if (x1 - x0 > 22) {
-          ctx.fillStyle = '#111';
-          ctx.font = 'bold 9px sans-serif';
-          ctx.fillText(noteName(sg.target), x0 + 4, y + Math.max(6, rh * 0.8) - 2);
-        }
-      });
-      ctx.font = 'bold 9.5px sans-serif';
-      ctx.fillStyle = ui('#9fb0b8');
-      ctx.fillText(`MELODIA · ${keyLabel(pl.key)} · arraste uma nota para corrigir`, 6, 10);
-      // ---- takes
-      takes.forEach((tk, k) => {
-        const y = MEL + 6 + k * LANE;
-        if (y > h) return;
-        ctx.fillStyle = k % 2 ? ui('#1d2326') : ui('#20262a');
-        ctx.fillRect(0, y, w, LANE - 4);
-        for (const sg of pl.segments) {
-          if (sg.take !== k) continue;
-          ctx.fillStyle = col(k);
-          ctx.globalAlpha = 0.22;
-          ctx.fillRect(xOf(sg.t0), y, (sg.t1 - sg.t0) * v.zx, LANE - 4);
-          ctx.globalAlpha = 1;
-          ctx.fillRect(xOf(sg.t0), y + LANE - 7, (sg.t1 - sg.t0) * v.zx, 3);
-        }
-        const ch = tk.ch[0];
-        ctx.fillStyle = col(k);
-        ctx.globalAlpha = 0.75;
-        const mid = y + (LANE - 4) / 2;
-        for (let x = 0; x < w; x++) {
-          const t = pl.start + x / v.zx;
-          const a0 = Math.floor((t - tk.offset) * sr), a1 = Math.floor((t + 1 / v.zx - tk.offset) * sr);
-          if (a1 < tk.from * sr || a0 > tk.to * sr) continue;
-          let pk = 0;
-          for (let i = Math.max(0, a0); i < Math.min(ch.length, a1); i += 3) pk = Math.max(pk, Math.abs(ch[i]));
-          ctx.fillRect(x, mid - pk * 16, 1, Math.max(1, pk * 32));
-        }
-        ctx.globalAlpha = 1;
-        ctx.font = '9px sans-serif';
-        for (const sg of pl.segments) {
-          const c = sg.cents[k];
-          const sw = (sg.t1 - sg.t0) * v.zx;
-          if (c === null || c === undefined || sw < 26) continue;
-          ctx.fillStyle = c < 15 ? '#8ae8a4' : c < 35 ? '#e8c547' : '#ff8a8a';
-          ctx.fillText(`${Math.round(c)}c`, xOf(sg.t0) + 3, y + 11);
-        }
-        ctx.fillStyle = ui('#c9d1d5');
-        ctx.font = 'bold 9.5px sans-serif';
-        ctx.fillText(names[k] ?? `Take ${k + 1}`, 6, y + LANE - 10);
-      });
-      ctx.fillStyle = 'rgba(255,255,255,0.1)';
-      for (const sg of pl.segments) ctx.fillRect(xOf(sg.t0), 0, 1, h);
-    },
-    [pl, pl.key],
-    (ctx, _w, h) => {
-      if (!preview) return;
-      const x = preview.pos() * view.current.zx;
-      ctx.fillStyle = accent();
-      ctx.fillRect(x, 0, 1.5, h);
-    },
+/** Lista de áudios da playlist para adicionar. */
+function FromPlaylist(p: { onClose: () => void }) {
+  const [pick, setPick] = useState<string[]>([]);
+  const list = audioClips(state.project).filter((c) => !ids.includes(c.id)).sort((a, b) => a.pos - b.pos || a.track - b.track);
+  useEffect(() => {
+    const close = () => p.onClose();
+    setTimeout(() => window.addEventListener('pointerdown', close, { once: true }), 0);
+    return () => window.removeEventListener('pointerdown', close);
+  }, []);
+  return (
+    <div class="st-pop st-pick" onPointerDown={(e) => e.stopPropagation()}>
+      <div class="st-pick-head">Áudios da playlist</div>
+      {list.length === 0 && <div class="tool-empty small">Todos os áudios da playlist já estão aqui.</div>}
+      <div class="st-pick-list">
+        {list.map((c) => (
+          <label class="stitch-take">
+            <input type="checkbox" checked={pick.includes(c.id)} onChange={() => setPick(pick.includes(c.id) ? pick.filter((x) => x !== c.id) : [...pick, c.id])} />
+            <span class="stitch-name">{clipName(c)}</span>
+            <small class="dim">track {c.track + 1}</small>
+          </label>
+        ))}
+      </div>
+      <div class="st-pick-foot">
+        {list.length > 1 && <button onClick={() => setPick(pick.length === list.length ? [] : list.map((c) => c.id))}>{pick.length === list.length ? 'Nenhum' : 'Todos'}</button>}
+        <button
+          class="on"
+          disabled={!pick.length}
+          onClick={() => {
+            addStitchTakes(pick);
+            p.onClose();
+          }}
+        >
+          Adicionar {pick.length || ''}
+        </button>
+      </div>
+    </div>
   );
+}
+
+// ---------------------------------------------------------------- desenhos
+
+/** Cursor de reprodução em todos os gráficos. */
+function usePlayhead(paintOverlay: () => void) {
   useEffect(() => {
     let raf = 0;
     const tick = () => {
@@ -388,70 +389,238 @@ function Lanes() {
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, []);
-  const at = (e: MouseEvent) => {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const x = e.clientX - r.left, y = e.clientY - r.top;
-    const t = pl.start + x / view.current.zx;
-    const si = pl.segments.findIndex((sg) => t >= sg.t0 && t < sg.t1);
-    const k = y > MEL + 6 ? Math.floor((y - MEL - 6) / LANE) : -1;
-    return { x, y, si, k: k < takes.length ? k : -1, inMel: y < MEL };
-  };
+}
+const drawHead = (ctx: CanvasRenderingContext2D, w: number, h: number) => {
+  if (!preview || !plan) return;
+  const x = (preview.pos() / (plan.end - plan.start)) * w;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(x, 0, 1.5, h);
+};
+const segAt = (t: number) => (plan ? plan.segments.findIndex((sg) => t >= sg.t0 && t < sg.t1) : -1);
+const localX = (e: MouseEvent) => {
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top, w: r.width, h: r.height };
+};
+
+/** Onda do resultado, com cada pedaço na cor do áudio de onde veio. */
+function FinalCanvas() {
+  const { ref, paintOverlay } = useCanvas(
+    (ctx, w, h) => {
+      ctx.fillStyle = ui('#11161a');
+      ctx.fillRect(0, 0, w, h);
+      if (!plan || !final) return;
+      const span = plan.end - plan.start;
+      const mid = h / 2;
+      ctx.fillStyle = 'rgba(255,255,255,0.06)';
+      ctx.fillRect(0, mid, w, 1);
+      const per = final.peaks.length / w;
+      for (const sg of plan.segments) {
+        const x0 = ((sg.t0 - plan.start) / span) * w, x1 = ((sg.t1 - plan.start) / span) * w;
+        const color = takeColor(sg.take);
+        // fundo leve do pedaço + onda na cor do áudio
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.1;
+        ctx.fillRect(x0, 0, x1 - x0, h);
+        ctx.globalAlpha = 1;
+        for (let x = Math.floor(x0); x < Math.min(w, Math.ceil(x1)); x++) {
+          let pk = 0;
+          for (let i = Math.floor(x * per); i < Math.floor((x + 1) * per); i++) pk = Math.max(pk, final.peaks[i] ?? 0);
+          const a = Math.min(1, pk * 1.6) * (mid - 3);
+          ctx.fillRect(x, mid - a, 1, Math.max(1, a * 2));
+        }
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(Math.round(x0), 0, 1, h);
+      }
+    },
+    [rev],
+    drawHead,
+  );
+  usePlayhead(paintOverlay);
   return (
     <canvas
       ref={ref}
-      class="tool-canvas"
-      style={{ height: `${Math.max(200, MEL + 10 + takes.length * LANE)}px`, flex: 'none' }}
+      class="st-canvas"
       onPointerDown={(e) => {
-        const { y, si, k, inMel } = at(e as unknown as MouseEvent);
-        if (si < 0) return;
-        const sg = pl.segments[si];
-        if (inMel && sg.target !== null) {
-          (e.currentTarget as Element).setPointerCapture(e.pointerId);
-          drag.current = { si, y0: y, orig: sg.target };
-          return;
-        }
-        if (k < 0) return;
-        if (sg.cents[k] === null || sg.cents[k] === undefined) return toast(`${names[k]} não canta/toca nessa nota`);
-        sg.take = k; // troca manual
-        stopPreview();
-        paint();
-        changed();
+        if (!plan) return;
+        const { x, w } = localX(e as unknown as MouseEvent);
+        playFrom((x / w) * (plan.end - plan.start));
       }}
       onPointerMove={(e) => {
-        const { y, si, k, inMel } = at(e as unknown as MouseEvent);
+        if (!plan) return;
+        const { x, w } = localX(e as unknown as MouseEvent);
+        const si = segAt(plan.start + (x / w) * (plan.end - plan.start));
+        const sg = plan.segments[si];
+        if (!sg) return;
+        const c = state.project.clips.find((q) => q.id === ids[sg.take]);
+        setHint(`${sg.target !== null ? noteName(sg.target) + ' · ' : ''}${c ? `vem de ${clipName(c)}` : 'silêncio'} · clique para tocar daqui`);
+      }}
+      style={{ cursor: 'pointer' }}
+      data-hint="Resultado da costura: cada cor é o áudio de onde veio o pedaço. Clique para tocar a partir daí."
+    />
+  );
+}
+
+/** Melodia pretendida (arraste uma nota para corrigir). */
+function MelodyCanvas() {
+  const view = useRef({ lo: 55, hi: 72 });
+  const drag = useRef<{ si: number; y0: number; orig: number } | null>(null);
+  const row = (h: number) => (h - 6) / Math.max(1, view.current.hi - view.current.lo);
+  const yOf = (m: number, h: number) => 3 + (view.current.hi - m) * row(h);
+  const { ref, paint, paintOverlay } = useCanvas(
+    (ctx, w, h) => {
+      ctx.fillStyle = ui('#14191b');
+      ctx.fillRect(0, 0, w, h);
+      if (!plan) return;
+      const span = plan.end - plan.start;
+      const targets = plan.segments.map((s) => s.target).filter((t): t is number => t !== null);
+      if (!drag.current && targets.length) {
+        view.current.lo = Math.min(...targets) - 2;
+        view.current.hi = Math.max(...targets) + 2;
+      }
+      const rh = row(h);
+      for (let m = Math.ceil(view.current.lo); m <= view.current.hi; m++) {
+        ctx.fillStyle = m % 12 === 0 ? ui('#2f383d') : ui('#1c2326');
+        ctx.fillRect(0, yOf(m, h), w, 1);
+      }
+      for (const sg of plan.segments) {
+        if (sg.target === null) continue;
+        const x0 = ((sg.t0 - plan.start) / span) * w, x1 = ((sg.t1 - plan.start) / span) * w;
+        const sung = sg.take >= 0 ? sg.sung[sg.take] : null;
+        if (sung !== null) {
+          ctx.fillStyle = 'rgba(255,255,255,0.4)';
+          ctx.fillRect(x0 + 2, yOf(sung, h) - 1, Math.max(2, x1 - x0 - 4), 2);
+        }
+        const bh = Math.max(7, rh * 0.8);
+        const y = yOf(sg.target, h) - bh / 2;
+        ctx.fillStyle = takeColor(sg.take);
+        ctx.fillRect(x0 + 1, y, Math.max(3, x1 - x0 - 2), bh);
+        if (x1 - x0 > 24) {
+          ctx.fillStyle = '#111';
+          ctx.font = 'bold 9px sans-serif';
+          ctx.fillText(noteName(sg.target), x0 + 4, y + bh - 2);
+        }
+      }
+    },
+    [rev],
+    drawHead,
+  );
+  usePlayhead(paintOverlay);
+  return (
+    <canvas
+      ref={ref}
+      class="st-canvas"
+      onPointerDown={(e) => {
+        if (!plan) return;
+        const { x, y, w } = localX(e as unknown as MouseEvent);
+        const si = segAt(plan.start + (x / w) * (plan.end - plan.start));
+        const sg = plan.segments[si];
+        if (!sg || sg.target === null) return;
+        (e.currentTarget as Element).setPointerCapture(e.pointerId);
+        drag.current = { si, y0: y, orig: sg.target };
+      }}
+      onPointerMove={(e) => {
+        if (!plan) return;
+        const { x, y, w, h } = localX(e as unknown as MouseEvent);
         const d = drag.current;
         if (d) {
-          const sg = pl.segments[d.si];
-          const raw = d.orig - (y - d.y0) / melRow();
+          const sg = plan.segments[d.si];
+          const raw = d.orig - (y - d.y0) / row(h);
           // grade do tom; Ctrl: qualquer semitom
-          sg.target = e.ctrlKey || pl.key.scale === 'chromatic' ? Math.round(raw) : snapToKey(raw, pl.key);
+          sg.target = e.ctrlKey || plan.key.scale === 'chromatic' ? Math.round(raw) : snapToKey(raw, plan.key);
           setHint(`Nota ${d.si + 1}: era para ser ${noteName(sg.target)} (Ctrl: qualquer semitom)`);
           paint();
           return;
         }
-        if (si < 0) return;
-        const sg = pl.segments[si];
-        if (inMel && sg.target !== null) {
-          (e.currentTarget as HTMLElement).style.cursor = 'ns-resize';
-          const sung = sg.take >= 0 ? sg.sung[sg.take] : null;
-          setHint(`Nota pretendida: ${noteName(sg.target)}${sung !== null ? ` · ${names[sg.take]} cantou ${noteName(Math.round(sung))} ${Math.round((sung - Math.round(sung)) * 100)}c` : ''} · arraste para corrigir`);
-          return;
-        }
-        (e.currentTarget as HTMLElement).style.cursor = k >= 0 ? 'pointer' : 'default';
-        if (k < 0) return;
-        const c = sg.cents[k];
-        setHint(c === null || c === undefined ? `${names[k]}: sem som nesta nota` : `${names[k]}: ${Math.round(c)} cents da nota pretendida (${noteName(sg.target ?? 60)}) · clique para usar este take aqui`);
+        const sg = plan.segments[segAt(plan.start + (x / w) * (plan.end - plan.start))];
+        if (!sg || sg.target === null) return;
+        const sung = sg.take >= 0 ? sg.sung[sg.take] : null;
+        setHint(`Nota pretendida: ${noteName(sg.target)}${sung !== null ? ` · cantado: ${noteName(Math.round(sung))} ${Math.round((sung - Math.round(sung)) * 100)}c` : ''} · arraste para corrigir`);
       }}
       onPointerUp={() => {
-        if (!drag.current) return;
+        if (!drag.current || !plan) return;
         drag.current = null;
-        // a melodia mudou: escolhe de novo o take mais perto em cada nota
-        rescore(pl, takes, sr);
-        stopPreview();
-        paint();
+        // a melodia mudou: escolhe de novo o áudio mais perto em cada nota
+        rescore(plan, takes, sr);
+        rebuild();
         changed();
       }}
-      data-hint="Em cima, a melodia (arraste uma nota para corrigir). Embaixo, cada take; o colorido é o que entra na costura. Clique num trecho de outro take para trocar."
+      style={{ cursor: 'ns-resize' }}
+      data-hint="Melodia: a nota que se queria cantar em cada trecho. Arraste uma nota para cima/baixo para corrigir."
+    />
+  );
+}
+
+/** Onda de um áudio da lista, com os pedaços usados destacados na cor dele. */
+function TakeCanvas(p: { k: number }) {
+  const { ref, paintOverlay } = useCanvas(
+    (ctx, w, h) => {
+      ctx.fillStyle = ui('#181d20');
+      ctx.fillRect(0, 0, w, h);
+      if (!plan) return;
+      const tk = takes[p.k];
+      if (!tk) return;
+      const span = plan.end - plan.start;
+      const color = takeColor(p.k);
+      for (const sg of plan.segments) {
+        if (sg.take !== p.k) continue;
+        const x0 = ((sg.t0 - plan.start) / span) * w, x1 = ((sg.t1 - plan.start) / span) * w;
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.18;
+        ctx.fillRect(x0, 0, x1 - x0, h);
+        ctx.globalAlpha = 1;
+        ctx.fillRect(x0, h - 3, x1 - x0, 3);
+      }
+      const ch = tk.ch[0];
+      const mid = h / 2;
+      for (let x = 0; x < w; x++) {
+        const t = plan.start + (x / w) * span;
+        const a0 = Math.floor((t - tk.offset) * sr), a1 = Math.floor((t + span / w - tk.offset) * sr);
+        if (a1 < tk.from * sr || a0 > tk.to * sr) continue;
+        const si = segAt(t);
+        let pk = 0;
+        for (let i = Math.max(0, a0); i < Math.min(ch.length, a1); i += 3) pk = Math.max(pk, Math.abs(ch[i]));
+        // o que entra no resultado fica na cor do áudio; o resto, apagado
+        ctx.fillStyle = si >= 0 && plan.segments[si].take === p.k ? color : 'rgba(150,160,165,0.35)';
+        const a = Math.min(1, pk * 1.6) * (mid - 3);
+        ctx.fillRect(x, mid - a, 1, Math.max(1, a * 2));
+      }
+      ctx.font = '9px sans-serif';
+      for (const sg of plan.segments) {
+        const c = sg.cents[p.k];
+        const sw = ((sg.t1 - sg.t0) / span) * w;
+        if (c === null || c === undefined || sw < 26) continue;
+        ctx.fillStyle = c < 15 ? '#8ae8a4' : c < 35 ? '#e8c547' : '#ff8a8a';
+        ctx.fillText(`${Math.round(c)}c`, ((sg.t0 - plan.start) / span) * w + 3, 10);
+      }
+    },
+    [rev, p.k],
+    drawHead,
+  );
+  usePlayhead(paintOverlay);
+  return (
+    <canvas
+      ref={ref}
+      class="st-canvas"
+      onPointerDown={(e) => {
+        if (!plan) return;
+        const { x, w } = localX(e as unknown as MouseEvent);
+        const sg = plan.segments[segAt(plan.start + (x / w) * (plan.end - plan.start))];
+        if (!sg) return;
+        if (sg.cents[p.k] === null || sg.cents[p.k] === undefined) return toast('Este áudio não canta/toca nessa nota');
+        sg.take = p.k; // troca manual
+        rebuild();
+        changed();
+      }}
+      onPointerMove={(e) => {
+        if (!plan) return;
+        const { x, w } = localX(e as unknown as MouseEvent);
+        const sg = plan.segments[segAt(plan.start + (x / w) * (plan.end - plan.start))];
+        if (!sg) return;
+        const c = sg.cents[p.k];
+        setHint(c === null || c === undefined ? 'Sem som nesta nota' : `${Math.round(c)} cents da nota pretendida (${noteName(sg.target ?? 60)}) · clique para usar este áudio aqui`);
+      }}
+      style={{ cursor: 'pointer' }}
+      data-hint="Clique num trecho para usar este áudio nele"
     />
   );
 }
