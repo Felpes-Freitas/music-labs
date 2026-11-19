@@ -179,11 +179,14 @@ export class Engine {
   region: [number, number] | null = null;
   loopOn = false;
   metronome = false;
+  /** Gravando sem área selecionada: não volta nem para no fim da música. */
+  endless = false;
   loops = 0;
   private preroll = 0;
   private prerollPos = 0;
   private click = { left: 0, freq: 0, ph: 0, gain: 0 };
-  setTransport(t: { region?: [number, number] | null; loopOn?: boolean; metronome?: boolean }) {
+  setTransport(t: { region?: [number, number] | null; loopOn?: boolean; metronome?: boolean; endless?: boolean }) {
+    if (t.endless !== undefined) this.endless = t.endless;
     if (t.region !== undefined) this.region = t.region && t.region[1] > t.region[0] ? t.region : null;
     if (t.loopOn !== undefined) this.loopOn = t.loopOn;
     if (t.metronome !== undefined) this.metronome = t.metronome;
@@ -276,6 +279,8 @@ export class Engine {
       const pat = p.patterns.find((x) => x.id === this.patternId);
       return [0, pat ? patternLength(p, pat) : 384];
     }
+    // gravando: só o loop com área selecionada volta; o resto segue sem fim (não para no fim da música)
+    if (this.endless) return this.loopOn && this.region ? this.region : [0, Number.MAX_SAFE_INTEGER];
     if (this.region) {
       // com loop: a área inteira; sem loop: da área até o fim da música
       if (this.loopOn) return this.region;

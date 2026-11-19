@@ -179,6 +179,10 @@ scripts/     ferramentas de diagnóstico e testes de UI (os _*.mts são temporá
   no amp ("Bloco", padrão 128; 64 estala nesta máquina). O retorno do navegador fica mudo
   quando o nativo está ligado (só serve para o visualizador). A entrada do PipeWire é
   achada pelo nome igual ao da entrada escolhida no amp.
+- **Regra do loop gravando**: só volta se o loop estiver ligado **e** houver área
+  selecionada; em qualquer outro caso a engine fica em `endless` (não volta nem para no
+  fim da música) até parar. A posição dos takes é dobrada para dentro da área do loop
+  (`tickAt`), mesmo antes de o status da volta chegar.
 - **Gravação aditiva no loop**: cada volta fecha um take (`markRec` corta no ponto exato da
   volta) e `placeLiveTake` (state.ts) já coloca o take na playlist como clipe com sample
   `live:…` (áudio enviado direto à engine, efeitos do amp em qualidade de retorno), numa
