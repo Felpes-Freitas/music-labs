@@ -165,6 +165,10 @@ export class Audio {
       peakDb: null,
       takes: [],
       lastLoud: 0,
+      detBase: null,
+      detPushed: 0,
+      playId: null,
+      base: 0,
     };
     rec.tps = ((p?.bpm ?? 120) * PPQ) / 60;
     if (!rec.smart) rec.takes.push({ c0: latency + preroll, c1: null, tick: startTick, track });
@@ -192,7 +196,9 @@ export class Audio {
   /** Anota onde a música está (chamado a cada status da engine). */
   private markRec() {
     const r = this.rec;
-    if (!r || !this.status.playing || this.status.countIn) return;
+    // status de outro play (ex.: a música que já tocava antes de apertar gravar) não conta:
+    // ele traria a posição e o contador de voltas antigos
+    if (!r || r.playId === null || this.status.playId !== r.playId || !this.status.playing || this.status.countIn) return;
     // o loop recomeçou: fecha o take no ponto exato da volta e (se ainda estiver gravando) abre outro no começo
     if (r.loop && this.status.loops > r.lastLoops) {
       r.lastLoops = this.status.loops;
@@ -291,7 +297,13 @@ export class Audio {
       for (let i = 0; i < g.length; i++) g[i] = mono[i] * r.gain;
       mono = g;
     }
-    for (const st of r.smart.det.push(mono)) {
+    // a captura de detecção conta do zero a partir de quando abriu: leva para o relógio da principal
+    // (quando a detecção assume, o contador do detector está em detPushed e a principal em r.frames)
+    if (ec && r.detBase === null) r.detBase = Math.max(0, r.frames - mono.length) - r.detPushed;
+    const off = ec ? (r.detBase ?? 0) : 0;
+    r.detPushed += mono.length;
+    for (const raw of r.smart.det.push(mono)) {
+      const st = { ...raw, since: raw.since + off, end: raw.end + off };
       r.noiseDb = st.noiseDb;
       r.snrDb = st.snrDb;
       r.peakDb = st.peakDb;
@@ -300,7 +312,7 @@ export class Audio {
       if (!open && st.active) {
         // começa um take um pouco antes, para não cortar o ataque da palhetada
         const prevEnd = last ? last.c1! : 0;
-        let c0 = Math.max(r.skip + r.preroll, prevEnd, st.since - 1024 - Math.round(0.06 * sr));
+        let c0 = Math.max(r.base + r.skip + r.preroll, prevEnd, st.since - 1024 - Math.round(0.06 * sr));
         // tocou logo depois de o loop recomeçar: o "pouco antes do ataque" não pode cair na
         // volta anterior (o take iria para o fim da área e passaria dela) — começa no início do loop
         const onset = st.since - 1024;
@@ -674,8 +686,23 @@ export class Audio {
     return this.loading.size;
   }
 
+  private playSeq = 0;
+  /** Último play pedido (status de plays anteriores ainda podem chegar). */
+  playId = 0;
   play(mode: 'pattern' | 'song', patternId: string | null, tick?: number, countIn = 0) {
-    this.start().then(() => this.post({ type: 'play', mode, patternId, tick, countIn }));
+    const id = ++this.playSeq + Math.floor(Math.random() * 1e6) * 1000;
+    this.playId = id;
+    const r = this.rec;
+    if (r && r.playId === null) {
+      // a música (ou a contagem) começa agora: o relógio da gravação passa a valer daqui.
+      // Até aqui a captura já podia estar aberta (abrir a detecção leva um tempo).
+      r.playId = id;
+      r.base = r.frames;
+      r.map[0] = [r.frames + r.preroll, tick ?? r.startTick];
+      const t0 = r.takes[0];
+      if (t0 && !r.smart) t0.c0 = r.skip + r.preroll + r.frames;
+    }
+    this.start().then(() => this.post({ type: 'play', mode, patternId, tick, countIn, id }));
   }
   /** Área selecionada, loop e metrônomo (estado de transporte, fora do projeto). */
   private tp: { region?: [number, number] | null; loopOn?: boolean; metronome?: boolean; endless?: boolean } = {};
@@ -769,6 +796,18 @@ interface Rec {
   peakDb: number | null;
   takes: { c0: number; c1: number | null; tick: number; track: number; onset?: number }[];
   lastLoud: number;
+  /**
+   * Amostra da captura principal em que a captura de detecção começou. Ela abre
+   * depois (getUserMedia leva um tempo) e conta as amostras a partir de 0: sem
+   * somar isto, todo take começaria adiantado (e caía antes da volta do loop).
+   */
+  detBase: number | null;
+  /** Amostras já entregues ao detector (cru antes da detecção abrir, depois a detecção). */
+  detPushed: number;
+  /** Play que esta gravação iniciou (null até a música começar). */
+  playId: number | null;
+  /** Amostra da captura em que a música (ou a contagem) começou. */
+  base: number;
 }
 
 /** Estéreo, ou só um canal da interface duplicado nos dois lados (guitarra, microfone); aplica o ganho. */

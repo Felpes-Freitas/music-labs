@@ -479,12 +479,14 @@ export async function toggleRecord(fromAmp: AmpTake | null = null, extra: { smar
   // como no REC geral: começa na área selecionada (ou onde a agulha está)
   const start = state.sel ? state.sel.start : audio.status.mode === 'song' ? Math.max(0, Math.floor(audio.status.tick)) : 0;
   try {
+    recLoop = null;
     const track =
       state.sel && state.selTrack !== null ? freeTrackFrom(state.selTrack, start, state.sel.end - start) : A.freeTrack(state.project, start, 1e12);
     if (fromAmp) {
       const stream = audio.ampStream;
       if (!stream) throw new Error('o amp está desligado');
       recBaseTrack = track;
+      recLoop = state.loopOn && state.sel ? [state.sel.start, state.sel.end] : null;
       liveTakes.clear();
       // com loop, cada volta vira um take que entra na playlist assim que fecha (e toca na próxima volta)
       const p = state.project;
@@ -517,6 +519,8 @@ export const setLivePeaksHandler = (fn: typeof livePeaks) => void (livePeaks = f
 /** Takes já colocados na playlist durante a gravação (prévia "live:"), por índice do take. */
 const liveTakes = new Map<number, string>();
 let recBaseTrack = 0;
+/** Área do loop da gravação do amp (a cauda dos efeitos não passa do fim dela). */
+let recLoop: [number, number] | null = null;
 
 /** Primeira track, a partir de `from`, sem nada no trecho [pos, pos+len). */
 export function freeTrackFrom(from: number, pos: number, len: number) {
@@ -554,7 +558,7 @@ async function finishRecording() {
   const ids: string[] = [];
   emit();
   if (!r) return;
-  const takes = r.takes.filter((t) => t.L.length >= r.sr * 0.08);
+  const takes = r.takes.filter((t) => t.L.length >= r.sr * 0.08 && !(live.has(t.k) && !state.project.clips.some((c) => c.id === live.get(t.k))));
   if (!takes.length) {
     if (amp?.smart) toast('Nada foi tocado: nenhum clipe criado');
     return;
@@ -563,6 +567,9 @@ async function finishRecording() {
   let placed = 0;
   const tps = (state.project.bpm * PPQ) / 60;
   for (const t of takes) {
+    // a prévia deste take já foi para a playlist e você apagou: não volta
+    const liveId = live.get(t.k);
+    if (liveId && !state.project.clips.some((c) => c.id === liveId)) continue;
     try {
       // o retorno usou a cadeia leve; aqui ela roda de novo, sobreamostrada
       let [L, R] = amp ? renderChain(r.sr, amp.chain, t.L, t.R, { bpm: state.project.bpm, outGainDb: amp.outGainDb, tailSec: 2.5 }) : [t.L, t.R];
@@ -573,7 +580,11 @@ async function finishRecording() {
       const track = clip ? clip.track : freeTrackFrom(recBaseTrack, pos, rawLen);
       // a cauda dos efeitos vai até o próximo clipe da mesma track (com um fade curto)
       const next = state.project.clips.filter((c) => c.track === track && c.id !== clipId && c.pos >= pos + rawLen - 1).sort((x, y) => x.pos - y.pos)[0];
-      const max = next ? Math.max(t.L.length, Math.floor(((next.pos - pos) / tps) * r.sr)) : L.length;
+      // gravando em loop, nada passa do fim da área (a cauda nunca tocaria mesmo: a volta corta)
+      const frameAt = (tick: number) => Math.floor(((tick - pos) / tps) * r.sr);
+      let max = L.length;
+      if (next) max = Math.min(max, Math.max(t.L.length, frameAt(next.pos)));
+      if (recLoop && pos < recLoop[1]) max = Math.max(1, Math.min(max, frameAt(recLoop[1])));
       if (L.length > max) {
         L = L.slice(0, max);
         R = R.slice(0, max);

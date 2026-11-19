@@ -192,11 +192,21 @@ scripts/     ferramentas de diagnóstico e testes de UI (os _*.mts são temporá
   (`tickAt`), mesmo antes de o status da volta chegar. Take cujo ataque (`onset`) veio
   depois da volta começa no início do loop (`lastWrap`), sem deixar "toco" de pré-ataque
   no fim da área nem ser posicionado na volta anterior.
+- **Número do play** (`playId`): `audio.play` manda um id; a engine devolve no status. A
+  gravação (`markRec`) e o REC de notas (`midirec.ts`) ignoram status de outro play —
+  gravar com a música já tocando em loop trazia `loops` alto e posições antigas e
+  quebrava a detecção das voltas (takes escorriam para fora do loop). Na hora do play o
+  relógio da gravação é ancorado (`r.base`, `map[0]`), porque a captura abre antes (a
+  detecção leva um getUserMedia). A captura de detecção (eco cancelado) é convertida para
+  o relógio da principal (`detBase`). Teste e2e: microfone falso com frases, tocar em
+  loop, abrir o amp no meio e gravar — todos os takes começam no início da área.
 - **Gravação aditiva no loop**: cada volta fecha um take (`markRec` corta no ponto exato da
   volta) e `placeLiveTake` (state.ts) já coloca o take na playlist como clipe com sample
   `live:…` (áudio enviado direto à engine, efeitos do amp em qualidade de retorno), numa
   track livre a partir da base (nunca em cima de outro clipe) — toca na próxima volta. Ao
-  parar, `finishRecording` troca cada prévia pelo arquivo em alta qualidade no mesmo lugar.
+  parar, `finishRecording` troca cada prévia pelo arquivo em alta qualidade no mesmo lugar;
+  take cuja prévia foi apagada durante a gravação é descartado (não volta). Em loop, a
+  cauda dos efeitos é cortada no fim da área (`recLoop`).
   Notas: `midiOnStatus` transforma cada volta em pattern assim que o loop recomeça.
 - **Contagem de 4 tempos** (opção `countIn`, ícone "321") vale para o REC geral, o amp (engine `countIn` +
   `countInSec` no startRecording) e as ferramentas (`countInIfOn` + `startCapture({arm})`).
