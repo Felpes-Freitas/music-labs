@@ -54,7 +54,8 @@ export const midiRecording = () => !!rec;
 /** Posição da música agora (estimada entre as atualizações da engine) e a passada. */
 function now(): { tick: number; pass: number } | null {
   const st = audio.status;
-  if (!st.playing || st.countIn > 0) return null; // ainda na contagem
+  // status de um play anterior (ainda em trânsito) traz posição e voltas antigas
+  if (!st.playing || st.countIn > 0 || st.playId !== audio.playId) return null; // ainda na contagem
   const tps = (state.project.bpm * PPQ) / 60;
   // você reage ao que ouve, e o som chega aos ouvidos com o atraso da saída: desconta
   const ctx = (audio as unknown as { ctx?: AudioContext }).ctx;
@@ -86,8 +87,8 @@ let nCommitted = { patterns: 0, notes: 0, autos: 0 };
  * A cada volta do loop, o que foi tocado na volta anterior vira pattern/automação
  * na hora — e já toca na próxima volta, por baixo do que você tocar agora.
  */
-export function midiOnStatus(st: { loops: number; playing: boolean; countIn: number }) {
-  if (!rec?.region || !st.playing || st.countIn) return;
+export function midiOnStatus(st: { loops: number; playing: boolean; countIn: number; playId?: number }) {
+  if (!rec?.region || !st.playing || st.countIn || st.playId !== audio.playId) return;
   if (st.loops > lastLoops) {
     lastLoops = st.loops;
     commit((pass) => pass < st.loops, rec.region[1], false);

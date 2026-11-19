@@ -59,6 +59,8 @@ export interface EngineStatus {
   countIn: number;
   /** Quantas vezes o loop recomeçou desde o play (a gravação usa para trocar de track). */
   loops: number;
+  /** Número do play (ver Engine.play). */
+  playId?: number;
 }
 
 export interface InsertStats {
@@ -163,7 +165,10 @@ export class Engine {
     if (!this.patternId) this.patternId = p.patterns[0]?.id ?? null;
   }
 
-  play(mode: 'pattern' | 'song', patternId?: string | null, fromTick?: number, countInBeats = 0) {
+  /** Número do play atual: a gravação só acredita no status do play que ela mesma iniciou. */
+  playId = 0;
+  play(mode: 'pattern' | 'song', patternId?: string | null, fromTick?: number, countInBeats = 0, id?: number) {
+    this.playId = id ?? this.playId + 1;
     this.mode = mode;
     if (patternId) this.patternId = patternId;
     if (fromTick !== undefined) this.tick = fromTick;
@@ -669,7 +674,7 @@ export class Engine {
     const spectrum = this.watched && this.scopeFresh ? analyzeSpectrum(this.scope, this.scopeW, this.sr) : null;
     this.scopeFresh = false;
     const countIn = this.playing && this.preroll > 0 ? Math.ceil((this.preroll - this.prerollPos) / PPQ) : 0;
-    return { playing: this.playing, mode: this.mode, patternId: this.patternId, tick: this.tick, meters, gr, activeChannels: active, lit: [...this.lit.keys()], spectrum, countIn, loops: this.loops };
+    return { playing: this.playing, mode: this.mode, patternId: this.patternId, tick: this.tick, meters, gr, activeChannels: active, lit: [...this.lit.keys()], spectrum, countIn, loops: this.loops, playId: this.playId };
   }
 
   insertStats(): InsertStats[] {

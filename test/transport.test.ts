@@ -95,3 +95,22 @@ test('gravando com área e loop: volta na área', () => {
   run(eng, 1.6);
   assert.ok(eng.loops >= 1 && eng.tick >= PPQ * 4 && eng.tick < PPQ * 6);
 });
+
+test('cada play tem um número e zera as voltas (gravação ignora status de plays antigos)', () => {
+  const p = emptyProject();
+  p.bpm = 120;
+  const eng = new Engine(SR);
+  eng.setProject(p);
+  eng.setTransport({ region: [0, PPQ * 2], loopOn: true });
+  eng.play('song', null, 0, 0, 41);
+  run(eng, 3.2); // 1 s por volta
+  const old = eng.status();
+  assert.equal(old.playId, 41);
+  assert.ok(old.loops >= 3);
+  eng.play('song', null, PPQ, 0, 42);
+  const st = eng.status();
+  assert.equal(st.playId, 42);
+  assert.equal(st.loops, 0);
+  eng.play('song', null, 0);
+  assert.equal(eng.status().playId, 43); // sem número: o seguinte
+});
