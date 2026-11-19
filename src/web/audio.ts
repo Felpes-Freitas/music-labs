@@ -155,6 +155,7 @@ export class Audio {
       preroll,
       loop: opt.loop ?? null,
       lastLoops: 0,
+      lastWrap: -1,
       onClose: opt.onTakeClosed ?? (() => {}),
       tps: 0,
       map: [[preroll, startTick]],
@@ -198,8 +199,16 @@ export class Audio {
       const prev = r.map[r.map.length - 1];
       const sr = this.ctx!.sampleRate;
       const wrap = Math.round(prev[0] + ((r.loop[1] - prev[1]) / r.tps) * sr) + r.skip;
+      r.lastWrap = wrap;
       const last = r.takes[r.takes.length - 1];
-      if (last && last.c1 === null && wrap > last.c0) {
+      if (last && last.c1 === null && last.onset !== undefined && last.onset >= wrap) {
+        // o take abriu um instante antes da volta, mas o som começou depois dela: o take
+        // inteiro é da volta nova (sem deixar um "toco" de pré-ataque no fim da área)
+        last.c0 = Math.max(last.c0, wrap);
+        last.tick = r.loop[0];
+        last.track = -1; // não conta a si mesmo ao procurar a track
+        last.track = this.takeTrack(r, r.loop[0]);
+      } else if (last && last.c1 === null && wrap > last.c0) {
         last.c1 = wrap;
         r.onClose(r.takes.length - 1);
         // gravação normal: a próxima volta é outro take; inteligente: só se você ainda estiver tocando
@@ -291,9 +300,13 @@ export class Audio {
       if (!open && st.active) {
         // começa um take um pouco antes, para não cortar o ataque da palhetada
         const prevEnd = last ? last.c1! : 0;
-        const c0 = Math.max(r.skip + r.preroll, prevEnd, st.since - 1024 - Math.round(0.06 * sr));
-        const tick = this.tickAt(r, c0 - r.skip);
-        r.takes.push({ c0, c1: null, tick, track: this.takeTrack(r, tick) });
+        let c0 = Math.max(r.skip + r.preroll, prevEnd, st.since - 1024 - Math.round(0.06 * sr));
+        // tocou logo depois de o loop recomeçar: o "pouco antes do ataque" não pode cair na
+        // volta anterior (o take iria para o fim da área e passaria dela) — começa no início do loop
+        const onset = st.since - 1024;
+        if (r.loop && r.lastWrap >= 0 && onset >= r.lastWrap && c0 < r.lastWrap) c0 = r.lastWrap;
+        const tick = c0 === r.lastWrap && r.loop ? r.loop[0] : this.tickAt(r, c0 - r.skip);
+        r.takes.push({ c0, c1: null, tick, track: this.takeTrack(r, tick), onset });
         r.lastLoud = st.end;
       } else if (open) {
         if (st.active) r.lastLoud = st.end;
@@ -743,6 +756,8 @@ interface Rec {
   /** Área do loop: cada volta fecha um take. */
   loop: [number, number] | null;
   lastLoops: number;
+  /** Amostra capturada (com a latência) em que o loop recomeçou pela última vez. */
+  lastWrap: number;
   /** Avisado quando um take fecha (para ele já entrar na playlist e tocar na próxima volta). */
   onClose: (k: number) => void;
   tps: number; // ticks por segundo
@@ -752,7 +767,7 @@ interface Rec {
   noiseDb: number | null;
   snrDb: number | null;
   peakDb: number | null;
-  takes: { c0: number; c1: number | null; tick: number; track: number }[];
+  takes: { c0: number; c1: number | null; tick: number; track: number; onset?: number }[];
   lastLoud: number;
 }
 
