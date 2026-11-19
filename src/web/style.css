@@ -596,3 +596,29 @@ body.alt-drag .win, body.alt-drag .win * { cursor: move !important; }
 .amp-lat { font-size: 10.5px; color: var(--dim2); font-family: 'JetBrains Mono', monospace; }
 .amp-status-box { display: flex; flex-direction: column; line-height: 1.25; }
 .amp-noise { font-size: 9.5px; color: var(--dim2); font-family: 'JetBrains Mono', monospace; }
+
+/* ---------------------------------------------------------------- Afinador e Stitcher */
+.tool { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--rack); }
+.tool-bar { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: var(--winbar); border-bottom: 1px solid var(--line2); flex-wrap: wrap; }
+.tool-bar button { height: 28px; display: inline-flex; align-items: center; gap: 6px; padding: 0 11px; }
+.tool-bar .amp-rec { height: 30px; }
+.tool-sep { width: 1px; height: 24px; background: var(--line2); }
+.tool-main { margin-left: auto; font-weight: 700; }
+.tool-info { color: var(--dim); font-size: 11px; }
+.tool-src select { height: 21px; font-size: 11px; max-width: 260px; }
+.tool-empty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--dim); padding: 20px; text-align: center; }
+.tool-empty.small { font-size: 11px; padding: 10px; flex: none; }
+.tool-canvas { flex: 1; width: 100%; min-height: 0; display: block; touch-action: none; }
+.stitch-body { flex: 1; min-height: 0; display: flex; }
+.stitch-body > .tool-canvas, .stitch-body > .tool-empty { flex: 1; min-width: 0; }
+.stitch-list { width: 230px; flex-shrink: 0; border-right: 1px solid var(--line2); overflow-y: auto; background: var(--bg2); }
+.stitch-list-head { font-size: 10px; text-transform: uppercase; letter-spacing: 1.3px; color: var(--head); font-weight: 700; padding: 8px 10px 4px; }
+.stitch-take { display: flex; align-items: center; gap: 6px; padding: 4px 10px; cursor: pointer; }
+.stitch-take:hover { background: var(--hover); }
+.stitch-take.on { background: var(--sel); }
+.stitch-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.stitch-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stitch-cents { font-family: 'JetBrains Mono', monospace; font-size: 10px; }
+.stitch-cents.good { color: #8ae8a4; }
+.stitch-cents.mid { color: #e8c547; }
+.stitch-cents.bad { color: #ff8a8a; }

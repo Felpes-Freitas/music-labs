@@ -356,6 +356,22 @@ export class Audio {
     return !!this.amp;
   }
 
+  /** Toca um áudio avulso (prévia das ferramentas). Devolve a função de parar e o instante de início. */
+  playBuffer(ch: Float32Array[], sr: number, fromSec = 0, onEnd?: () => void) {
+    const ctx = this.ctx;
+    if (!ctx) return null;
+    const buf = ctx.createBuffer(2, ch[0].length, sr);
+    buf.copyToChannel(ch[0] as Float32Array<ArrayBuffer>, 0);
+    buf.copyToChannel((ch[1] ?? ch[0]) as Float32Array<ArrayBuffer>, 1);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    src.onended = () => onEnd?.();
+    const t0 = ctx.currentTime;
+    src.start(t0, fromSec);
+    return { stop: () => src.stop(), started: t0, pos: () => fromSec + (ctx.currentTime - t0) };
+  }
+
   /** Entradas de áudio disponíveis (os nomes só aparecem depois de liberar o microfone uma vez). */
   async inputDevices() {
     const all = await navigator.mediaDevices.enumerateDevices();

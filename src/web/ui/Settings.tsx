@@ -321,7 +321,9 @@ function Libraries() {
 const KEYS: [string, string][] = [
   ['Espaço', 'Tocar / parar'],
   ['L', 'Alternar pattern / song'],
-  ['F5 · F6 · F7 · Alt+F8 · F9 · F10', 'Playlist · Rack · Piano roll · Navegador · Mixer · Amp'],
+  ['F5 · F6 · F7 · Alt+F8 · F9', 'Playlist · Rack · Piano roll · Navegador · Mixer'],
+  ['F10 · F11 · F12', 'Amp · Afinador · Stitcher'],
+  ['Duplo clique num áudio da playlist', 'Abre no Afinador'],
   ['Tab / Shift+Tab', 'Alternar entre as janelas abertas'],
   ['Ctrl+Z · Ctrl+Y', 'Desfazer · Refazer'],
   ['Ctrl+S', 'Salvar'],

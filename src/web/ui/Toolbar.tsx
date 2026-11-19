@@ -112,6 +112,8 @@ function menus(): Record<string, Item[] | (() => void)> {
       { label: 'Navegador', key: 'Alt+F8', on: s.windows.browser.open, run: () => openWindow('browser', true) },
       { label: 'Mixer', key: 'F9', on: s.windows.mixer.open, run: () => openWindow('mixer', true) },
       { label: 'Amp de guitarra', key: 'F10', on: s.windows.amp.open, run: () => openWindow('amp', true) },
+      { label: 'Afinador', key: 'F11', on: s.windows.tune.open, run: () => openWindow('tune', true) },
+      { label: 'Stitcher', key: 'F12', on: s.windows.stitch.open, run: () => openWindow('stitch', true) },
     ],
     Aparência: () => openSettings('aparencia'),
     Opções: [
@@ -386,6 +388,8 @@ export function TitleBar() {
         {winBtn('piano', 'piano', 'Piano roll', 'F7')}
         {winBtn('mixer', 'mixer', 'Mixer', 'F9')}
         {winBtn('amp', 'guitar', 'Amp de guitarra', 'F10')}
+        {winBtn('tune', 'tune', 'Afinador (editar notas de uma gravação)', 'F11')}
+        {winBtn('stitch', 'stitch', 'Stitcher (juntar os melhores takes)', 'F12')}
         {winBtn('browser', 'browser', 'Navegador', 'Alt+F8')}
       </div>
       <div class={`conn ${s.connected ? 'ok' : ''}`} data-hint={s.connected ? 'Conectado: o Claude pode editar via MCP' : 'Sem conexão com o servidor'}>
