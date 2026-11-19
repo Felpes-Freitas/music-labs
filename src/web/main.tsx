@@ -10,8 +10,8 @@ import { Playlist } from './ui/Playlist';
 import { Mixer } from './ui/Mixer';
 import { ChannelSettings } from './ui/ChannelSettings';
 import { AmpWindow } from './ui/Amp';
-import { TuneWindow } from './ui/Tune';
-import { StitchWindow } from './ui/Stitch';
+import { TuneWindow, toggleTunePreview } from './ui/Tune';
+import { StitchWindow, toggleStitchPreview } from './ui/Stitch';
 import { Browser, addSampleChannel } from './ui/Browser';
 import { DialogHost, dialogOpen } from './ui/Dialog';
 import { SettingsHost, settingsOpen, openSettings } from './ui/Settings';
@@ -67,7 +67,14 @@ function onKeyDown(e: KeyboardEvent) {
     api('POST', '/api/save', {}).then((r) => toast(`Salvo em ${r.path}`)).catch((err) => toast(`Erro: ${err.message}`));
     return;
   }
-  if (e.key === ' ') return (e.preventDefault(), togglePlay());
+  if (e.key === ' ') {
+    e.preventDefault();
+    // com o Afinador ou o Stitcher em foco, o Espaço toca o áudio deles (não a música)
+    const top = (Object.entries(state.windows) as [string, { open: boolean; z: number }][]).filter(([, w]) => w.open).sort((x, y) => y[1].z - x[1].z)[0]?.[0];
+    if (top === 'tune') return toggleTunePreview();
+    if (top === 'stitch') return toggleStitchPreview();
+    return togglePlay();
+  }
   if (e.key === 'F5') return (e.preventDefault(), openWindow('playlist', true));
   if (e.key === 'F6') return (e.preventDefault(), openWindow('rack', true));
   if (e.key === 'F7') return (e.preventDefault(), openWindow('piano', true));

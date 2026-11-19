@@ -128,10 +128,18 @@ export function segmentNotes(t: PitchTrack): Note[] {
     i0 = -1;
     vals.length = 0;
   };
+  // quadros que se afastaram da nota atual ficam "pendentes": se o afastamento
+  // dura, viram o começo da próxima nota; se volta, eram só vibrato/escorregada
+  const pending: number[] = [];
   for (let f = 0; f < t.midi.length; f++) {
     const m = t.midi[f];
     if (Number.isNaN(m)) {
-      if (i0 >= 0 && ++gap > gapMax) close(f - gap + 1);
+      if (i0 >= 0 && ++gap > gapMax) {
+        vals.push(...pending);
+        pending.length = 0;
+        jump = 0;
+        close(f - gap + 1);
+      }
       continue;
     }
     gap = 0;
@@ -142,18 +150,24 @@ export function segmentNotes(t: PitchTrack): Note[] {
     }
     const recent = vals.slice(-Math.max(3, Math.round(0.08 * fps))).sort((a, b) => a - b);
     const center = recent[recent.length >> 1];
-    if (Math.abs(m - center) > 0.75) {
+    if (Math.abs(m - center) > 0.6) {
+      pending.push(m);
       if (++jump >= jumpLen) {
-        // mudou de nota: fecha a anterior onde o pulo começou
-        close(f - jump + 1);
-        i0 = f - jump + 1;
-        for (let k = i0; k <= f; k++) if (!Number.isNaN(t.midi[k])) vals.push(t.midi[k]);
+        // mudou de nota: fecha a anterior onde o afastamento começou
+        const start = f - jump + 1;
+        close(start);
+        i0 = start;
+        vals.push(...pending);
+        pending.length = 0;
         jump = 0;
-        continue;
       }
-    } else jump = 0;
-    vals.push(m);
+      continue;
+    }
+    jump = 0;
+    vals.push(...pending, m);
+    pending.length = 0;
   }
+  vals.push(...pending);
   close(t.midi.length);
   return notes;
 }

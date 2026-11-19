@@ -163,7 +163,19 @@ export interface Project {
   clips: Clip[];
   mixer: Insert[]; // mixer[0] = master
   loop?: { start: number; end: number } | null;
+  /** Lista de áudios do projeto (gravações, importados, variantes), como os patterns. */
+  audios?: AudioItem[];
   meta: { createdAt: string; source?: string; notes?: string };
+}
+
+/** Áudio da lista do projeto. `path` é a versão atual; `original` nunca é apagado. */
+export interface AudioItem {
+  id: string;
+  name: string;
+  path: string;
+  original: string;
+  /** Variante criada a partir de outro áudio da lista. */
+  variantOf?: string;
 }
 
 export const MIXER_SIZE = 17; // master + 16 inserts
@@ -217,6 +229,7 @@ export function emptyProject(name = 'Sem título'): Project {
     clips: [],
     mixer: Array.from({ length: MIXER_SIZE }, (_, i) => makeInsert(i)),
     loop: null,
+    audios: [],
     meta: { createdAt: new Date().toISOString() },
   };
 }

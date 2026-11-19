@@ -84,24 +84,28 @@ git push --follow-tags
   - O retorno roda num contexto de áudio separado, com buffer mínimo e a cadeia leve; a
     gravação guarda o sinal cru e reaplica os efeitos em alta qualidade (amp, overdrive e
     fuzz sobreamostrados 4x) ao fechar cada take.
-- **Afinador** (F11, ou duplo clique num áudio da playlist): abre qualquer áudio
-  (da playlist, do computador com "Abrir áudio…", ou arrastando um arquivo/sample para a
-  janela) e mostra cada nota como um bloco na altura cantada. Arraste a nota para outra
-  altura (grade do tom; Ctrl: qualquer semitom; Shift: livre), duplo clique afina,
-  "Corrigir afinação" leva tudo à nota do tom mais próxima e "Retidão" endireita a
-  oscilação dentro das notas. O tom é detectado e pode ser trocado (raiz e escala).
-  "Salvar como variação" cria um clipe novo numa track logo abaixo do original, que não
-  muda. A mudança de altura preserva a duração (PSOLA).
+- **Lista de áudios** (ao lado da playlist, junto dos patterns; largura ajustável): as
+  gravações e os áudios do Afinador e do Stitcher ficam aqui. Arraste para a playlist,
+  duplo clique abre no Afinador. O arquivo original de cada áudio nunca é apagado.
+- **Afinador** (F11): tudo acontece dentro dele. Grave (a música não toca e a onda
+  aparece ao vivo), abra um arquivo, escolha um áudio da lista ou arraste um clipe da
+  playlist. Cada nota aparece como um bloco na altura cantada: arraste para outra altura
+  (grade do tom; Ctrl: qualquer semitom; Shift: livre), duplo clique afina, "Corrigir
+  afinação" leva tudo à nota do tom mais próxima e "Retidão" endireita a oscilação. O
+  tom é detectado e pode ser trocado. Com **Criar variante** marcado, aplicar cria um
+  áudio novo na lista; desmarcado, altera o próprio áudio (o original fica guardado e
+  pode ser restaurado). **Enviar para a playlist** coloca o áudio na música (variantes
+  logo abaixo do original). Espaço toca o áudio do Afinador quando ele está em foco.
 - **Stitcher** (F12): em cima, a onda do resultado, com cada pedaço na cor do áudio de
-  onde veio (clique em qualquer ponto para tocar dali); logo abaixo, a melodia; embaixo,
-  a lista dos áudios, cada um com a sua cor e os pedaços usados destacados. "Adicionar
-  áudio" puxa do computador (vários de uma vez, alinhados automaticamente) ou da
-  playlist; também dá para arrastar arquivos ou clipes da playlist para a janela, ou
-  gravar. O Stitcher detecta o tom, deduz a nota que se queria cantar em cada trecho
-  (escala + consenso entre os áudios) e usa, nota a nota, o áudio que chegou mais perto
-  dela. Arraste uma nota da melodia para corrigir (ex.: era um Dó, não um Si) e a escolha
-  se refaz; com "Afinar na melodia", o resultado sai afinado exatamente nessas notas.
-  Clique num trecho de um áudio da lista para usá-lo ali.
+  onde veio (clique para tocar dali; Espaço com a janela em foco); logo abaixo, a
+  melodia; embaixo, os áudios, cada um com a sua cor e os pedaços usados destacados.
+  Grave dentro dele (cada gravação aparece ao vivo na lista e entra na costura), adicione
+  do computador ou do projeto, ou arraste arquivos e clipes. Os áudios são alinhados entre
+  si; o Stitcher detecta o tom, deduz a nota pretendida de cada trecho e usa o áudio que
+  chegou mais perto dela. Arraste uma nota da melodia para corrigir; com "Afinar na
+  melodia" o resultado sai afinado nessas notas. "Salvar na lista" e "Enviar para a
+  playlist" guardam o resultado.
+- **Navegador lateral** recolhível (botão no topo ou Alt+F8).
 - **Configurações** (menu Aparência ou Ctrl+,): temas Grafite, OLED e Adobe, cor de
   destaque com seletor de cor, Alt + arrastar janelas, entrada de gravação e atalhos.
 - **Parar duas vezes** corta também as caudas de reverb/eco e notas soltas.

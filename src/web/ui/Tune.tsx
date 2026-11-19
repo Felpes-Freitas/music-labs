@@ -1,22 +1,27 @@
-// Afinador: editor de notas de uma gravação (voz, instrumento solo). Cada nota
-// aparece como um bloco na altura em que foi cantada; arraste para outra nota,
-// corrija tudo de uma vez e salve como variação, sem mexer no áudio original.
+// Afinador: editor de notas de um áudio (voz, instrumento solo). Tudo acontece
+// aqui dentro: grave ou escolha um áudio da lista do projeto, veja cada nota como
+// um bloco na altura cantada, arraste para outra nota e aplique — criando uma
+// variante na lista ou alterando o próprio áudio (o original fica guardado).
+// "Enviar para a playlist" coloca o áudio na música.
 
 import { useEffect, useReducer, useRef } from 'preact/hooks';
-import { useApp, state, toggleRecord, toast, openWindow, setHint } from '../state';
+import { useApp, state, toast, openWindow, setHint } from '../state';
 import { audio } from '../audio';
-import { noteName, type Clip } from '../../core/model';
+import { noteName } from '../../core/model';
 import { trackPitch, segmentNotes, type PitchTrack, type Note } from '../../core/pitchtrack';
 import { shiftPitch } from '../../core/psola';
-import { Win, Knob, useCanvas, IconBtn } from './widgets';
+import { Win, Knob, useCanvas } from './widgets';
 import { Icon } from './icons';
 import { accent, ui } from '../theme';
-import { loadAudio, audioClips, clipName, makeRoomBelow, saveAsClip, ticksPerSec, pickAudioFiles, uploadFiles, placeAudios, playheadTick, droppedAudio, acceptsAudio } from '../clipaudio';
+import { loadAudio, pickAudioFiles, droppedAudio, acceptsAudio } from '../clipaudio';
 import { detectKey, snapToKey, keyPcs, keyLabel, type Key } from '../../core/key';
 import { KeyPicker } from './KeyPicker';
+import { poolItems, poolItem, addToPool, commitEdit, restoreOriginal, sendToPlaylist, startToolRecording, finishToolRecording, importToPool } from '../pool';
+import { getPref, setPref } from '../prefs';
+import { LiveCapture } from './LiveCapture';
 
 interface Doc {
-  clipId: string;
+  id: string; // áudio da lista
   path: string;
   sr: number;
   ch: Float32Array[];
@@ -36,28 +41,24 @@ const keyOf = (d: Doc) => d.key ?? d.detectedKey;
 let doc: Doc | null = null;
 let loading = '';
 let sel = -1;
+let recording = false;
+let variant = getPref('tune.variant', true);
 let preview: { stop: () => void; pos: () => number } | null = null;
 const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((l) => l());
 
-/** Coloca um arquivo na playlist (na posição atual da música, numa track livre) e abre no Afinador. */
-async function openAudioFile(path: string) {
-  const [id] = await placeAudios([path], playheadTick());
-  if (id) openTune(id);
-}
-
-/** Abre o Afinador com um clipe de áudio da playlist. */
-export async function openTune(clipId: string) {
+/** Abre um áudio da lista no Afinador. */
+export async function openTuneAudio(id: string) {
   openWindow('tune');
-  const c = state.project.clips.find((x) => x.id === clipId);
-  if (!c?.sample) return;
+  const it = poolItem(id);
+  if (!it) return;
   stopPreview();
-  loading = `Analisando ${clipName(c)}…`;
+  loading = `Analisando ${it.name}…`;
   doc = null;
   sel = -1;
   changed();
   try {
-    const a = await loadAudio(c.sample);
+    const a = await loadAudio(it.path);
     const mono = new Float32Array(a.ch[0].length);
     for (const ch of a.ch) for (let i = 0; i < mono.length; i++) mono[i] += ch[i] / a.ch.length;
     await new Promise((r) => setTimeout(r, 0));
@@ -68,7 +69,7 @@ export async function openTune(clipId: string) {
       for (let f = n.i0; f < n.i1; f++) w += track.rms[f];
       return { pitch: n.pitch, weight: w };
     });
-    doc = { clipId, path: c.sample, sr: a.sr, ch: a.ch, track, notes, target: notes.map((n) => n.pitch), straight: 0, rendered: null, detectedKey: detectKey(weights), key: null };
+    doc = { id, path: it.path, sr: a.sr, ch: a.ch, track, notes, target: notes.map((n) => n.pitch), straight: 0, rendered: null, detectedKey: detectKey(weights), key: null };
     if (!notes.length) toast('Não encontrei notas com altura definida nesse áudio (precisa ser uma voz ou instrumento solo)');
   } catch (e) {
     toast(`Afinador: ${(e as Error).message}`);
@@ -76,6 +77,12 @@ export async function openTune(clipId: string) {
   loading = '';
   fitNext = true;
   changed();
+}
+
+/** Abre no Afinador o arquivo de um clipe da playlist (entra na lista de áudios). */
+export function openTune(clipId: string) {
+  const c = state.project.clips.find((x) => x.id === clipId);
+  if (c?.sample) openTuneAudio(addToPool(c.sample));
 }
 
 let fitNext = false;
@@ -106,8 +113,10 @@ function shifts(d: Doc) {
   return out;
 }
 
+const isEdited = (d: Doc) => d.notes.some((n, i) => Math.abs(d.target[i] - n.pitch) > 1e-3) || d.straight > 0;
+
 function render(d: Doc) {
-  if (!d.rendered) d.rendered = d.notes.some((n, i) => Math.abs(d.target[i] - n.pitch) > 1e-3) || d.straight > 0 ? shiftPitch(d.ch, d.track, shifts(d)) : d.ch;
+  if (!d.rendered) d.rendered = isEdited(d) ? shiftPitch(d.ch, d.track, shifts(d)) : d.ch;
   return d.rendered;
 }
 
@@ -117,6 +126,41 @@ const edited = (d: Doc) => {
   changed();
 };
 
+/** Tocar/parar o áudio do Afinador (o Espaço chama isto quando a janela está em foco). */
+export function toggleTunePreview() {
+  if (preview) return stopPreview(), changed();
+  if (!doc) return;
+  const ch = render(doc);
+  preview = audio.playBuffer(ch, doc.sr, 0, () => {
+    preview = null;
+    changed();
+  });
+  changed();
+}
+
+async function toggleRec() {
+  if (recording) {
+    recording = false;
+    changed();
+    try {
+      const id = await finishToolRecording('Afinador');
+      if (id) openTuneAudio(id);
+      else toast('Gravação curta demais');
+    } catch (e) {
+      toast(`Erro ao salvar a gravação: ${(e as Error).message}`);
+    }
+    return;
+  }
+  stopPreview();
+  try {
+    await startToolRecording();
+    recording = true;
+  } catch (e) {
+    toast(`Não consegui acessar o microfone: ${(e as Error).message}`);
+  }
+  changed();
+}
+
 export function TuneWindow() {
   const s = useApp();
   const [, force] = useReducer((x: number) => x + 1, 0);
@@ -124,56 +168,44 @@ export function TuneWindow() {
     listeners.add(force as () => void);
     return () => void listeners.delete(force as () => void);
   }, []);
-  const clip = doc ? s.project.clips.find((c) => c.id === doc!.clipId) : undefined;
-  const clips = audioClips(s.project);
-  const recording = audio.recording;
+  const items = poolItems(s.project);
+  const cur = doc ? poolItem(doc.id) : undefined;
+  // o áudio foi trocado por fora (restaurado, editado em outro lugar): recarrega
+  useEffect(() => {
+    if (doc && cur && cur.path !== doc.path) openTuneAudio(doc.id);
+  }, [cur?.path]);
 
-  const rec = () => {
-    if (audio.recording) return toggleRecord();
-    toggleRecord(null, { smart: true, onDone: (ids) => openTune(ids[ids.length - 1]) });
-  };
-  const play = () => {
-    if (preview) return stopPreview(), changed();
-    if (!doc || !clip) return;
+  const apply = async () => {
+    if (!doc) return;
     const ch = render(doc);
-    preview = audio.playBuffer(ch, doc.sr, clip.startSec ?? 0, () => {
-      preview = null;
-      changed();
-    });
-    changed();
-  };
-  const saveVariation = async () => {
-    if (!doc || !clip) return;
-    const ch = render(doc);
-    const p = state.project;
     try {
-      const id = await saveAsClip(ch[0], ch[1] ?? ch[0], doc.sr, `${clipName(clip)} (variação)`, {
-        tick: clip.pos,
-        track: () => makeRoomBelow(clip.track, clip.pos, clip.len),
-        startSec: clip.startSec ?? 0,
-        lengthSec: clip.len / ticksPerSec(p),
-        insert: clip.insert,
-        gain: clip.gain,
-      });
-      if (id) toast('Variação salva logo abaixo do original');
+      const id = await commitEdit(doc.id, ch[0], ch[1] ?? ch[0], doc.sr, variant);
+      toast(variant ? 'Variante criada na lista de áudios' : 'Alterações aplicadas no áudio (o original continua guardado)');
+      openTuneAudio(id);
     } catch (e) {
-      toast(`Erro ao salvar a variação: ${(e as Error).message}`);
+      toast(`Erro ao salvar: ${(e as Error).message}`);
+    }
+  };
+  const openFiles = async (files: File[]) => {
+    if (!files.length) return;
+    try {
+      const ids = await importToPool(files);
+      openTuneAudio(ids[0]);
+    } catch (err) {
+      toast(`Afinador: ${(err as Error).message}`);
     }
   };
 
   const tools = (
     <div class="tool-src nodrag">
-      <select
-        value={doc?.clipId ?? ''}
-        data-hint="Qual gravação editar (ou dê duplo clique num clipe de áudio na playlist)"
-        onChange={(e) => openTune((e.target as HTMLSelectElement).value)}
-      >
+      <select value={doc?.id ?? ''} data-hint="Qual áudio da lista editar" onChange={(e) => openTuneAudio((e.target as HTMLSelectElement).value)}>
         <option value="" disabled>
           Escolha um áudio…
         </option>
-        {clips.map((c) => (
-          <option value={c.id}>
-            {clipName(c)} · track {c.track + 1}
+        {items.map((a) => (
+          <option value={a.id}>
+            {a.name}
+            {a.path !== a.original ? ' (editado)' : ''}
           </option>
         ))}
       </select>
@@ -181,9 +213,9 @@ export function TuneWindow() {
   );
 
   return (
-    <Win id="tune" title="Afinador" icon="tune" tools={tools} minW={600} minH={320}>
+    <Win id="tune" title="Afinador" icon="tune" tools={tools} minW={640} minH={340}>
       <div
-        class="tool"
+        class={`tool ${recording ? 'recording' : ''}`}
         onDragOver={(e) => acceptsAudio(e) && (e.preventDefault(), (e.currentTarget as HTMLElement).classList.add('dropping'))}
         onDragLeave={(e) => (e.currentTarget as HTMLElement).classList.remove('dropping')}
         onDrop={async (e) => {
@@ -193,39 +225,26 @@ export function TuneWindow() {
           e.stopPropagation();
           try {
             const paths = await droppedAudio(e);
-            if (paths.length) openAudioFile(paths[0]);
+            if (paths.length) openTuneAudio(addToPool(paths[0]));
           } catch (err) {
             toast(`Afinador: ${(err as Error).message}`);
           }
         }}
       >
         <div class="tool-bar">
-          <button class={`amp-rec ${recording ? 'on' : ''}`} onClick={rec} data-hint="Grava (só quando você canta/toca) e abre a gravação aqui">
+          <button class={`amp-rec ${recording ? 'on' : ''}`} onClick={toggleRec} data-hint="Grava aqui dentro (a música não toca). Ao parar, o áudio entra na lista e abre para editar">
             <Icon name="record" size={14} />
             {recording ? 'Parar' : 'Gravar'}
           </button>
-          <button
-            class="tool-open"
-            onClick={async () => {
-              const files = await pickAudioFiles(false);
-              if (!files.length) return;
-              try {
-                const [path] = await uploadFiles(files);
-                openAudioFile(path);
-              } catch (err) {
-                toast(`Afinador: ${(err as Error).message}`);
-              }
-            }}
-            data-hint="Abrir um arquivo de áudio do computador (também dá para arrastar um arquivo ou um sample do navegador para esta janela)"
-          >
-            <Icon name="folder" size={13} /> Abrir áudio…
+          <button class="tool-open" disabled={recording} onClick={async () => openFiles(await pickAudioFiles(false))} data-hint="Abrir um arquivo de áudio do computador (também dá para arrastar um arquivo, um sample ou um clipe da playlist para cá)">
+            <Icon name="folder" size={13} /> Abrir…
           </button>
-          <button class={preview ? 'on' : ''} disabled={!doc || !clip} onClick={play} data-hint="Ouvir como está ficando">
+          <button class={preview ? 'on' : ''} disabled={!doc || recording} onClick={toggleTunePreview} data-hint="Ouvir como está ficando (Espaço)">
             <Icon name={preview ? 'stop' : 'play'} size={12} /> Ouvir
           </button>
           <span class="tool-sep" />
           <button
-            disabled={!doc}
+            disabled={!doc || recording}
             onClick={() => {
               if (!doc) return;
               const k = keyOf(doc);
@@ -249,16 +268,16 @@ export function TuneWindow() {
             onCommit={(v) => doc && ((doc.straight = v), edited(doc))}
           />
           <button
-            disabled={!doc}
+            disabled={!doc || recording}
             onClick={() => {
               if (!doc) return;
               doc.target = doc.notes.map((n) => n.pitch);
               doc.straight = 0;
               edited(doc);
             }}
-            data-hint="Volta todas as notas para a altura original"
+            data-hint="Desfaz as edições que ainda não foram aplicadas"
           >
-            Restaurar
+            Desfazer edições
           </button>
           {doc && (
             <KeyPicker
@@ -271,11 +290,42 @@ export function TuneWindow() {
               }}
             />
           )}
-          <button class="tool-main" disabled={!doc || !clip} onClick={saveVariation} data-hint="Cria um novo clipe com a afinação editada, logo abaixo do original (o original não muda)">
-            <Icon name="save" size={13} /> Salvar como variação
-          </button>
         </div>
-        {loading ? <div class="tool-empty">{loading}</div> : !doc ? <div class="tool-empty">Grave, escolha um áudio acima ou dê duplo clique num clipe de áudio na playlist.</div> : <NotesCanvas clip={clip} />}
+        <div class="tool-bar tool-bar2">
+          <label class="tool-check" data-hint="Marcado: aplicar cria um áudio novo na lista (o atual não muda). Desmarcado: altera o próprio áudio (o original fica guardado e pode ser restaurado)">
+            <input
+              type="checkbox"
+              checked={variant}
+              onChange={() => {
+                variant = !variant;
+                setPref('tune.variant', variant);
+                changed();
+              }}
+            />
+            Criar variante
+          </label>
+          <button class="tool-main" disabled={!doc || recording || !isEdited(doc)} onClick={apply}>
+            <Icon name="save" size={13} /> {variant ? 'Salvar variante' : 'Aplicar no áudio'}
+          </button>
+          {cur && cur.path !== cur.original && (
+            <button disabled={recording} onClick={() => restoreOriginal(cur.id)} data-hint="Volta este áudio para a gravação original">
+              Restaurar original
+            </button>
+          )}
+          <button disabled={!cur || recording} onClick={() => cur && sendToPlaylist(cur.id)} data-hint="Coloca este áudio na playlist (variantes vão logo abaixo do original, se ele estiver lá)">
+            <Icon name="playlist" size={13} /> Enviar para a playlist
+          </button>
+          <span class="tool-info">{cur ? `${cur.name}${cur.variantOf ? ' · variante' : ''}${cur.path !== cur.original ? ' · editado' : ''}` : ''}</span>
+        </div>
+        {recording ? (
+          <LiveCapture label="Gravando no Afinador" />
+        ) : loading ? (
+          <div class="tool-empty">{loading}</div>
+        ) : !doc ? (
+          <div class="tool-empty">Grave aqui, escolha um áudio da lista acima, abra um arquivo ou arraste um áudio para esta janela.</div>
+        ) : (
+          <NotesCanvas />
+        )}
       </div>
     </Win>
   );
@@ -284,13 +334,13 @@ export function TuneWindow() {
 const KEYW = 46;
 const WAVEH = 34;
 
-function NotesCanvas(p: { clip: Clip | undefined }) {
+function NotesCanvas() {
   const d = doc!;
   const view = useRef({ t0: 0, zx: 100, top: 72, rowH: 14 });
   const drag = useRef<{ i: number; y0: number; orig: number } | null>(null);
   const tr = d.track;
-  const startSec = p.clip?.startSec ?? 0;
-  const endSec = p.clip ? startSec + p.clip.len / ticksPerSec(state.project) : d.ch[0].length / d.sr;
+  const startSec = 0;
+  const endSec = d.ch[0].length / d.sr;
   const rowY = (m: number) => (view.current.top - m) * view.current.rowH;
   const xOf = (sec: number) => KEYW + (sec - view.current.t0) * view.current.zx;
 
@@ -392,7 +442,7 @@ function NotesCanvas(p: { clip: Clip | undefined }) {
         ctx.stroke();
       });
     },
-    [d, d.target, d.straight, sel, p.clip?.id, d.key],
+    [d, d.target, d.straight, sel, d.key],
     (ctx, _w, h) => {
       if (!preview) return;
       const x = xOf(preview.pos());

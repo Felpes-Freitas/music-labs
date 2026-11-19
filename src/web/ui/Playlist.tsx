@@ -7,6 +7,7 @@ import * as A from '../../core/actions';
 import { Win, IconBtn, useCanvas } from './widgets';
 import { askText } from './Dialog';
 import { openTune } from './Tune';
+import { Picker } from './Picker';
 import { addStitchTakes } from './Stitch';
 
 /** Janela de ferramenta (Stitcher/Afinador) embaixo do ponteiro, se houver. */
@@ -151,7 +152,7 @@ export function Playlist() {
         }
         ctx.fillStyle = ui('#111');
         ctx.font = '10px sans-serif';
-        const label = c.kind === 'audio' ? `♫ ${(c.sample ?? '').split(/[\\/]/).pop()}` : c.kind === 'auto' ? `⤴ ${c.target?.label ?? 'automação'}` : pat?.name ?? '?';
+        const label = c.kind === 'audio' ? `♫ ${(p.audios ?? []).find((au) => au.path === c.sample)?.name ?? (c.sample ?? '').split(/[\\/]/).pop()}` : c.kind === 'auto' ? `⤴ ${c.target?.label ?? 'automação'}` : pat?.name ?? '?';
         ctx.fillText(label, x + 3, y + 11);
         ctx.restore();
         ctx.globalAlpha = 1;
@@ -531,24 +532,7 @@ export function Playlist() {
       }
     >
       <div class="pl-wrap">
-        <div class="picker" data-hint="Patterns: clique escolhe o que o lápis pinta · duplo clique renomeia">
-          {p.patterns.map((pt) => (
-            <button
-              class={`pk ${pt.id === s.patternId ? 'on' : ''}`}
-              style={{ borderLeftColor: pt.color }}
-              onClick={() => selectPattern(pt.id)}
-              onDblClick={async () => {
-                const n = await askText({ title: 'Renomear pattern', label: 'Nome', value: pt.name, ok: 'Renomear' });
-                if (n) act(A.updatePattern, { pattern: pt.id, name: n });
-              }}
-            >
-              {pt.name}
-            </button>
-          ))}
-          <button class="pk pk-add" data-hint="Novo pattern" onClick={() => { const r = act(A.addPattern, {}); if (r) selectPattern(r.id); }}>
-            + pattern
-          </button>
-        </div>
+        <Picker />
         <canvas
           ref={ref}
           class="pl-canvas"

@@ -1,27 +1,31 @@
 // Stitcher: junta várias gravações da mesma parte numa só, usando em cada trecho
-// o take que chegou mais perto da nota que se queria cantar.
+// o áudio que chegou mais perto da nota que se queria cantar. Tudo acontece aqui
+// dentro: grave (a música não toca), importe ou puxe áudios da lista do projeto.
 //
 // Em cima fica o resultado (a onda final, cada pedaço pintado com a cor do áudio
 // de onde veio; clique para tocar dali), logo abaixo a melodia (arraste uma nota
 // para corrigir) e embaixo a lista dos áudios, cada um com a sua cor.
 
 import { useEffect, useReducer, useRef, useState } from 'preact/hooks';
-import { useApp, state, toggleRecord, toast, setHint } from '../state';
+import { useApp, state, toast, setHint } from '../state';
 import { audio } from '../audio';
-import type { Clip } from '../../core/model';
 import { noteName } from '../../core/model';
 import { planStitch, renderStitch, rescore, tuneToMelody, type StitchPlan, type StitchTake } from '../../core/stitch';
 import { trackPitch } from '../../core/pitchtrack';
+import { alignOffset } from '../../core/align';
 import { snapToKey, keyLabel, type Key } from '../../core/key';
 import { Win, useCanvas } from './widgets';
 import { Icon } from './icons';
 import { ui } from '../theme';
-import { loadAudio, audioClips, clipName, trackBelow, saveAsClip, ticksPerSec, pickAudioFiles, uploadFiles, placeAudios, playheadTick, droppedAudio, acceptsAudio } from '../clipaudio';
+import { loadAudio, audioClips, pickAudioFiles, droppedAudio, acceptsAudio } from '../clipaudio';
 import { KeyPicker } from './KeyPicker';
 import { getPref, setPref } from '../prefs';
+import { poolItems, poolItem, addToPool, saveWav, sendToPlaylist, startToolRecording, finishToolRecording, importToPool } from '../pool';
+import { LiveCapture } from './LiveCapture';
 
 const COLORS = ['#ff5d5d', '#4fc3e8', '#f2c94c', '#6fdc8c', '#b58cf0', '#ff9e57', '#5fd3c4', '#ff7bc0', '#9ccc3a', '#7ba6ff', '#e8a87c', '#c0c0c0'];
 
+/** Áudios (da lista do projeto) que estão no Stitcher. */
 let ids: string[] = [];
 /** Cor fixa de cada áudio (não muda quando outros entram ou saem). */
 const colorOf = new Map<string, string>();
@@ -31,6 +35,9 @@ let sr = 48000;
 let busy = '';
 let key: Key | null = null;
 let tuneOut = getPref('stitch.tune', true);
+let recording = false;
+/** Resultado salvo na lista (some quando a costura muda). */
+let savedId: string | null = null;
 /** Áudio final já montado (refeito quando a costura muda). */
 let final: { L: Float32Array; R: Float32Array; peaks: Float32Array } | null = null;
 let rev = 0;
@@ -50,6 +57,7 @@ const colorFor = (id: string) => {
   return colorOf.get(id)!;
 };
 const takeColor = (k: number) => (k >= 0 && ids[k] ? colorFor(ids[k]) : '#666');
+const nameOf = (k: number) => poolItem(ids[k])?.name ?? '?';
 
 function stopPreview() {
   preview?.stop();
@@ -60,6 +68,7 @@ function stopPreview() {
 function rebuild() {
   stopPreview();
   final = null;
+  savedId = null;
   if (!plan) return;
   let [L, R] = renderStitch(plan, takes, sr);
   if (tuneOut) [L, R] = tuneToMelody(L, R, plan, sr);
@@ -73,36 +82,42 @@ function rebuild() {
   final = { L, R, peaks };
 }
 
-/** Analisa os takes e monta o plano da costura. */
+const mono = (ch: Float32Array[]) => {
+  const m = new Float32Array(ch[0].length);
+  for (const c of ch) for (let i = 0; i < m.length; i++) m[i] += c[i] / ch.length;
+  return m;
+};
+
+/** Analisa os áudios e monta o plano da costura (os áudios são alinhados ao primeiro). */
 async function analyze() {
   stopPreview();
-  const p = state.project;
-  const clips = ids.map((id) => p.clips.find((c) => c.id === id)).filter((c): c is Clip => !!c?.sample);
-  ids = clips.map((c) => c.id);
+  ids = ids.filter((id) => !!poolItem(id));
   ids.forEach(colorFor);
   plan = null;
   final = null;
+  savedId = null;
   takes = [];
-  if (clips.length < 2) return changed();
-  busy = `Analisando a afinação de ${clips.length} áudios…`;
+  if (ids.length < 2) return changed();
+  busy = `Analisando a afinação de ${ids.length} áudios…`;
   changed();
   try {
-    const tps = ticksPerSec(p);
-    const loaded = await Promise.all(clips.map((c) => loadAudio(c.sample!)));
+    const items = ids.map((id) => poolItem(id)!);
+    const loaded = await Promise.all(items.map((it) => loadAudio(it.path)));
     sr = loaded[0].sr;
     if (loaded.some((a) => a.sr !== sr)) throw new Error('os áudios têm taxas de amostragem diferentes');
     await new Promise((r) => setTimeout(r, 0));
-    takes = clips.map((c, k) => {
+    const ref = mono(loaded[0].ch);
+    takes = items.map((it, k) => {
       const a = loaded[k];
-      const from = c.startSec ?? 0;
-      let tr = trackCache.get(c.sample!);
+      const m = k === 0 ? ref : mono(a.ch);
+      let tr = trackCache.get(it.path);
       if (!tr) {
-        const mono = new Float32Array(a.ch[0].length);
-        for (const ch of a.ch) for (let i = 0; i < mono.length; i++) mono[i] += ch[i] / a.ch.length;
-        tr = trackPitch(mono, sr);
-        trackCache.set(c.sample!, tr);
+        tr = trackPitch(m, sr);
+        trackCache.set(it.path, tr);
       }
-      return { offset: c.pos / tps - from, from, to: from + c.len / tps, ch: a.ch, track: tr };
+      // gravações da mesma parte começam em momentos diferentes do arquivo: alinha pelo contorno de volume
+      const offset = k === 0 ? 0 : -alignOffset(ref, m, sr);
+      return { offset, from: 0, to: a.ch[0].length / sr, ch: a.ch, track: tr };
     });
     plan = planStitch(takes, sr, key, false);
     rebuild();
@@ -113,25 +128,22 @@ async function analyze() {
   changed();
 }
 
-/** Adiciona áudios da playlist (por id de clipe). */
-export function addStitchTakes(newIds: string[]) {
-  const before = ids.length;
+/** Adiciona áudios da lista do projeto. */
+export function addStitchAudios(newIds: string[]) {
+  // a análise roda pelo efeito que observa a lista (StitchWindow)
   ids = [...new Set([...ids, ...newIds])];
-  if (ids.length !== before) analyze();
+  changed();
+}
+/** Adiciona os arquivos de clipes da playlist (entram na lista de áudios). */
+export function addStitchTakes(clipIds: string[]) {
+  const paths = clipIds.map((id) => state.project.clips.find((c) => c.id === id)?.sample).filter((x): x is string => !!x);
+  addStitchAudios(paths.map((p) => addToPool(p)));
 }
 
-async function importPaths(paths: string[]) {
-  if (!paths.length) return;
-  busy = `Importando ${paths.length} ${paths.length > 1 ? 'áudios' : 'áudio'}…`;
-  changed();
-  try {
-    // alinhados entre si pelo contorno de volume, a partir da posição atual da música
-    addStitchTakes(await placeAudios(paths, playheadTick(), true));
-  } catch (e) {
-    busy = '';
-    toast(`Stitcher: ${(e as Error).message}`);
-    changed();
-  }
+/** Tocar/parar o resultado (o Espaço chama isto quando a janela está em foco). */
+export function toggleStitchPreview() {
+  if (preview) return stopPreview(), changed();
+  playFrom(0);
 }
 
 /** Toca o resultado a partir de t segundos (do começo da costura). */
@@ -145,18 +157,53 @@ function playFrom(t: number) {
   listeners.forEach((l) => l());
 }
 
+async function toggleRec() {
+  if (recording) {
+    recording = false;
+    changed();
+    try {
+      const id = await finishToolRecording('Take');
+      if (id) addStitchAudios([id]);
+      else toast('Gravação curta demais');
+    } catch (e) {
+      toast(`Erro ao salvar a gravação: ${(e as Error).message}`);
+    }
+    return;
+  }
+  stopPreview();
+  try {
+    await startToolRecording();
+    recording = true;
+  } catch (e) {
+    toast(`Não consegui acessar o microfone: ${(e as Error).message}`);
+  }
+  changed();
+}
+
+/** Salva o resultado na lista de áudios (uma vez por versão da costura). */
+async function saveResult() {
+  if (!final) return null;
+  if (savedId && poolItem(savedId)) return savedId;
+  const n = poolItems().filter((a) => a.name.startsWith('Costura')).length + 1;
+  const name = `Costura ${n}`;
+  const path = await saveWav(final.L, final.R, sr, name);
+  savedId = addToPool(path, name);
+  return savedId;
+}
+
 export function StitchWindow() {
   const s = useApp();
   const [, force] = useReducer((x: number) => x + 1, 0);
-  const [addMenu, setAddMenu] = useState<null | 'menu' | 'playlist'>(null);
+  const [addMenu, setAddMenu] = useState<null | 'menu' | 'list'>(null);
   useEffect(() => {
     listeners.add(force as () => void);
     return () => void listeners.delete(force as () => void);
   }, []);
-  // áudios apagados da playlist saem do Stitcher
+  // áudios apagados da lista saem do Stitcher; áudios trocados (editados) são reanalisados
+  const sig = ids.map((id) => poolItem(id)?.path ?? '-').join('|');
   useEffect(() => {
-    if (ids.some((id) => !s.project.clips.some((c) => c.id === id))) analyze();
-  }, [s.version]);
+    analyze();
+  }, [sig]);
   // fecha o menu de adicionar ao clicar fora
   useEffect(() => {
     if (addMenu !== 'menu') return;
@@ -164,45 +211,46 @@ export function StitchWindow() {
     setTimeout(() => window.addEventListener('pointerdown', close, { once: true }), 0);
     return () => window.removeEventListener('pointerdown', close);
   }, [addMenu]);
-  const recording = audio.recording;
-  const rec = () => {
-    if (audio.recording) return toggleRecord();
-    toggleRecord(null, { smart: true, onDone: addStitchTakes });
-  };
+  void s;
   const fromPc = async () => {
     setAddMenu(null);
     const files = await pickAudioFiles(true);
     if (!files.length) return;
+    busy = `Importando ${files.length} ${files.length > 1 ? 'áudios' : 'áudio'}…`;
+    changed();
     try {
-      importPaths(await uploadFiles(files));
+      addStitchAudios(await importToPool(files));
     } catch (err) {
+      busy = '';
+      changed();
       toast(`Stitcher: ${(err as Error).message}`);
     }
   };
   const save = async () => {
-    if (!plan || !final) return;
-    const p = state.project;
-    const tps = ticksPerSec(p);
-    const tick = Math.round(plan.start * tps), len = Math.round((plan.end - plan.start) * tps);
-    const lowest = Math.max(...ids.map((id) => p.clips.find((c) => c.id === id)?.track ?? 0));
-    const first = p.clips.find((c) => c.id === ids[0]);
     try {
-      const id = await saveAsClip(final.L, final.R, sr, 'Costura', { tick, track: trackBelow(p, lowest, tick, len), insert: first?.insert });
-      if (id) toast('Costura salva na playlist, abaixo dos áudios usados');
+      if (await saveResult()) toast('Resultado salvo na lista de áudios');
     } catch (e) {
-      toast(`Erro ao salvar a costura: ${(e as Error).message}`);
+      toast(`Erro ao salvar: ${(e as Error).message}`);
+    }
+  };
+  const send = async () => {
+    try {
+      const id = await saveResult();
+      if (id) await sendToPlaylist(id);
+    } catch (e) {
+      toast(`Erro: ${(e as Error).message}`);
     }
   };
   const used = plan ? new Set(plan.segments.filter((x) => x.take >= 0).map((x) => x.take)) : new Set<number>();
   const remove = (id: string) => {
     ids = ids.filter((x) => x !== id);
-    analyze();
+    changed();
   };
   const dur = plan ? plan.end - plan.start : 0;
   return (
     <Win id="stitch" title="Stitcher" icon="stitch" minW={680} minH={360}>
       <div
-        class="tool"
+        class={`tool ${recording ? 'recording' : ''}`}
         onDragOver={(e) => acceptsAudio(e) && (e.preventDefault(), (e.currentTarget as HTMLElement).classList.add('dropping'))}
         onDragLeave={(e) => (e.currentTarget as HTMLElement).classList.remove('dropping')}
         onDrop={async (e) => {
@@ -211,7 +259,7 @@ export function StitchWindow() {
           e.preventDefault();
           e.stopPropagation();
           try {
-            importPaths(await droppedAudio(e));
+            addStitchAudios((await droppedAudio(e)).map((p) => addToPool(p)));
           } catch (err) {
             toast(`Stitcher: ${(err as Error).message}`);
           }
@@ -219,7 +267,7 @@ export function StitchWindow() {
       >
         <div class="tool-bar">
           <div class="st-add">
-            <button class="st-add-btn" onClick={() => setAddMenu(addMenu ? null : 'menu')} data-hint="Adicionar áudios: do computador ou da playlist (também dá para arrastar um arquivo ou um clipe da playlist para esta janela)">
+            <button class="st-add-btn" disabled={recording} onClick={() => setAddMenu(addMenu ? null : 'menu')} data-hint="Adicionar áudios: do computador ou da lista do projeto/playlist (também dá para arrastar arquivos ou clipes da playlist para esta janela)">
               <Icon name="plus" size={13} /> Adicionar áudio <Icon name="down" size={9} />
             </button>
             {addMenu === 'menu' && (
@@ -227,14 +275,14 @@ export function StitchWindow() {
                 <button onClick={fromPc}>
                   <Icon name="folder" size={13} /> Do computador…
                 </button>
-                <button onClick={() => setAddMenu('playlist')}>
-                  <Icon name="playlist" size={13} /> Da playlist…
+                <button onClick={() => setAddMenu('list')}>
+                  <Icon name="playlist" size={13} /> Do projeto (lista e playlist)…
                 </button>
               </div>
             )}
-            {addMenu === 'playlist' && <FromPlaylist onClose={() => setAddMenu(null)} />}
+            {addMenu === 'list' && <FromProject onClose={() => setAddMenu(null)} />}
           </div>
-          <button class={`amp-rec ${recording ? 'on' : ''}`} onClick={rec} data-hint="Grava (só quando você canta/toca); cada take entra aqui. Dica: ligue a região de loop e grave a mesma parte várias vezes">
+          <button class={`amp-rec ${recording ? 'on' : ''}`} onClick={toggleRec} data-hint="Grava aqui dentro (a música não toca); a gravação aparece ao vivo na lista e entra na costura ao parar">
             <Icon name="record" size={14} />
             {recording ? 'Parar' : 'Gravar'}
           </button>
@@ -265,70 +313,103 @@ export function StitchWindow() {
           <button disabled={!plan} onClick={() => analyze()} data-hint="Refaz a melodia e a escolha dos pedaços do zero (desfaz edições)">
             Recomeçar
           </button>
-          <button class="tool-main" disabled={!final} onClick={save} data-hint="Cria um clipe com o resultado na playlist (os áudios originais não mudam)">
-            <Icon name="save" size={13} /> Salvar costura
+          <span class="tool-grow" />
+          <button disabled={!final} onClick={save} data-hint="Guarda o resultado na lista de áudios do projeto">
+            <Icon name="save" size={13} /> Salvar na lista
+          </button>
+          <button class="tool-main" disabled={!final} onClick={send} data-hint="Guarda o resultado na lista e coloca na playlist">
+            <Icon name="playlist" size={13} /> Enviar para a playlist
           </button>
         </div>
         {busy ? (
           <div class="tool-empty">{busy}</div>
-        ) : !plan ? (
+        ) : !plan && !recording ? (
           <div class="tool-empty">
-            {ids.length === 1 ? 'Adicione pelo menos mais um áudio da mesma parte.' : 'Adicione dois ou mais áudios da mesma parte (do computador, da playlist ou gravando). Também dá para arrastar arquivos ou clipes da playlist para cá.'}
+            {ids.length === 1 ? 'Adicione ou grave pelo menos mais um áudio da mesma parte.' : 'Grave aqui, adicione áudios do computador ou do projeto, ou arraste arquivos e clipes da playlist para cá (dois ou mais da mesma parte).'}
           </div>
         ) : (
           <div class="st-main">
-            <div class="st-row st-final">
-              <div class="st-label">
-                <button class={`st-play ${preview ? 'on' : ''}`} onClick={() => (preview ? (stopPreview(), changed()) : playFrom(0))} data-hint="Tocar o resultado do começo (ou clique em qualquer ponto da onda)">
-                  <Icon name={preview ? 'stop' : 'play'} size={14} />
-                </button>
-                <div>
-                  <b>Resultado</b>
-                  <small>
-                    {dur.toFixed(1)} s · {used.size} de {takes.length} áudios usados
-                  </small>
+            {plan && (
+              <>
+                <div class="st-row st-final">
+                  <div class="st-label">
+                    <button class={`st-play ${preview ? 'on' : ''}`} onClick={toggleStitchPreview} data-hint="Tocar o resultado (Espaço) — ou clique em qualquer ponto da onda">
+                      <Icon name={preview ? 'stop' : 'play'} size={14} />
+                    </button>
+                    <div>
+                      <b>Resultado</b>
+                      <small>
+                        {dur.toFixed(1)} s · {used.size} de {takes.length} áudios usados
+                      </small>
+                    </div>
+                  </div>
+                  <FinalCanvas />
                 </div>
-              </div>
-              <FinalCanvas />
-            </div>
-            <div class="st-row st-mel">
-              <div class="st-label">
-                <div>
-                  <b>Melodia</b>
-                  <small>{keyLabel(plan.key)} · arraste para corrigir</small>
+                <div class="st-row st-mel">
+                  <div class="st-label">
+                    <div>
+                      <b>Melodia</b>
+                      <small>{keyLabel(plan.key)} · arraste para corrigir</small>
+                    </div>
+                  </div>
+                  <MelodyCanvas />
                 </div>
-              </div>
-              <MelodyCanvas />
-            </div>
+              </>
+            )}
             <div class="st-list">
-              {ids.map((id, k) => {
-                const c = state.project.clips.find((x) => x.id === id);
-                const cents = plan!.takeCents[k];
-                const inUse = used.has(k);
-                return (
-                  <div class={`st-row st-take ${inUse ? 'used' : 'unused'}`} key={id}>
+              {plan &&
+                ids.map((id, k) => {
+                  const cents = plan!.takeCents[k];
+                  const inUse = used.has(k);
+                  return (
+                    <div class={`st-row st-take ${inUse ? 'used' : 'unused'}`} key={id}>
+                      <div class="st-label">
+                        <span class="st-swatch" style={{ background: colorFor(id) }} />
+                        <div class="st-name">
+                          <b>{nameOf(k)}</b>
+                          <small>
+                            {inUse ? `${plan!.segments.filter((x) => x.take === k).length} pedaços usados` : 'não usado'}
+                            {cents !== null && (
+                              <span class={`stitch-cents ${cents < 15 ? 'good' : cents < 35 ? 'mid' : 'bad'}`} data-hint="Distância média até a melodia">
+                                {' '}
+                                · ±{Math.round(cents)}c
+                              </span>
+                            )}
+                          </small>
+                        </div>
+                        <button class="pedal-x" data-hint="Tirar este áudio do Stitcher (continua na lista do projeto)" onClick={() => remove(id)}>
+                          <Icon name="close" size={10} />
+                        </button>
+                      </div>
+                      <TakeCanvas k={k} />
+                    </div>
+                  );
+                })}
+              {!plan &&
+                ids.map((id) => (
+                  <div class="st-row st-take" key={id}>
                     <div class="st-label">
                       <span class="st-swatch" style={{ background: colorFor(id) }} />
                       <div class="st-name">
-                        <b>{c ? clipName(c) : '?'}</b>
-                        <small>
-                          {inUse ? `${plan!.segments.filter((x) => x.take === k).length} pedaços usados` : 'não usado'}
-                          {cents !== null && (
-                            <span class={`stitch-cents ${cents < 15 ? 'good' : cents < 35 ? 'mid' : 'bad'}`} data-hint="Distância média até a melodia">
-                              {' '}
-                              · ±{Math.round(cents)}c
-                            </span>
-                          )}
-                        </small>
+                        <b>{poolItem(id)?.name}</b>
+                        <small>esperando mais áudios</small>
                       </div>
-                      <button class="pedal-x" data-hint="Tirar este áudio do Stitcher (continua na playlist)" onClick={() => remove(id)}>
-                        <Icon name="close" size={10} />
-                      </button>
                     </div>
-                    <TakeCanvas k={k} />
+                    <div class="st-canvas" />
                   </div>
-                );
-              })}
+                ))}
+              {recording && (
+                <div class="st-row st-take st-rec">
+                  <div class="st-label">
+                    <span class="st-swatch rec" />
+                    <div class="st-name">
+                      <b>Gravando…</b>
+                      <small>ao parar, entra na costura</small>
+                    </div>
+                  </div>
+                  <LiveCapture label="Gravando" compact />
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -337,10 +418,18 @@ export function StitchWindow() {
   );
 }
 
-/** Lista de áudios da playlist para adicionar. */
-function FromPlaylist(p: { onClose: () => void }) {
+/** Áudios do projeto (lista de áudios e clipes da playlist) para adicionar. */
+function FromProject(p: { onClose: () => void }) {
   const [pick, setPick] = useState<string[]>([]);
-  const list = audioClips(state.project).filter((c) => !ids.includes(c.id)).sort((a, b) => a.pos - b.pos || a.track - b.track);
+  // itens da lista + arquivos de clipes da playlist que ainda não estão na lista
+  const opts: { key: string; name: string; sub: string; pool?: string; path?: string }[] = [];
+  for (const a of poolItems()) if (!ids.includes(a.id)) opts.push({ key: a.id, name: a.name, sub: 'lista de áudios', pool: a.id });
+  const seen = new Set(poolItems().flatMap((a) => [a.path, a.original]));
+  for (const c of audioClips(state.project))
+    if (c.sample && !seen.has(c.sample)) {
+      seen.add(c.sample);
+      opts.push({ key: c.sample, name: (c.sample.split(/[\\/]/).pop() ?? '').replace(/\.[a-z0-9]{2,5}$/i, ''), sub: `playlist · track ${c.track + 1}`, path: c.sample });
+    }
   useEffect(() => {
     const close = () => p.onClose();
     setTimeout(() => window.addEventListener('pointerdown', close, { once: true }), 0);
@@ -348,24 +437,24 @@ function FromPlaylist(p: { onClose: () => void }) {
   }, []);
   return (
     <div class="st-pop st-pick" onPointerDown={(e) => e.stopPropagation()}>
-      <div class="st-pick-head">Áudios da playlist</div>
-      {list.length === 0 && <div class="tool-empty small">Todos os áudios da playlist já estão aqui.</div>}
+      <div class="st-pick-head">Áudios do projeto</div>
+      {opts.length === 0 && <div class="tool-empty small">Nenhum outro áudio no projeto.</div>}
       <div class="st-pick-list">
-        {list.map((c) => (
+        {opts.map((o) => (
           <label class="stitch-take">
-            <input type="checkbox" checked={pick.includes(c.id)} onChange={() => setPick(pick.includes(c.id) ? pick.filter((x) => x !== c.id) : [...pick, c.id])} />
-            <span class="stitch-name">{clipName(c)}</span>
-            <small class="dim">track {c.track + 1}</small>
+            <input type="checkbox" checked={pick.includes(o.key)} onChange={() => setPick(pick.includes(o.key) ? pick.filter((x) => x !== o.key) : [...pick, o.key])} />
+            <span class="stitch-name">{o.name}</span>
+            <small class="dim">{o.sub}</small>
           </label>
         ))}
       </div>
       <div class="st-pick-foot">
-        {list.length > 1 && <button onClick={() => setPick(pick.length === list.length ? [] : list.map((c) => c.id))}>{pick.length === list.length ? 'Nenhum' : 'Todos'}</button>}
+        {opts.length > 1 && <button onClick={() => setPick(pick.length === opts.length ? [] : opts.map((o) => o.key))}>{pick.length === opts.length ? 'Nenhum' : 'Todos'}</button>}
         <button
           class="on"
           disabled={!pick.length}
           onClick={() => {
-            addStitchTakes(pick);
+            addStitchAudios(opts.filter((o) => pick.includes(o.key)).map((o) => o.pool ?? addToPool(o.path!)));
             p.onClose();
           }}
         >
@@ -451,8 +540,7 @@ function FinalCanvas() {
         const si = segAt(plan.start + (x / w) * (plan.end - plan.start));
         const sg = plan.segments[si];
         if (!sg) return;
-        const c = state.project.clips.find((q) => q.id === ids[sg.take]);
-        setHint(`${sg.target !== null ? noteName(sg.target) + ' · ' : ''}${c ? `vem de ${clipName(c)}` : 'silêncio'} · clique para tocar daqui`);
+        setHint(`${sg.target !== null ? noteName(sg.target) + ' · ' : ''}${sg.take >= 0 ? `vem de ${nameOf(sg.take)}` : 'silêncio'} · clique para tocar daqui`);
       }}
       style={{ cursor: 'pointer' }}
       data-hint="Resultado da costura: cada cor é o áudio de onde veio o pedaço. Clique para tocar a partir daí."
