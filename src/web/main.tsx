@@ -160,7 +160,7 @@ function LogoMark(p: { progress: number | null }) {
   );
 }
 
-/** "3, 2, 1" grande enquanto a contagem antes da gravação roda. */
+/** "4, 3, 2, 1" grande enquanto a contagem antes da gravação roda. */
 function CountInOverlay() {
   const s = useApp();
   const [n, setN] = useState(0);
