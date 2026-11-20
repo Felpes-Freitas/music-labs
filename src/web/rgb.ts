@@ -15,7 +15,8 @@ export interface RgbPrefs {
   port: number;
   brightness: number;
 }
-export const rgbPrefs = (): RgbPrefs => ({ enabled: true, host: '127.0.0.1', port: 6742, brightness: 1, ...getPref<Partial<RgbPrefs>>('rgb', {}) });
+// desligado até o usuário ligar (em alguns teclados o controle pelo OpenRGB atrapalhou a digitação)
+export const rgbPrefs = (): RgbPrefs => ({ enabled: false, host: '127.0.0.1', port: 6742, brightness: 1, ...getPref<Partial<RgbPrefs>>('rgb', {}) });
 export function setRgbPrefs(p: Partial<RgbPrefs>) {
   setPref('rgb', { ...rgbPrefs(), ...p });
   sendConfig();
@@ -89,7 +90,7 @@ onConnect(() => {
  * para saber) e nenhum OpenRGB rodando, pergunta uma vez se pode baixar o OpenRGB.
  */
 async function offerOpenRgb() {
-  if (getPref<boolean>('rgb.offered', false) || !rgbPrefs().enabled) return;
+  if (getPref<boolean>('rgb.offered', false) || getPref<Partial<RgbPrefs>>('rgb', {}).enabled === false) return;
   if (state.loading) return void setTimeout(offerOpenRgb, 3000); // espera a tela de carregamento
   let st: { state: string; openrgb?: { platform: string; supported: boolean; installed: boolean; hint: string[] } };
   try {
@@ -108,6 +109,7 @@ async function offerOpenRgb() {
     ok: 'Baixar e ativar',
   });
   if (!yes) return;
+  setRgbPrefs({ enabled: true });
   await api('POST', '/api/rgb/install').catch(() => {});
   toast('Baixando o OpenRGB… o teclado acende quando terminar');
 }
