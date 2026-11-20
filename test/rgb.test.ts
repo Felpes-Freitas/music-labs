@@ -31,7 +31,7 @@ const LEDS = ['Key: Escape', 'Key: 1', 'Key: 2', 'Key: Q', 'Key: W', 'Key: A', '
 const ORIGINAL = LEDS.map((_, i) => 0x102030 + i);
 const MODES = [mode('Direct', 0, []), mode('Spectrum', 7, [0xff0000, 0x00ff00])];
 
-function deviceData(type: number, name: string) {
+function deviceData(type: number, name: string, modes: Buffer[] = MODES, active = 1) {
   const body = Buffer.concat([
     i32(type),
     str(name),
@@ -40,9 +40,9 @@ function deviceData(type: number, name: string) {
     str('1.0'),
     str('ABC'),
     str('HID: /dev/hidraw9'),
-    u16(MODES.length),
-    i32(1), // modo ativo: Spectrum
-    ...MODES,
+    u16(modes.length),
+    i32(active), // modo ativo (padrão: Spectrum)
+    ...modes,
     u16(1),
     Buffer.concat([str('Keyboard'), i32(2), u32(LEDS.length), u32(LEDS.length), u32(LEDS.length), u16(8 + 4 * 2), u32(1), u32(2), u32(0), u32(1)]),
     u16(LEDS.length),
@@ -115,6 +115,11 @@ test('pinta as teclas da cena e, ao soltar, devolve cores e modo originais', asy
     assert.deepEqual(rgbStatus().devices, ['Apex de teste'], 'só teclados');
     const custom = srv.got.find((p) => p.id === 1100);
     assert.equal(custom?.dev, 1, 'modo direto no teclado (não no mouse)');
+    // e o UpdateMode do modo "Direct" (é ele que faz o teclado entrar no controle direto)
+    const um0 = srv.got.find((p) => p.id === 1101);
+    assert.equal(um0?.data.readInt32LE(4), 0, 'UpdateMode com o modo Direct (índice 0)');
+    assert.ok(um0!.data.subarray(8).equals(MODES[0]));
+    assert.ok(srv.got.indexOf(um0!) < srv.got.findIndex((p) => p.id === 1050), 'antes das cores');
     const leds = srv.got.filter((p) => p.id === 1050).pop()!;
     assert.equal(leds.dev, 1);
     const c = ledColors(leds.data);
@@ -160,4 +165,26 @@ test('sem OpenRGB rodando: não quebra e explica', async () => {
 test('brilho escala as cores', () => {
   const c = sceneColors({ leds: ['Key: Q'] }, { keys: { q: 0xff8040 }, base: 0, pressed: [] }, 0.5);
   assert.equal(c[0], 0x804020);
+});
+
+test('teclado no modo direto com modo "Onboard": ao soltar, volta à iluminação do próprio teclado', async () => {
+  // como o OpenRGB recém-aberto deixa um SteelSeries Apex: modo Direct ativo, cores da memória
+  const onboard = mode('Onboard', 1, []);
+  const srv = await fakeServer([deviceData(5, 'Apex Pro TKL', [MODES[0], onboard], 0)]);
+  try {
+    await rgbConfigure({ enabled: true, host: '127.0.0.1', port: srv.port, brightness: 1 });
+    rgbScene({ keys: { q: 0xff0000 }, base: 0, pressed: [] });
+    await until(() => srv.got.some((p) => p.id === 1050));
+    const n = srv.got.length;
+    await rgbRelease();
+    await wait(50);
+    const after = srv.got.slice(n);
+    assert.equal(after.filter((p) => p.id === 1050).length, 0, 'não repinta com as cores da memória');
+    const um = after.filter((p) => p.id === 1101).pop()!;
+    assert.equal(um.data.readInt32LE(4), 1, 'modo Onboard');
+    assert.ok(um.data.subarray(8).equals(onboard));
+  } finally {
+    await rgbRelease();
+    srv.close();
+  }
 });
