@@ -573,7 +573,9 @@ export function clipsDetail(p: Project, f: ClipFilter, points = false) {
       const base = { id: c.id, track: c.track + 1, trackName: p.tracks[c.track]?.name, bar: r(c.pos / bar + 1), bars: r(c.len / bar), muted: c.muted || undefined };
       if (c.kind === 'audio') {
         const it = (p.audios ?? []).find((x) => x.path === c.sample);
-        return { ...base, kind: 'audio', audio: it?.name, file: c.sample, startSec: r(c.startSec ?? 0), gainDb: db(c.gain ?? 1), insert: c.insert ?? 0 };
+        // canal de áudio por onde o clipe toca (volume, efeitos e o insert de verdade)
+        const ach = c.channel ? p.channels.find((x) => x.id === c.channel) : undefined;
+        return { ...base, kind: 'audio', audio: it?.name, file: c.sample, channel: ach?.name, insert: ach ? ach.insert : (c.insert ?? 0), startSec: r(c.startSec ?? 0), gainDb: db(c.gain ?? 1), ...(it?.raw ? { reamp: true } : {}) };
       }
       if (c.kind === 'auto') {
         const t = c.target!;
