@@ -2,6 +2,7 @@
 // monta os knobs a partir daqui e o MCP usa a mesma descrição para validar.
 
 import type { EffectType, InstrumentType, Params } from './model.js';
+import { DEFAULT_PADS } from './pads.js';
 
 export interface ParamDef {
   key: string;
@@ -196,6 +197,11 @@ export const INSTRUMENTS: Record<InstrumentType, { label: string; description: s
       num('velSens', 'Sens. vel', 0, 1, 0.7),
       num('gain', 'Ganho', 0, 2, 0.6),
     ],
+  },
+  pads: {
+    label: 'Soundpad',
+    description: 'Grade de 16 pads (4×4): cada pad toca um som próprio (sample, instrumento multi-sample, nativo ou preset). Pad 1 (embaixo à esquerda) = C2, um semitom por pad. No teclado do computador: 1234 / QWER / ASDF / ZXCV.',
+    params: [{ key: 'pads', label: 'Pads', kind: 'text', def: DEFAULT_PADS }],
   },
 };
 

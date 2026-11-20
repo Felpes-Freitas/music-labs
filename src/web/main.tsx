@@ -1,3 +1,5 @@
+import { PAD_COUNT, padKey, padNote } from '../core/pads';
+import { padHit } from './ui/PadsPanel';
 import { AutoCenterWindow } from './ui/AutoCenter';
 import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
@@ -13,7 +15,7 @@ import { ChannelSettings } from './ui/ChannelSettings';
 import { AmpWindow } from './ui/Amp';
 import { TuneWindow, toggleTunePreview } from './ui/Tune';
 import { StitchWindow, toggleStitchPreview } from './ui/Stitch';
-import { Browser, addSampleChannel } from './ui/Browser';
+import { Browser, addSampleChannel, openFile } from './ui/Browser';
 import { DialogHost, dialogOpen } from './ui/Dialog';
 import { SettingsHost, settingsOpen, openSettings } from './ui/Settings';
 import { applyTheme, onTheme, prefs as looks } from './theme';
@@ -32,6 +34,8 @@ const KEYMAP: Record<string, number> = {
   q: 60, '2': 61, w: 62, '3': 63, e: 64, r: 65, '5': 66, t: 67, '6': 68, y: 69, '7': 70, u: 71, i: 72, '9': 73, o: 74, '0': 75, p: 76,
 };
 const held = new Map<string, { ch: string; key: number }>();
+/** Tecla → pad do Soundpad. */
+const PAD_BY_KEY: Record<string, number> = Object.fromEntries(Array.from({ length: PAD_COUNT }, (_, i) => [padKey(i), i]));
 let octave = 0;
 
 /** Só campos onde se digita texto ficam com o teclado; o resto toca o instrumento. */
@@ -88,6 +92,17 @@ function onKeyDown(e: KeyboardEvent) {
   if (k === 'l' && !e.repeat) return setMode(state.mode === 'pattern' ? 'song' : 'pattern');
   if (k === '-' ) return (octave = Math.max(-3, octave - 1), toast(`Oitava do teclado: ${octave >= 0 ? '+' : ''}${octave}`));
   if (k === '=' ) return (octave = Math.min(3, octave + 1), toast(`Oitava do teclado: ${octave >= 0 ? '+' : ''}${octave}`));
+  // Soundpad selecionado: o teclado vira a grade 4×4 (1234 / QWER / ASDF / ZXCV)
+  const sel = state.channelId ? state.project.channels.find((c) => c.id === state.channelId) : undefined;
+  if (sel?.type === 'pads' && k in PAD_BY_KEY) {
+    if (!e.repeat) {
+      const i = PAD_BY_KEY[k];
+      held.set(k, { ch: sel.id, key: padNote(i) });
+      padHit(sel.id, i);
+      audio.liveOn(sel.id, padNote(i), 0.85);
+    }
+    return;
+  }
   if (k in KEYMAP && !e.repeat && state.channelId) {
     const key = KEYMAP[k] + octave * 12;
     held.set(k, { ch: state.channelId, key });
@@ -209,6 +224,16 @@ function LoadingScreen() {
 
 function App() {
   const s = useApp();
+  // app desktop: arquivo aberto pelo sistema (duplo clique num .mlstudio/.flp)
+  useEffect(() => {
+    const w = window.mlabsWindow;
+    if (!w?.onOpenFile) return;
+    const open = (path: string | null) => {
+      if (path) void openFile({ name: path.split('/').pop() ?? path, path });
+    };
+    w.onOpenFile(open);
+    w.pendingFile?.().then(open);
+  }, []);
   // as janelas acompanham o tamanho real da área de trabalho
   useEffect(() => {
     const ws = document.querySelector('.workspace') as HTMLElement;
@@ -233,9 +258,9 @@ function App() {
         <Browser />
         <div
           class="workspace"
-          onDragOver={(e) => e.dataTransfer?.types.includes('text/x-batuque-sample') && e.preventDefault()}
+          onDragOver={(e) => e.dataTransfer?.types.includes('text/x-musiclabs-sample') && e.preventDefault()}
           onDrop={(e) => {
-            const path = e.dataTransfer?.getData('text/x-batuque-sample');
+            const path = e.dataTransfer?.getData('text/x-musiclabs-sample');
             if (path) {
               e.preventDefault();
               addSampleChannel(path);

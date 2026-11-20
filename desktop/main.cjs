@@ -4,11 +4,34 @@ const { app, BrowserWindow, ipcMain, shell, screen } = require('electron');
 const path = require('node:path');
 const http = require('node:http');
 
-const PORT = Number(process.env.BATUQUE_PORT || 7717);
+const PORT = Number(process.env.MUSICLABS_PORT || 7717);
 const URL = `http://127.0.0.1:${PORT}`;
 const ROOT = path.join(__dirname, '..');
 
 app.setName('MusicLabs');
+
+// Abrir arquivos pelo sistema (duplo clique num .mlstudio ou .flp): a interface pergunta
+// antes de descartar alterações. Uma instância só: abrir outro arquivo vai para a janela aberta.
+const PROJECT_FILE = /\.(mlstudio|flp)$/i;
+const fileArg = (argv) => {
+  const f = argv.slice(1).find((a) => PROJECT_FILE.test(a) && require('node:fs').existsSync(a));
+  return f ? path.resolve(f) : null;
+};
+let pendingFile = fileArg(process.argv);
+if (!process.env.MUSICLABS_SHOT && !app.requestSingleInstanceLock()) app.exit(0);
+app.on('second-instance', (_e, argv) => {
+  const win = BrowserWindow.getAllWindows()[0];
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.focus();
+  const f = fileArg(argv);
+  if (f) win.webContents.send('app:openFile', f);
+});
+ipcMain.handle('app:pendingFile', () => {
+  const f = pendingFile;
+  pendingFile = null;
+  return f;
+});
 // Latência: pede ao PulseAudio/PipeWire blocos pequenos (o padrão do sistema costuma
 // ser 1024 amostras ≈ 21 ms, o que atrasa o retorno e a gravação). Vale só para o app.
 if (!process.env.PULSE_LATENCY_MSEC) process.env.PULSE_LATENCY_MSEC = '8';
@@ -115,7 +138,8 @@ ipcMain.handle('app:relaunch', () => {
   } catch {
     /* segue */
   }
-  app.relaunch();
+  // sem o arquivo da linha de comando: ao reiniciar, segue o projeto atual (autosave)
+  app.relaunch({ args: process.argv.slice(1).filter((a) => !PROJECT_FILE.test(a)) });
   app.exit(0);
   return true;
 });

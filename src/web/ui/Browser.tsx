@@ -59,7 +59,8 @@ function addPreset(name: string) {
   if (r) selectChannel(r.id);
 }
 
-async function openFile(e: Entry) {
+/** Abre um projeto (.mlstudio) ou importa um .flp, pedindo confirmação se houver alterações não salvas. */
+export async function openFile(e: { name: string; path: string }) {
   if (state.dirty && !(await askConfirm({ title: `Abrir ${e.name}?`, message: 'As alterações não salvas do projeto atual serão perdidas.', ok: 'Abrir', danger: true }))) return;
   try {
     const r = await api('POST', '/api/open', { path: e.path });
@@ -127,7 +128,7 @@ function FileNode(p: { entry: Entry; depth: number }) {
       class={`node k-${e.kind}`}
       style={{ paddingLeft: `${16 + p.depth * 12}px` }}
       draggable={e.kind === 'audio'}
-      onDragStart={(ev) => ev.dataTransfer?.setData('text/x-batuque-sample', e.path)}
+      onDragStart={(ev) => ev.dataTransfer?.setData('text/x-musiclabs-sample', e.path)}
       onClick={() => e.kind === 'audio' && audio.previewFile(e.path)}
       onDblClick={() => (e.kind === 'audio' ? useInChannel(e) : e.kind === 'instrument' ? addSampleChannel(e.path, e.name) : openFile(e))}
       data-hint={hint}

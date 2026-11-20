@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 import preact from '@preact/preset-vite';
 
-const target = `http://127.0.0.1:${process.env.BATUQUE_PORT ?? 7717}`;
+const target = `http://127.0.0.1:${process.env.MUSICLABS_PORT ?? 7717}`;
 
 export default defineConfig({
   plugins: [preact()],

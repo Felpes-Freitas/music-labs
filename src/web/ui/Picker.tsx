@@ -77,7 +77,7 @@ export function Picker() {
             }}
             draggable
             onDragStart={(e) => {
-              e.dataTransfer!.setData('text/x-batuque-sample', a.path);
+              e.dataTransfer!.setData('text/x-musiclabs-sample', a.path);
               e.dataTransfer!.effectAllowed = 'copy';
             }}
             onDblClick={() => openTuneAudio(a.id)}

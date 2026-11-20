@@ -1,4 +1,5 @@
 // Ponte entre a interface e o AudioWorklet: contexto de áudio, samples e transporte.
+import { channelSamples } from '../core/pads';
 import workletUrl from './worklet.ts?worker&url';
 import { decodeWav } from '../core/wav';
 import { PPQ, type Project } from '../core/model';
@@ -35,7 +36,7 @@ export class Audio {
   private async doInit() {
     const ctx = new AudioContext({ latencyHint: 'interactive' });
     await ctx.audioWorklet.addModule(workletUrl);
-    const node = new AudioWorkletNode(ctx, 'batuque', { numberOfInputs: 0, outputChannelCount: [2] });
+    const node = new AudioWorkletNode(ctx, 'musiclabs', { numberOfInputs: 0, outputChannelCount: [2] });
     this.analyser = ctx.createAnalyser();
     this.analyser.fftSize = 2048;
     node.connect(this.analyser);
@@ -112,7 +113,7 @@ export class Audio {
   }
 
   private syncSamples(p: Project) {
-    for (const ch of p.channels) if (ch.type === 'sampler' && ch.params.sample) this.loadSample(String(ch.params.sample));
+    for (const ch of p.channels) for (const path of channelSamples(ch)) this.loadSample(path);
     for (const c of p.clips) if (c.kind === 'audio' && c.sample) this.loadSample(c.sample);
   }
 

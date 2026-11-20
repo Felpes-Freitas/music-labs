@@ -18,7 +18,7 @@ export interface Note {
   mute?: boolean;
 }
 
-export type InstrumentType = 'synth' | 'prisma' | 'sampler' | 'drum' | 'pluck' | 'fm';
+export type InstrumentType = 'synth' | 'prisma' | 'sampler' | 'drum' | 'pluck' | 'fm' | 'pads';
 
 export interface Channel {
   id: string;
@@ -152,8 +152,18 @@ export interface Insert {
   effects: Effect[];
 }
 
+/** Identificador gravado nos arquivos de projeto e a extensão deles. */
+export const PROJECT_FORMAT = 'mlstudio';
+export const PROJECT_EXT = '.mlstudio';
+
+/** É um projeto do Music Labs? Aceita também arquivos de versões antigas (mesma estrutura, outro identificador). */
+export function isProjectData(p: unknown): p is Project {
+  const o = p as Partial<Project> | null;
+  return !!o && typeof o === 'object' && typeof o.format === 'string' && Array.isArray(o.channels) && Array.isArray(o.patterns) && Array.isArray(o.clips);
+}
+
 export interface Project {
-  format: 'batuque';
+  format: typeof PROJECT_FORMAT;
   version: 1;
   name: string;
   bpm: number;
@@ -233,7 +243,7 @@ export function makeInsert(i: number): Insert {
 
 export function emptyProject(name = 'Sem título'): Project {
   return {
-    format: 'batuque',
+    format: PROJECT_FORMAT,
     version: 1,
     name,
     bpm: 128,

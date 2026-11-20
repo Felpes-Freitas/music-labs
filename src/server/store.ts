@@ -2,12 +2,12 @@
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, extname, join } from 'node:path';
 import type { Project } from '../core/model.js';
-import { emptyProject } from '../core/model.js';
+import { emptyProject, isProjectData, PROJECT_EXT, PROJECT_FORMAT } from '../core/model.js';
 import { History, Op, applyOps } from '../core/ops.js';
 
-export const HOME_DIR = process.env.BATUQUE_HOME ?? join(homedir(), 'MusicLabs');
+export const HOME_DIR = process.env.MUSICLABS_HOME ?? join(homedir(), 'MusicLabs');
 export const PROJECTS_DIR = join(HOME_DIR, 'Projetos');
 export const RENDERS_DIR = join(HOME_DIR, 'Renders');
 export const SAMPLES_DIR = join(HOME_DIR, 'Samples');
@@ -17,9 +17,9 @@ export const IMPORTS_DIR = join(HOME_DIR, 'Importados');
 function defaultStateDir() {
   if (process.platform === 'win32') return join(process.env.APPDATA ?? join(homedir(), 'AppData/Roaming'), 'MusicLabs');
   if (process.platform === 'darwin') return join(homedir(), 'Library/Application Support/MusicLabs');
-  return join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local/share'), 'batuque');
+  return join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local/share'), 'musiclabs');
 }
-export const STATE_DIR = process.env.BATUQUE_STATE_DIR ?? defaultStateDir();
+export const STATE_DIR = process.env.MUSICLABS_STATE_DIR ?? defaultStateDir();
 const AUTOSAVE = join(STATE_DIR, 'autosave.json');
 
 for (const d of [PROJECTS_DIR, RENDERS_DIR, SAMPLES_DIR, RECORDINGS_DIR, IMPORTS_DIR, STATE_DIR]) mkdirSync(d, { recursive: true });
@@ -40,9 +40,9 @@ export class Store {
     try {
       if (existsSync(AUTOSAVE)) {
         const s = JSON.parse(readFileSync(AUTOSAVE, 'utf8'));
-        if (s?.project?.format === 'batuque') {
-          this.project = s.project;
-          this.path = s.path ?? null;
+        if (isProjectData(s?.project)) {
+          this.project = { ...s.project, format: PROJECT_FORMAT };
+          this.path = movedProject(s.path ?? null);
           this.dirty = !!s.dirty;
         }
       }
@@ -110,9 +110,11 @@ export class Store {
 
   save(path?: string): string {
     let target = path ?? this.path;
-    if (!target) target = join(PROJECTS_DIR, `${safeName(this.project.name)}.batuque`);
+    if (!target) target = join(PROJECTS_DIR, `${safeName(this.project.name)}${PROJECT_EXT}`);
     if (!target.includes('/')) target = join(PROJECTS_DIR, target);
-    if (!/\.batuque$/.test(target)) target += '.batuque';
+    if (!target.endsWith(PROJECT_EXT)) target += PROJECT_EXT;
+    // salvar num arquivo escolhido ("Salvar como", MCP com path): o projeto passa a ter o nome do arquivo
+    if (path) this.project = { ...this.project, name: basename(target, PROJECT_EXT) };
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, JSON.stringify(this.project, null, 1));
     this.path = target;
@@ -123,9 +125,15 @@ export class Store {
   }
 
   open(path: string) {
-    const p = JSON.parse(readFileSync(path, 'utf8')) as Project;
-    if (p.format !== 'batuque') throw new Error('Arquivo não é um projeto do Music Labs');
-    this.load(p, path);
+    const p = JSON.parse(readFileSync(path, 'utf8'));
+    if (!isProjectData(p)) throw new Error('Arquivo não é um projeto do Music Labs');
+    // arquivo de versão antiga: abre normalmente; o próximo "Salvar" grava no formato atual
+    const legacy = p.format !== PROJECT_FORMAT || !path.endsWith(PROJECT_EXT);
+    this.load({ ...p, format: PROJECT_FORMAT }, legacy ? path.slice(0, path.length - extname(path).length) + PROJECT_EXT : path);
+    if (legacy) {
+      this.dirty = true;
+      this.emitProject();
+    }
   }
 
   /** Grava o autosave já (sem esperar o intervalo). */
@@ -151,6 +159,13 @@ export class Store {
   }
 }
 
+/** Caminho do projeto do autosave; se o arquivo mudou de extensão (formato antigo → .mlstudio), segue o novo. */
+function movedProject(path: string | null) {
+  if (!path || existsSync(path)) return path;
+  const renamed = path.slice(0, path.length - extname(path).length) + PROJECT_EXT;
+  return existsSync(renamed) ? renamed : path;
+}
+
 export function safeName(s: string) {
   return s.replace(/[^\p{L}\p{N} _.-]+/gu, '_').trim() || 'projeto';
 }
@@ -158,9 +173,9 @@ export function safeName(s: string) {
 export function listProjects() {
   const out: { name: string; path: string; modified: string }[] = [];
   for (const f of readdirSync(PROJECTS_DIR)) {
-    if (!f.endsWith('.batuque')) continue;
+    if (!f.endsWith(PROJECT_EXT)) continue;
     const full = join(PROJECTS_DIR, f);
-    out.push({ name: basename(f, '.batuque'), path: full, modified: statSync(full).mtime.toISOString() });
+    out.push({ name: basename(f, PROJECT_EXT), path: full, modified: statSync(full).mtime.toISOString() });
   }
   return out.sort((a, b) => b.modified.localeCompare(a.modified));
 }

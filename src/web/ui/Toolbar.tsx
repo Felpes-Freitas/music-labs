@@ -6,7 +6,7 @@ import { useApp, useHint, state, play, stop, toggleRecord, setMode, selectPatter
 import { audio } from '../audio';
 import * as A from '../../core/actions';
 import { INSTRUMENTS, PRESETS } from '../../core/registry';
-import { PPQ, STEP, ticksPerBar, type InstrumentType } from '../../core/model';
+import { PPQ, PROJECT_EXT, STEP, ticksPerBar, type InstrumentType } from '../../core/model';
 import { set } from '../../core/ops';
 import { Knob, IconBtn, dbFmt, ContextMenu } from './widgets';
 import { Icon } from './icons';
@@ -22,7 +22,7 @@ export async function saveProject(as = false) {
     const name = await askText({ title: 'Salvar como', label: 'Nome do projeto', value: s.project.name, ok: 'Salvar' });
     if (!name) return;
     edit([set(['name'], name)]);
-    const r = await api('POST', '/api/save', { path: `${name}.batuque` });
+    const r = await api('POST', '/api/save', { path: `${name}${PROJECT_EXT}` });
     toast(`Salvo em ${r.path}`);
   } else {
     const r = await api('POST', '/api/save', {});
@@ -47,7 +47,7 @@ async function newProject(template: 'kit' | 'empty') {
 }
 
 async function importPath() {
-  const path = await askText({ title: 'Abrir projeto', label: 'Caminho do arquivo (.batuque ou .flp)', placeholder: '/home/…/projeto.flp', ok: 'Abrir' });
+  const path = await askText({ title: 'Abrir projeto', label: 'Caminho do arquivo (.mlstudio ou .flp)', placeholder: '/home/…/projeto.flp', ok: 'Abrir' });
   if (!path) return;
   try {
     const r = await api('POST', '/api/open', { path });
@@ -344,6 +344,10 @@ declare global {
       close(): void;
       isMaximized(): Promise<boolean>;
       onState(cb: (max: boolean) => void): void;
+      /** Arquivo passado ao abrir o app (ou null). */
+      pendingFile?(): Promise<string | null>;
+      /** Avisa quando o sistema pede para abrir um arquivo com o app já aberto. */
+      onOpenFile?(cb: (path: string) => void): void;
     };
   }
 }

@@ -12,10 +12,10 @@ import { findFlInstall } from './library.js';
 
 // Instalação do FL Studio detectada (qualquer versão, Wine/Windows/macOS) e a
 // unidade C: do Wine onde ela está (para converter caminhos "C:\\..." de .flp).
-const detectedFl = process.env.BATUQUE_FL_DIR ?? findFlInstall();
+const detectedFl = process.env.MUSICLABS_FL_DIR ?? findFlInstall();
 export const FL_DIR = detectedFl ?? join(homedir(), '.wine/drive_c/Program Files/Image-Line/FL Studio');
 export const WINE_C =
-  process.env.BATUQUE_WINE_C ?? (detectedFl && /drive_c/.test(detectedFl) ? detectedFl.slice(0, detectedFl.indexOf('drive_c') + 'drive_c'.length) : join(homedir(), '.wine/drive_c'));
+  process.env.MUSICLABS_WINE_C ?? (detectedFl && /drive_c/.test(detectedFl) ? detectedFl.slice(0, detectedFl.indexOf('drive_c') + 'drive_c'.length) : join(homedir(), '.wine/drive_c'));
 export const AUDIO_EXT = new Set(['.wav', '.mp3', '.ogg', '.flac', '.aif', '.aiff', '.m4a', '.opus', '.wv', '.caf']);
 
 function wineUserDocs(): string | null {
@@ -239,12 +239,12 @@ export function finalizeWav(wav: Uint8Array, meta: RiffMeta | null): Uint8Array 
 
 let ffmpegCached: string | null = null;
 /**
- * ffmpeg usado para decodificar: BATUQUE_FFMPEG, senão o embutido no app
+ * ffmpeg usado para decodificar: MUSICLABS_FFMPEG, senão o embutido no app
  * (ffmpeg-static, fora do .asar quando empacotado), senão o do sistema.
  */
 export function ffmpegPath(): string {
   if (ffmpegCached) return ffmpegCached;
-  let p = process.env.BATUQUE_FFMPEG ?? '';
+  let p = process.env.MUSICLABS_FFMPEG ?? '';
   if (!p) {
     try {
       const req = createRequire(import.meta.url);

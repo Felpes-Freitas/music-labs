@@ -1,3 +1,4 @@
+import { PAD_BASE } from '../../core/pads';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { useApp, state, edit, act, previewEdit, selectChannel, selectPattern, openWindow, onLive, toast } from '../state';
 import { audio } from '../audio';
@@ -64,7 +65,8 @@ export function ChannelRack() {
     const on = at.length > 0;
     const want = force ?? !on;
     if (want === on) return;
-    const key = list[0]?.key ?? 60;
+    // Soundpad: o step padrão toca o pad 1 (C2); os outros instrumentos, C4
+    const key = list[0]?.key ?? (ch.type === 'pads' ? PAD_BASE : 60);
     const next = want ? [...list, { id: uid('n'), key, pos: i * STEP, len: STEP, vel: 0.78 }] : list.filter((n) => n.pos !== i * STEP);
     edit([set(['patterns', pat.id, 'notes', ch.id], next)]);
     if (want) audio.liveOn(ch.id, key, 0.78, STEP);

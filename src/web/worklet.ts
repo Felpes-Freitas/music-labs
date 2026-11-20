@@ -87,7 +87,7 @@ class MusicLabsProcessor extends AudioWorkletProcessor {
   }
 }
 
-registerProcessor('batuque', MusicLabsProcessor);
+registerProcessor('musiclabs', MusicLabsProcessor);
 
 /** Gravador: repassa os blocos de entrada (microfone) para a interface. */
 class RecorderProcessor extends AudioWorkletProcessor {

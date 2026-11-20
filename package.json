@@ -66,6 +66,15 @@
       "dist/**",
       "package.json"
     ],
+    "fileAssociations": [
+      {
+        "ext": "mlstudio",
+        "name": "Projeto do Music Labs",
+        "description": "Projeto do Music Labs",
+        "mimeType": "application/x-mlstudio",
+        "role": "Editor"
+      }
+    ],
     "asarUnpack": [
       "node_modules/ffmpeg-static/**"
     ],

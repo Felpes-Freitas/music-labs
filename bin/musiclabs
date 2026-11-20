@@ -3,7 +3,7 @@
 # Sem Electron instalado, cai para o Chrome em modo app.
 set -euo pipefail
 DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
-PORT="${BATUQUE_PORT:-7717}"
+PORT="${MUSICLABS_PORT:-7717}"
 URL="http://127.0.0.1:$PORT"
 ELECTRON="$DIR/node_modules/.bin/electron"
 
@@ -13,9 +13,9 @@ if [ "${1:-}" = "--server-only" ]; then
     for n in "$HOME"/.nvm/versions/node/v2[2-9]*/bin/node; do [ -x "$n" ] && NODE="$n"; done
     mkdir -p "$HOME/.local/state"
     if [ -x "$ELECTRON" ]; then
-      ELECTRON_RUN_AS_NODE=1 nohup "$ELECTRON" "$DIR/build/server.mjs" >"$HOME/.local/state/batuque.log" 2>&1 &
+      ELECTRON_RUN_AS_NODE=1 nohup "$ELECTRON" "$DIR/build/server.mjs" >"$HOME/.local/state/musiclabs.log" 2>&1 &
     else
-      nohup "$NODE" "$DIR/build/server.mjs" >"$HOME/.local/state/batuque.log" 2>&1 &
+      nohup "$NODE" "$DIR/build/server.mjs" >"$HOME/.local/state/musiclabs.log" 2>&1 &
     fi
     for _ in $(seq 1 60); do curl -fs "$URL/api/status" >/dev/null 2>&1 && break; sleep 0.1; done
   fi
@@ -23,11 +23,11 @@ if [ "${1:-}" = "--server-only" ]; then
 fi
 
 if [ -x "$ELECTRON" ]; then
-  exec "$ELECTRON" "$DIR/desktop/main.cjs" >/dev/null 2>&1
+  exec "$ELECTRON" "$DIR/desktop/main.cjs" "$@" >/dev/null 2>&1
 fi
 
 "$0" --server-only
 for b in google-chrome chromium brave-browser; do
-  if command -v "$b" >/dev/null; then exec "$b" --app="$URL" --class=MusicLabs --user-data-dir="$HOME/.local/share/batuque/chrome" --no-first-run --autoplay-policy=no-user-gesture-required >/dev/null 2>&1; fi
+  if command -v "$b" >/dev/null; then exec "$b" --app="$URL" --class=MusicLabs --user-data-dir="$HOME/.local/share/musiclabs/chrome" --no-first-run --autoplay-policy=no-user-gesture-required >/dev/null 2>&1; fi
 done
 xdg-open "$URL"

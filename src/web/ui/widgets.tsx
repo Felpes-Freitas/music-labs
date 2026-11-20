@@ -398,8 +398,12 @@ export function MenuTree(p: { x: number; y: number; items: MenuItem[]; onClose: 
   return <MenuLevel x={p.x} y={p.y} items={p.items} onClose={p.onClose} />;
 }
 
-function MenuLevel(p: { x: number; y: number; items: MenuItem[]; onClose: () => void }) {
-  const [open, setOpen] = useState<{ i: number; x: number; y: number } | null>(null);
+/**
+ * Um nível do menu. altX: borda esquerda do menu pai — se este não couber à direita,
+ * abre à esquerda dele (como nos menus do sistema), em vez de cobrir os níveis anteriores.
+ */
+function MenuLevel(p: { x: number; y: number; altX?: number; items: MenuItem[]; onClose: () => void }) {
+  const [open, setOpen] = useState<{ i: number; x: number; y: number; altX: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: p.x, y: p.y });
   // não deixa o menu sair da tela
@@ -407,8 +411,10 @@ function MenuLevel(p: { x: number; y: number; items: MenuItem[]; onClose: () => 
     const el = ref.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    setPos({ x: Math.min(p.x, window.innerWidth - r.width - 6), y: Math.max(6, Math.min(p.y, window.innerHeight - r.height - 6)) });
-  }, [p.x, p.y, p.items.length]);
+    const fitsRight = p.x + r.width <= window.innerWidth - 6;
+    const x = fitsRight ? p.x : p.altX !== undefined && p.altX - r.width >= 6 ? p.altX - r.width : Math.max(6, window.innerWidth - r.width - 6);
+    setPos({ x, y: Math.max(6, Math.min(p.y, window.innerHeight - r.height - 6)) });
+  }, [p.x, p.y, p.altX, p.items.length]);
   return (
     <>
       <div ref={ref} class="ctx menutree" style={{ left: `${pos.x}px`, top: `${pos.y}px` }} onPointerDown={(e) => e.stopPropagation()}>
@@ -430,7 +436,8 @@ function MenuLevel(p: { x: number; y: number; items: MenuItem[]; onClose: () => 
                 if (rightHeld && (e.buttons & 2) && it.preview) it.preview();
                 if (!it.sub) return setOpen(null);
                 const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                setOpen({ i, x: r.right - 2, y: r.top - 4 });
+                const box = ref.current?.getBoundingClientRect();
+                setOpen({ i, x: r.right - 2, y: r.top - 4, altX: (box?.left ?? r.left) + 2 });
               }}
               onClick={() => {
                 if (it.sub) return;
@@ -445,7 +452,7 @@ function MenuLevel(p: { x: number; y: number; items: MenuItem[]; onClose: () => 
           ),
         )}
       </div>
-      {open && p.items[open.i]?.sub && <MenuLevel x={open.x} y={open.y} items={p.items[open.i].sub!} onClose={p.onClose} />}
+      {open && p.items[open.i]?.sub && <MenuLevel x={open.x} y={open.y} altX={open.altX} items={p.items[open.i].sub!} onClose={p.onClose} />}
     </>
   );
 }

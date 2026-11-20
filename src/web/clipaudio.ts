@@ -91,12 +91,12 @@ export async function uploadFiles(files: File[]) {
 export async function droppedAudio(e: DragEvent): Promise<string[]> {
   const dt = e.dataTransfer;
   if (!dt) return [];
-  const sample = dt.getData('text/x-batuque-sample');
+  const sample = dt.getData('text/x-musiclabs-sample');
   if (sample) return [sample];
   const files = [...dt.files].filter((f) => /^audio\//.test(f.type) || /\.(wav|mp3|flac|ogg|m4a|aac|opus|aiff?)$/i.test(f.name));
   return files.length ? uploadFiles(files) : [];
 }
-export const acceptsAudio = (e: DragEvent) => !!e.dataTransfer && (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('text/x-batuque-sample'));
+export const acceptsAudio = (e: DragEvent) => !!e.dataTransfer && (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('text/x-musiclabs-sample'));
 
 /** Abre o seletor de arquivos do sistema (vários de uma vez). */
 export function pickAudioFiles(multiple: boolean): Promise<File[]> {

@@ -1,3 +1,4 @@
+import { PadsPanel } from './PadsPanel';
 import { useEffect, useState } from 'preact/hooks';
 import { useApp, edit, previewEdit, act } from '../state';
 import { audio } from '../audio';
@@ -121,7 +122,7 @@ export function ChannelSettings() {
               <option value={t}>{INSTRUMENTS[t].label}</option>
             ))}
           </select>
-          {ch.type !== 'prisma' && (
+          {ch.type !== 'prisma' && ch.type !== 'pads' && (
             <select
               value=""
               data-hint="Carregar preset"
@@ -165,7 +166,9 @@ export function ChannelSettings() {
                   <SourceBox path={String(ch.params.sample ?? '')} oneshot={ch.params.oneshot === true} loop={ch.params.loop === true} />
                 </div>
               )}
-              {ch.type === 'prisma' ? (
+              {ch.type === 'pads' ? (
+                <PadsPanel ch={ch} />
+              ) : ch.type === 'prisma' ? (
                 <PrismaPanel ch={ch} />
               ) : (
                 <ParamGrid
@@ -180,7 +183,7 @@ export function ChannelSettings() {
           )}
         </div>
         <ChannelFx ch={ch} />
-        <ChannelPiano ch={ch} />
+        {ch.type !== 'pads' && <ChannelPiano ch={ch} />}
       </div>
     </Win>
   );

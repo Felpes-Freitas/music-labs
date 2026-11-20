@@ -1,5 +1,6 @@
 // Render offline (sem tempo real) usando a mesma engine do navegador.
 
+import { channelSamples } from '../core/pads.js';
 import type { Project } from '../core/model.js';
 import { patternLength, songLength, findPattern } from '../core/model.js';
 import { BLOCK, Engine, InsertStats } from '../core/engine.js';
@@ -30,7 +31,7 @@ export async function renderProject(p: Project, o: RenderOptions = {}): Promise<
   const missing: string[] = [];
   // samples dos canais e dos clipes de áudio da playlist
   const sources = [
-    ...p.channels.map((ch) => (ch.type === 'sampler' ? String(ch.params.sample ?? '') : '')),
+    ...p.channels.flatMap((ch) => channelSamples(ch)),
     ...p.clips.map((c) => (c.kind === 'audio' ? c.sample ?? '' : '')),
   ];
   for (const s of sources) {

@@ -837,9 +837,9 @@ export function Playlist() {
           onPointerUp={onUp as any}
           onWheel={onWheel as any}
           onContextMenu={(e) => e.preventDefault()}
-          onDragOver={(e) => e.dataTransfer?.types.includes('text/x-batuque-sample') && e.preventDefault()}
+          onDragOver={(e) => e.dataTransfer?.types.includes('text/x-musiclabs-sample') && e.preventDefault()}
           onDrop={async (e) => {
-            const path = e.dataTransfer?.getData('text/x-batuque-sample');
+            const path = e.dataTransfer?.getData('text/x-musiclabs-sample');
             if (!path) return;
             e.preventDefault();
             e.stopPropagation();

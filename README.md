@@ -170,7 +170,7 @@ aparece na hora na interface, com aviso "Claude · …". Ferramentas:
 | grupo | ferramentas |
 | --- | --- |
 | leitura | `get_project`, `get_notes`, `list_sounds`, `search_samples`, `sample_library`, `music_theory` |
-| projeto | `new_project`, `set_project`, `save_project`, `open_project` (.batuque e .flp), `list_projects`, `undo`, `redo` |
+| projeto | `new_project`, `set_project`, `save_project`, `open_project` (.mlstudio e .flp), `list_projects`, `undo`, `redo` |
 | canais | `add_channel`, `update_channel` (inclui nota raiz e ajuste fino), `remove_channel` |
 | notas | `add_pattern`, `edit_pattern`, `set_steps`, `add_notes`, `add_chords`, `clear_notes`, `transform_notes` |
 | arranjo | `arrange`, `update_track` |
@@ -181,7 +181,7 @@ aparece na hora na interface, com aviso "Claude · …". Ferramentas:
 ## Onde ficam os dados
 
 - Projetos e renders: `~/MusicLabs` (`Projetos/`, `Renders/`, `Samples/`).
-- Estado (autosave, índice da biblioteca): `~/.local/share/batuque` no Linux,
+- Estado (autosave, índice da biblioteca): `~/.local/share/musiclabs` no Linux,
   `%APPDATA%\MusicLabs` no Windows, `~/Library/Application Support/MusicLabs` no macOS.
 
 ## Arquitetura
