@@ -8,6 +8,7 @@ import { Instrument, SampleBank, SampleData, SampleSet, createInstrument } from 
 import { Fx, FxContext, createEffect } from './effects.js';
 import { PitchShifter, panGains } from './dsp.js';
 import { ANALYZER_SIZE, analyzeSpectrum } from './analyzer.js';
+import { ampLive, rawOf } from './reamp.js';
 
 export const BLOCK = 128;
 
@@ -20,6 +21,10 @@ interface ChannelState {
   shifter: PitchShifter | null;
   autoSig?: string;
   quiet: number; // amostras seguidas em silêncio (para parar de processar a cauda dos efeitos)
+  /** Pedais do amp do canal de áudio (reamp em tempo real), por id do pedal. */
+  amp?: Map<string, { fx: Fx; sig: string; autoSig?: string }>;
+  /** Tocando o bruto pelos pedais em tempo real (core/reamp.ts ampLive). */
+  ampLive?: boolean;
 }
 
 interface InsertState {
@@ -96,6 +101,13 @@ export class Engine {
 
   constructor(public sr: number) {}
 
+  /** Tira áudios da memória (ninguém no projeto usa mais). */
+  dropSamples(paths: string[]) {
+    for (const p of paths) {
+      this.samples.delete(p);
+      this.sets.delete(p);
+    }
+  }
   setSample(path: string, data: SampleData) {
     this.samples.set(path, data);
   }
@@ -129,6 +141,24 @@ export class Engine {
         cur.autoSig = undefined;
       }
       const st = this.channels.get(ch.id)!;
+      // reamp: pedais do canal de áudio, usados quando ele toca o bruto em tempo real
+      st.ampLive = ampLive(p, ch);
+      if (st.ampLive && ch.amp) {
+        const m = st.amp ?? (st.amp = new Map());
+        const keepA = new Set<string>();
+        for (const e of ch.amp.chain) {
+          keepA.add(e.id);
+          const esig = e.type + JSON.stringify(e.params);
+          const ce = m.get(e.id);
+          if (!ce || ce.fx.type !== e.type) m.set(e.id, { fx: createEffect(this.sr, e.type, e.params), sig: esig });
+          else if (ce.sig !== esig) {
+            ce.fx.setParams(e.params);
+            ce.sig = esig;
+            ce.autoSig = undefined;
+          }
+        }
+        for (const id of [...m.keys()]) if (!keepA.has(id)) m.delete(id);
+      } else st.amp = undefined;
       const keep = new Set<string>();
       for (const e of ch.effects ?? []) {
         keep.add(e.id);
@@ -179,9 +209,10 @@ export class Engine {
     return out;
   }
   /** Soma um clipe de áudio nos buffers (com o ganho do clipe), trecho a trecho do bloco. */
-  private mixClip(p: Project, c: Clip, L: Float32Array, R: Float32Array, segs: { f0: number; f1: number; t0: number }[], tps: number) {
+  private mixClip(p: Project, c: Clip, L: Float32Array, R: Float32Array, segs: { f0: number; f1: number; t0: number }[], tps: number, raw: string | null = null) {
     if (c.muted || p.tracks[c.track]?.mute || !c.sample) return;
-    const data = this.samples.get(c.sample);
+    // reamp: o bruto (mesmo começo da versão processada); sem ele carregado, a processada
+    const data = (raw && this.samples.get(raw)) || this.samples.get(c.sample);
     if (!data) return;
     const ch0 = data.ch[0], ch1 = data.ch[1] ?? ch0;
     const len = ch0.length;
@@ -516,10 +547,39 @@ export class Engine {
       this.applyChannelAuto(ch, st);
       // canal de áudio: o som são os clipes dele na playlist que caem neste bloco
       const clipsIn = ch.type === 'audio' && this.playing && this.mode === 'song' ? this.audioClipsIn(p, ch.id, segs, tps) : null;
-      if (!evs && !clipsIn?.length && !st.inst.busy && (!(fxOn || stretch) || st.quiet > this.sr * 4)) continue;
+      // (só com o bruto de todos os clipes carregado; senão a processada, sem pedais por cima)
+      const live = !!(st.ampLive && st.amp && ch.amp) && (clipsIn ?? []).every((c) => {
+        const r = rawOf(p, c);
+        return !!r && this.samples.has(r);
+      });
+      if (!evs && !clipsIn?.length && !st.inst.busy && (!(fxOn || stretch || live) || st.quiet > this.sr * 4)) continue;
       st.L.fill(0, 0, n);
       st.R.fill(0, 0, n);
-      if (clipsIn) for (const c of clipsIn) this.mixClip(p, c, st.L, st.R, segs, tps);
+      if (clipsIn) for (const c of clipsIn) this.mixClip(p, c, st.L, st.R, segs, tps, live ? rawOf(p, c) : null);
+      // reamp em tempo real: o bruto passa pelos pedais (com automação), depois o ganho de saída
+      if (live) {
+        for (const e of ch.amp!.chain) {
+          if (!e.enabled) continue;
+          const rec = st.amp!.get(e.id);
+          if (!rec) continue;
+          this.applyFxAuto(['channels', ch.id, 'amp', 'chain', e.id, 'params'], e.params, rec);
+          if (e.mix >= 0.999) rec.fx.process(st.L, st.R, n, fxCtx);
+          else {
+            const dl = st.L.slice(0, n), dr = st.R.slice(0, n);
+            rec.fx.process(st.L, st.R, n, fxCtx);
+            for (let i = 0; i < n; i++) {
+              st.L[i] = st.L[i] * e.mix + dl[i] * (1 - e.mix);
+              st.R[i] = st.R[i] * e.mix + dr[i] * (1 - e.mix);
+            }
+          }
+        }
+        const og = Math.pow(10, (ch.amp!.outGainDb ?? 0) / 20);
+        if (og !== 1)
+          for (let i = 0; i < n; i++) {
+            st.L[i] *= og;
+            st.R[i] *= og;
+          }
+      }
       let pos = 0;
       if (evs) {
         evs.sort((x, y) => x.frame - y.frame);

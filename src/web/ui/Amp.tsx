@@ -13,6 +13,11 @@ import { uid } from '../../core/model';
 import { getPref, setPref, usePref } from '../prefs';
 import { Win, Knob, ContextMenu, fmt } from './widgets';
 import { Icon } from './icons';
+import { reampChannel, reampBusy, closeAmpReamp } from '../reamp';
+import { ampSig, ampAutomated, ampParamPath } from '../../core/reamp';
+import { set as setOp } from '../../core/ops';
+import { edit, previewEdit } from '../state';
+import type { Channel } from '../../core/model';
 import { askText, askConfirm } from './Dialog';
 import { accent, ui, onTheme } from '../theme';
 
@@ -203,12 +208,21 @@ export function AmpWindow() {
     return () => void listeners.delete(force as () => void);
   }, []);
   // liga a entrada quando a janela abre (e quando muda a entrada); desliga ao fechar
+  // editando os pedais de uma gravação (reamp)
+  const rch = reampChannel ? s.project.channels.find((c) => c.id === reampChannel && c.amp) : undefined;
   useEffect(() => {
     ampOpen = open;
     if (!open) {
+      if (reampChannel) closeAmpReamp();
       audio.stopAmp();
       setOn(false);
       syncNative();
+      return;
+    }
+    // editando uma gravação: a entrada da guitarra fica desligada
+    if (reampChannel) {
+      audio.stopAmp();
+      setOn(false);
       return;
     }
     fetch('/api/monitor')
@@ -240,7 +254,7 @@ export function AmpWindow() {
         toast(`Amp: não consegui abrir a entrada de áudio (${(e as Error).message})`);
       });
     return () => void (dead = true);
-  }, [open, amp.device]);
+  }, [open, amp.device, !!rch]);
   useEffect(() => {
     if (on) commit();
   }, [s.project.bpm]);
@@ -330,6 +344,7 @@ export function AmpWindow() {
     </div>
   );
 
+  if (rch) return <ReampView ch={rch} />;
   return (
     <Win id="amp" title="Amp" icon="guitar" tools={tools} minW={560} minH={300}>
       <div class="amp">
@@ -426,7 +441,7 @@ export function AmpWindow() {
           )}
         </div>
         <Visualizer />
-        <Chain />
+        <Chain {...liveChainProps()} />
         {tuner && on && <GuitarTuner onClose={() => setTuner(false)} />}
       </div>
     </Win>
@@ -668,30 +683,45 @@ function CapoOctave({ f, set }: { f: AmpFx; set: (o: number) => void }) {
   );
 }
 
-function Chain() {
+/** Cadeia do amp ao vivo (preferências do computador). */
+const liveChainProps = (): ChainProps => ({
+  chain: amp.chain,
+  update: (next, final) => {
+    amp.chain = next;
+    amp.preset = '';
+    if (final) commit();
+    else {
+      audio.configAmp({ chain: liveChain(), inGain: amp.inGain, outGain: amp.outGain, pick: amp.pick, bpm: state.project.bpm });
+      syncNative();
+    }
+  },
+});
+
+interface ChainProps {
+  chain: AmpFx[];
+  /** Nova cadeia; final = soltou o controle (grava); senão é só prévia (arrastando). */
+  update: (next: AmpFx[], final: boolean) => void;
+  /** Automação de um parâmetro (só nas gravações: o bruto passa pelos pedais na hora). */
+  auto?: (f: AmpFx, key: string, label: string) => { path: (string | number)[]; label: string };
+}
+
+function Chain(props: ChainProps) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [drag, setDragState] = useState<{ from: number; to: number } | null>(null);
   const dragRef = useRef<{ from: number; to: number } | null>(null);
   const setDrag = (d: { from: number; to: number } | null) => ((dragRef.current = d), setDragState(d));
-  const chain = amp.chain;
-  const set = (i: number, patch: Partial<AmpFx>) => {
-    chain[i] = { ...chain[i], ...patch };
-    amp.preset = '';
-    commit();
-  };
+  const chain = props.chain;
+  const set = (i: number, patch: Partial<AmpFx>, final = true) => props.update(chain.map((x, j) => (j === i ? { ...x, ...patch } : x)), final);
   const add = (type: EffectType) => {
     // o capotraste vai no começo: mudar o tom do sinal limpo soa bem melhor que do distorcido
-    if (type === 'capo') chain.unshift(fx(type, {}, 1));
-    else chain.push(fx(type, {}, WET.includes(type) ? 0.3 : 1));
-    amp.preset = '';
-    commit();
+    props.update(type === 'capo' ? [fx(type, {}, 1), ...chain] : [...chain, fx(type, {}, WET.includes(type) ? 0.3 : 1)], true);
   };
   const move = (from: number, to: number) => {
     if (to === from || to === from + 1) return;
-    const [x] = chain.splice(from, 1);
-    chain.splice(to > from ? to - 1 : to, 0, x);
-    amp.preset = '';
-    commit();
+    const next = [...chain];
+    const [x] = next.splice(from, 1);
+    next.splice(to > from ? to - 1 : to, 0, x);
+    props.update(next, true);
   };
   const others = (Object.keys(EFFECTS) as EffectType[]).filter((t) => !GUITAR_FX.includes(t));
   return (
@@ -738,7 +768,7 @@ function Chain() {
               <span class="pedal-name" data-hint={def.description}>
                 {def.label}
               </span>
-              <button class="pedal-x" data-hint="Remover da cadeia" onClick={() => (chain.splice(i, 1), (amp.preset = ''), commit())}>
+              <button class="pedal-x" data-hint="Remover da cadeia" onClick={() => props.update(chain.filter((_, j) => j !== i), true)}>
                 <Icon name="close" size={10} />
               </button>
             </div>
@@ -771,11 +801,8 @@ function Chain() {
                     bipolar={d.min! < 0 && d.max! > 0}
                     label={d.label}
                     format={fmtParam(d)}
-                    onInput={(x) => {
-                      f.params = { ...f.params, [d.key]: x };
-                      audio.configAmp({ chain: liveChain(), inGain: amp.inGain, outGain: amp.outGain, pick: amp.pick, bpm: state.project.bpm });
-                      syncNative();
-                    }}
+                    auto={props.auto?.(f, d.key, `${def.label} · ${d.label}`)}
+                    onInput={(x) => set(i, { params: { ...f.params, [d.key]: x } }, false)}
                     onCommit={(x) => set(i, { params: { ...f.params, [d.key]: x } })}
                   />
                 );
@@ -800,5 +827,71 @@ function Chain() {
         />
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- reamp de uma gravação
+
+/**
+ * Pedais de uma gravação do amp: a mesma cadeia, mas guardada no canal da gravação. Mudar
+ * refaz o áudio a partir do bruto (em segundo plano); enquanto isso, e com automação nos
+ * pedais, a gravação toca o bruto pelos pedais em tempo real.
+ */
+function ReampView({ ch }: { ch: Channel }) {
+  const s = useApp();
+  const a = ch.amp!;
+  const path = ['channels', ch.id, 'amp'];
+  const busy = reampBusy.has(ch.id);
+  const automated = ampAutomated(s.project, ch.id);
+  const fresh = a.sig === ampSig(a);
+  const takes = (s.project.audios ?? []).filter((x) => x.channel === ch.id && x.raw).length;
+  const update = (next: AmpFx[], final: boolean) => (final ? edit : previewEdit)([setOp([...path, 'chain'], next)]);
+  const presetNames = [...Object.keys(PRESETS), ...Object.keys(userPresets())];
+  const status = automated
+    ? 'Com automação nos pedais: toca o áudio bruto pelos pedais em tempo real'
+    : busy
+      ? 'Refazendo o áudio com os pedais novos… (enquanto isso ele toca em tempo real)'
+      : fresh
+        ? 'Em dia: toca a versão já processada (alta qualidade, sem custo)'
+        : 'Mudou: toca em tempo real até refazer o áudio';
+  return (
+    <Win id="amp" title={<>Amp · <span class="dim">{ch.name}</span></>} icon="guitar" minW={560} minH={300}>
+      <div class="amp">
+        <div class="amp-top reamp-top">
+          <div class="reamp-info">
+            <b>Reamp: {ch.name}</b>
+            <span class="dim">
+              {takes} take{takes > 1 ? 's' : ''} · o áudio bruto fica guardado; mudar os pedais refaz a gravação
+            </span>
+            <span class={`reamp-st ${automated || !fresh ? 'live' : ''}`}>{status}</span>
+          </div>
+          <Knob size={28} value={a.outGainDb ?? 0} min={-36} max={12} def={0} label="Saída" format={(v) => `${v.toFixed(1)} dB`} onInput={(v) => previewEdit([setOp([...path, 'outGainDb'], v)])} onCommit={(v) => edit([setOp([...path, 'outGainDb'], v)])} />
+          <div class="amp-presets">
+            <span>Preset</span>
+            <select
+              value=""
+              onChange={(e) => {
+                const name = (e.target as HTMLSelectElement).value;
+                const u = userPresets()[name];
+                const chain = u ? u.chain.map((x) => ({ ...x, id: uid('a'), params: { ...x.params } })) : PRESETS[name]?.();
+                if (chain) edit([setOp([...path, 'chain'], chain)]);
+              }}
+            >
+              <option value="">trocar a cadeia…</option>
+              {presetNames.map((n) => (
+                <option value={n}>{n}</option>
+              ))}
+            </select>
+            <button onClick={() => edit([setOp([...path, 'chain'], amp.chain.map((x) => ({ ...x, id: uid('a'), params: { ...x.params } })))])} data-hint="Usar nesta gravação os pedais do amp ao vivo">
+              Usar os do amp ao vivo
+            </button>
+          </div>
+          <button onClick={closeAmpReamp} data-hint="Voltar ao amp ao vivo (tocar e gravar)">
+            <Icon name="guitar" size={13} /> Amp ao vivo
+          </button>
+        </div>
+        <Chain chain={a.chain} update={update} auto={(f, key, label) => ({ path: ampParamPath(ch.id, f.id, key), label: `${ch.name} · ${label}` })} />
+      </div>
+    </Win>
   );
 }

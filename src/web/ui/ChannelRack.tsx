@@ -17,6 +17,7 @@ import { usePref } from '../prefs';
 import { openTuneAudio } from './Tune';
 import { addStitchAudios } from './Stitch';
 import { addToPool } from '../pool';
+import { openAmpReamp } from '../reamp';
 
 const CELL = 21;
 
@@ -132,6 +133,7 @@ export function ChannelRack() {
     if (c.type === 'audio') {
       const item = () => (p.audios ?? []).find((a) => a.channel === c.id)?.id ?? addToPool(String(c.params.sample), c.name);
       return [
+        ...(c.amp ? [{ label: 'Amp (mudar os pedais)', hint: 'Refaz a gravação a partir do áudio bruto', run: () => openAmpReamp(c.id) }] : []),
         { label: 'Configurações (volume, efeitos…)', run: () => openWindow('channel') },
         { label: 'Abrir no Melodify', hint: 'Editar as notas do áudio (afinação)', run: () => openTuneAudio(item()) },
         { label: 'Abrir no Stitcher', hint: 'Juntar takes deste áudio', run: () => (addStitchAudios([item()]), openWindow('stitch')) },

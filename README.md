@@ -81,7 +81,11 @@ git push --follow-tags
   (**capotraste**: muda o tom da entrada em semitons e, com um clique, de oitava, por
   exemplo −1 para tocar baixo com a guitarra; noise gate, wah, compressor, overdrive, fuzz, amplificador com canais clean/crunch/lead,
   gabinete, EQ, tremolo, chorus, phaser, delay, reverb), presets de fábrica e seus, e
-  botão Gravar que grava o som já com os efeitos direto na playlist.
+  botão Gravar que grava o som já com os efeitos direto na playlist. O áudio bruto (sem
+  os pedais) também fica guardado: duplo clique numa gravação do amp abre o amp nela,
+  e mudar os pedais refaz a gravação a partir do bruto (dá até para automatizar um pedal;
+  aí a gravação toca o bruto pelos pedais em tempo real). Todos os takes de uma gravação
+  ficam num canal só no rack.
   - **Só quando tocar** (gravação inteligente): com a música tocando, cada trecho que
     você toca vira um clipe onde o ponteiro estava; o silêncio fica de fora. A detecção
     aprende o ruído de fundo (chiado de headset, ambiente) e só considera o que passa

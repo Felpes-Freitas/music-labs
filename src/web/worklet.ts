@@ -35,6 +35,9 @@ class MusicLabsProcessor extends AudioWorkletProcessor {
         case 'sample':
           eng.setSample(m.path, { sr: m.sr, ch: m.ch, root: m.root, loop: m.loop });
           break;
+        case 'unsample':
+          eng.dropSamples(m.paths);
+          break;
         case 'sampleset':
           eng.setSampleSet(m.path, m.set);
           break;

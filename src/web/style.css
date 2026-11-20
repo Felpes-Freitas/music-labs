@@ -840,3 +840,9 @@ option, optgroup { background-color: var(--pop); color: var(--text); }
 .tool-gear-pick { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 11px; color: var(--dim); }
 .audio-tools { display: flex; gap: 8px; padding: 8px 0; }
 .audio-tools button { display: inline-flex; align-items: center; gap: 6px; }
+/* amp editando os pedais de uma gravação (reamp) */
+.reamp-top { align-items: center; }
+.reamp-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 220px; font-size: 11px; }
+.reamp-st { color: #6fdc8c; }
+.reamp-st.live { color: var(--acc); }
+.amp-presets button { white-space: nowrap; }

@@ -1,5 +1,6 @@
 // Ponte entre a interface e o AudioWorklet: contexto de áudio, samples e transporte.
 import { channelSamples } from '../core/pads';
+import { ampLive, rawOf } from '../core/reamp';
 import workletUrl from './worklet.ts?worker&url';
 import { decodeWav } from '../core/wav';
 import { PPQ, type Project } from '../core/model';
@@ -112,9 +113,38 @@ export class Audio {
     if (p) this.syncSamples(p);
   }
 
+  /** Áudios que o projeto usa agora (canais, clipes e, no reamp em tempo real, os brutos). */
+  private usedSamples(p: Project) {
+    const used = new Set<string>();
+    for (const ch of p.channels) for (const path of channelSamples(ch)) used.add(path);
+    const live = new Set(p.channels.filter((ch) => ampLive(p, ch)).map((ch) => ch.id));
+    for (const c of p.clips) {
+      if (c.kind !== 'audio' || !c.sample) continue;
+      used.add(c.sample);
+      if (c.channel && live.has(c.channel)) {
+        const r = rawOf(p, c);
+        if (r) used.add(r);
+      }
+    }
+    return used;
+  }
   private syncSamples(p: Project) {
-    for (const ch of p.channels) for (const path of channelSamples(ch)) this.loadSample(path);
-    for (const c of p.clips) if (c.kind === 'audio' && c.sample) this.loadSample(c.sample);
+    for (const path of this.usedSamples(p)) this.loadSample(path);
+    // o que ninguém usa mais (takes apagados, prévias, versões antigas) sai da memória
+    clearTimeout(this.gcTimer);
+    this.gcTimer = setTimeout(() => this.collectSamples(), 4000) as unknown as number;
+  }
+  private gcTimer = 0;
+  /** Áudios em uso fora do projeto (prévia do navegador, ferramentas): não descarregar. */
+  keep = new Set<string>();
+  private collectSamples() {
+    const p = this.getProject();
+    if (!p || this.rec) return; // gravando: as prévias ainda podem voltar
+    const used = this.usedSamples(p);
+    const drop = [...this.loaded].filter((x) => !used.has(x) && !this.keep.has(x) && !this.loading.has(x));
+    if (!drop.length) return;
+    for (const x of drop) this.loaded.delete(x);
+    this.post({ type: 'unsample', paths: drop });
   }
 
   // ---------------------------------------------------------------- gravação

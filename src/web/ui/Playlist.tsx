@@ -11,6 +11,7 @@ import * as A from '../../core/actions';
 import { Win, IconBtn, useCanvas } from './widgets';
 import { askText } from './Dialog';
 import { openTune } from './Tune';
+import { openAmpReamp } from '../reamp';
 import { Picker } from './Picker';
 import { addStitchTakes } from './Stitch';
 
@@ -850,7 +851,10 @@ export function Playlist() {
             } else if (h.c.kind === 'audio') {
               // o canal do áudio: onda, Melodify/Stitcher, volume, pan, efeitos e insert
               const chId = state.project.clips.find((c) => c.id === h.c.id)?.channel;
-              if (chId) {
+              const ach = chId ? state.project.channels.find((c) => c.id === chId) : undefined;
+              // gravação do amp: abre o amp nos pedais dela (reamp)
+              if (ach?.amp) openAmpReamp(ach.id);
+              else if (chId) {
                 selectChannel(chId);
                 openWindow('channel');
               } else openTune(h.c.id);

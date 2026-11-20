@@ -37,6 +37,11 @@ export interface Channel {
   insert: number; // índice do insert do mixer (0 = master)
   /** Até 4 efeitos aplicados ao som do canal antes do mixer. */
   effects?: Effect[];
+  /**
+   * Canal de áudio gravado pelo amp: a cadeia de pedais (reamp). `sig` = assinatura da
+   * cadeia com que a versão processada foi feita (core/reamp.ts).
+   */
+  amp?: { chain: Effect[]; outGainDb: number; sig?: string };
 }
 
 export interface Pattern {
@@ -214,6 +219,8 @@ export interface AudioItem {
   edited?: string;
   /** Canal de áudio do rack (volume, pan, efeitos, insert). */
   channel?: string;
+  /** Gravação do amp: o áudio bruto, sem os pedais (path é a versão processada). */
+  raw?: string;
 }
 
 export const MIXER_SIZE = 17; // master + 16 inserts
