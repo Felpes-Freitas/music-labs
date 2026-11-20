@@ -854,3 +854,7 @@ option, optgroup { background-color: var(--pop); color: var(--text); }
 .toolbar.tips .tb-side { flex: 1 1 0; display: flex; align-items: center; min-width: 0; }
 .toolbar.tips .tb-side.right { justify-content: flex-end; }
 .hint-tip { position: fixed; z-index: 100000; pointer-events: none; max-width: 340px; padding: 5px 9px; border-radius: 6px; background: var(--pop); color: var(--text); border: 1px solid var(--line2); box-shadow: 0 6px 18px var(--shadow); font-size: 11px; line-height: 1.35; white-space: normal; }
+/* dica da playlist (modo balão): parada no canto inferior direito, como o endereço de um link */
+.hint-corner { position: fixed; right: 8px; bottom: 6px; z-index: 100000; pointer-events: none; max-width: 50vw; padding: 3px 9px; border-radius: 5px; background: var(--pop); color: var(--text2); border: 1px solid var(--line2); box-shadow: 0 4px 12px var(--shadow); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* o olho do rack não ganha fundo (nem no hover, nem ligado) */
+.pr-tools .rack-eye, .pr-tools .rack-eye:hover:not(:disabled), .pr-tools .rack-eye.on, .pr-tools .rack-eye.on:hover:not(:disabled) { background: none; box-shadow: none; filter: none; border: none; }

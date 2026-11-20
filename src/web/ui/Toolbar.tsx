@@ -252,15 +252,26 @@ function HintBar() {
 }
 
 const mouse = { x: 0, y: 0 };
-/** Dica em balão logo acima do mouse (Configurações → Aparência → Dicas em balão). */
+/** O mouse está numa área em que fica quase o tempo todo (a playlist): a dica vai para o canto. */
+let mouseOnCanvas = false;
+const CORNER = '.pl-canvas';
+/** Espera antes do balão aparecer. */
+const TIP_DELAY = 750;
+
+/**
+ * Dica em balão logo acima do mouse (Configurações → Aparência → Dicas em balão). Na
+ * playlist, onde o mouse passa a maior parte do tempo, a dica fica parada no canto
+ * inferior direito (como o endereço de um link no navegador), sem seguir o mouse.
+ */
 export function HintTooltip() {
   useApp();
   const h = useHint();
   const ref = useRef<HTMLDivElement>(null);
   const [show, setShow] = useState(false);
+  const [corner, setCorner] = useState(false);
   const place = () => {
     const el = ref.current;
-    if (!el) return;
+    if (!el || mouseOnCanvas) return;
     const w = el.offsetWidth, hh = el.offsetHeight;
     let top = mouse.y - hh - 14;
     if (top < 4) top = mouse.y + 22; // sem espaço em cima: embaixo do mouse
@@ -271,6 +282,11 @@ export function HintTooltip() {
     const mv = (e: PointerEvent) => {
       mouse.x = e.clientX;
       mouse.y = e.clientY;
+      const on = !!(e.target as Element | null)?.closest?.(CORNER);
+      if (on !== mouseOnCanvas) {
+        mouseOnCanvas = on;
+        setCorner(on);
+      }
       place();
     };
     const down = () => setShow(false);
@@ -283,17 +299,19 @@ export function HintTooltip() {
       window.removeEventListener('wheel', down);
     };
   }, []);
-  // aparece depois de um instante parado sobre a mesma coisa
+  // balão: aparece depois de um instante parado sobre a mesma coisa
   useEffect(() => {
     setShow(false);
-    if (!h || !looks.tooltips) return;
-    const t = setTimeout(() => setShow(true), 450);
+    if (!h || !looks.tooltips || corner) return;
+    const t = setTimeout(() => setShow(true), TIP_DELAY);
     return () => clearTimeout(t);
-  }, [h]);
+  }, [h, corner]);
   useEffect(() => {
     if (show) place();
   }, [show, h]);
-  if (!looks.tooltips || !show || !h) return null;
+  if (!looks.tooltips || !h) return null;
+  if (corner) return <div class="hint-corner">{h}</div>;
+  if (!show) return null;
   return (
     <div ref={ref} class="hint-tip">
       {h}
@@ -613,7 +631,7 @@ export function Toolbar() {
   );
   return (
     <div class={`toolbar ${tips ? 'tips' : ''}`}>
-      {tips ? <div class="tb-side">{mix}</div> : <HintBar />}
+      {tips ? <div class="tb-side" /> : <HintBar />}
       <div class="tb-panel transport">
         <div class="modepill" data-hint="Modo: pattern toca só o pattern atual; song toca a playlist (L)">
           <button class={s.mode === 'pattern' ? 'on pat' : ''} onClick={() => setMode('pattern')}>
@@ -652,7 +670,7 @@ export function Toolbar() {
           <span class="lcd-cap">B:S:T</span>
         </div>
       </div>
-      {!tips && mix}
+      {mix}
       {tips ? <div class="tb-side right">{pats}</div> : pats}
     </div>
   );
