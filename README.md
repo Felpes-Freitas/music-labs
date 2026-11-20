@@ -69,8 +69,9 @@ git push --follow-tags
   arquivo vai para `~/MusicLabs/Gravações` e vira um clip de áudio. Entrada e canais
   (estéreo, só entrada 1 ou 2) em Configurações → Áudio e gravação.
 - **Amp de guitarra** (F10): entrada própria escolhida no canto da janela (e qual
-  canal da interface), visualizador, cadeia de efeitos reordenável arrastando (noise
-  gate, wah, compressor, overdrive, fuzz, amplificador com canais clean/crunch/lead,
+  canal da interface), visualizador, cadeia de efeitos reordenável arrastando
+  (**capotraste**: muda o tom da entrada em semitons e, com um clique, de oitava, por
+  exemplo −1 para tocar baixo com a guitarra; noise gate, wah, compressor, overdrive, fuzz, amplificador com canais clean/crunch/lead,
   gabinete, EQ, tremolo, chorus, phaser, delay, reverb), presets de fábrica e seus, e
   botão Gravar que grava o som já com os efeitos direto na playlist.
   - **Só quando tocar** (gravação inteligente): com a música tocando, cada trecho que
@@ -96,6 +97,10 @@ git push --follow-tags
   áudio novo na lista; desmarcado, altera o próprio áudio (o original fica guardado e
   pode ser restaurado). **Enviar para a playlist** coloca o áudio na música (variantes
   logo abaixo do original). Espaço toca o áudio do Afinador quando ele está em foco.
+  O botão **BPM** detecta o andamento do áudio (ex.: uma gravação sua de guitarra) e
+  oferece colocar o projeto nesse BPM, com o áudio alinhado à grade.
+- **Tap tempo**: o botão TAP ao lado do BPM. Clique no ritmo da música e o BPM segue
+  os cliques.
 - **Stitcher** (F12): em cima, a onda do resultado, com cada pedaço na cor do áudio de
   onde veio (clique para tocar dali; Espaço com a janela em foco); logo abaixo, a
   melodia; embaixo, os áudios, cada um com a sua cor e os pedaços usados destacados.

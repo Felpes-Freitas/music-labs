@@ -129,7 +129,8 @@ export type EffectType =
   | 'amp'
   | 'cab'
   | 'wah'
-  | 'tremolo';
+  | 'tremolo'
+  | 'capo';
 
 export interface Effect {
   id: string;

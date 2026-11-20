@@ -639,6 +639,63 @@ class Tremolo extends Fx {
   }
 }
 
+/**
+ * Capotraste / oitavador: muda o tom por janelas sobrepostas lendo uma linha de atraso que
+ * anda mais rápido ou mais devagar que a escrita (dois cabeçotes defasados em meia janela,
+ * com envelope de Hann, somam ganho constante). Latência média de meia janela; janelas
+ * maiores soam melhor em notas graves (baixo), menores reagem mais rápido.
+ */
+class Capo extends Fx {
+  private size = 1 << 15;
+  private bl = new Float32Array(this.size);
+  private br = new Float32Array(this.size);
+  private w = 0;
+  private phase = 0;
+  private ratio = 1;
+  private win = 1;
+  protected update() {
+    const st = num(this.p, 'semis') + 12 * num(this.p, 'octave') + num(this.p, 'cents') / 100;
+    this.ratio = Math.pow(2, st / 12);
+    this.win = Math.min(this.size - 4, Math.max(64, (num(this.p, 'grain', 45) / 1000) * this.sr));
+  }
+  private read(b: Float32Array, d: number) {
+    const pos = this.w - 1 - d;
+    const i = Math.floor(pos);
+    const f = pos - i;
+    const m = this.size - 1;
+    return b[i & m] * (1 - f) + b[(i + 1) & m] * f;
+  }
+  process(L: Float32Array, R: Float32Array, n: number) {
+    const m = this.size - 1;
+    if (Math.abs(this.ratio - 1) < 1e-6) {
+      // sem mudança de tom: passa direto (e continua enchendo a linha para trocar sem estalo)
+      for (let i = 0; i < n; i++) {
+        this.bl[this.w & m] = L[i];
+        this.br[this.w & m] = R[i];
+        this.w++;
+      }
+      return;
+    }
+    const W = this.win;
+    const step = (1 - this.ratio) / W;
+    for (let i = 0; i < n; i++) {
+      this.bl[this.w & m] = L[i];
+      this.br[this.w & m] = R[i];
+      this.w++;
+      let p = this.phase + step;
+      p -= Math.floor(p);
+      this.phase = p;
+      const q = p + 0.5 - Math.floor(p + 0.5);
+      const g1 = 0.5 - 0.5 * Math.cos(TAU * p);
+      const g2 = 1 - g1;
+      const d1 = p * W, d2 = q * W;
+      L[i] = this.read(this.bl, d1) * g1 + this.read(this.bl, d2) * g2;
+      R[i] = this.read(this.br, d1) * g1 + this.read(this.br, d2) * g2;
+    }
+    if (this.w > 1 << 30) this.w &= m; // evita perder precisão com o tempo
+  }
+}
+
 export function createEffect(sr: number, type: EffectType, params: Params): Fx {
   const fx = makeEffect(sr, type, params);
   fx.setParams(params); // update() só depois que os campos da subclasse existem
@@ -665,6 +722,7 @@ function makeEffect(sr: number, type: EffectType, params: Params): Fx {
     case 'cab': return new Cab(sr, type, params);
     case 'wah': return new Wah(sr, type, params);
     case 'tremolo': return new Tremolo(sr, type, params);
+    case 'capo': return new Capo(sr, type, params);
   }
 }
 

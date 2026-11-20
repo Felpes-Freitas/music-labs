@@ -631,7 +631,7 @@ tool('remove_effect', 'Remove um efeito de um insert ou de um canal.', { ...targ
 
 tool(
   'batch',
-  'Executa várias ações de uma vez, atomicamente (um passo de undo). Nomes: addChannel, updateChannel, removeChannel, duplicateChannel, replaceInstrument, setPad, addPattern, updatePattern, removePattern, duplicatePattern, addNotes, setSteps, fillSteps, addChords, clearNotes, transformNotes, copyNotes, placePattern, removeClips, editClips, copySection, insertBars, deleteBars, updateTrack, updateInsert, resetInsert, addEffect, updateEffect, removeEffect, addChannelEffect, updateChannelEffect, removeChannelEffect, copyEffects, addAudioClip, automate (= add_automation), editAutomation, addAudio, renameAudio, removeAudio, toggleAudioEdits, setProjectProps. Os args são iguais aos das ferramentas correspondentes (addNotes usa {pattern, channel, notes:[{note,start,length,velocity}]}). Canais/patterns criados no mesmo lote podem ser referenciados pelo nome.',
+  'Executa várias ações de uma vez, atomicamente (um passo de undo). Nomes: addChannel, updateChannel, removeChannel, duplicateChannel, replaceInstrument, setPad, addPattern, updatePattern, removePattern, duplicatePattern, addNotes, setSteps, fillSteps, addChords, clearNotes, transformNotes, copyNotes, placePattern, removeClips, editClips, copySection, insertBars, deleteBars, updateTrack, updateInsert, resetInsert, addEffect, updateEffect, removeEffect, addChannelEffect, updateChannelEffect, removeChannelEffect, copyEffects, addAudioClip, automate (= add_automation), editAutomation, addAudio, renameAudio, removeAudio, toggleAudioEdits, setProjectProps, applyTempo (= set_tempo). Os args são iguais aos das ferramentas correspondentes (addNotes usa {pattern, channel, notes:[{note,start,length,velocity}]}). Canais/patterns criados no mesmo lote podem ser referenciados pelo nome.',
   { actions: z.array(z.object({ name: z.string(), args: z.record(z.string(), z.any()) })), label: z.string().optional() },
   async ({ actions, label }) => (await api('POST', '/api/actions', { actions, origin: 'mcp', label: label ?? `${actions.length} edições` })).results,
 );
@@ -712,6 +712,28 @@ tool(
   'Renderiza sem salvar e devolve diagnóstico de mix: LUFS integrado, pico, crest factor, correlação estéreo, balanço por bandas e pico/RMS por insert, com observações.',
   { mode: z.enum(['song', 'pattern']).optional(), pattern: ref.optional(), fromBar: z.number().optional(), toBar: z.number().optional() },
   (a) => api('POST', '/api/render', { ...a, save: false }),
+);
+
+tool(
+  'detect_bpm',
+  'Detecta o BPM de um áudio: um clipe da playlist (clip = id do get_clips; analisa só o trecho que o clipe toca), um item da lista de áudios (audio = id ou nome) ou um arquivo (path). Devolve bpm, confiança (0..1), firstBeat (s no arquivo) e alternativas (metade/dobro). apply: true muda o BPM do projeto para o detectado, mantendo a duração dos clipes de áudio; com clip, ainda move esse clipe para o primeiro tempo cair num começo de compasso (align: false não move).',
+  {
+    clip: z.string().optional(),
+    audio: z.string().optional(),
+    path: z.string().optional(),
+    apply: z.boolean().optional(),
+    align: z.boolean().optional(),
+    min: z.number().optional().describe('BPM mínimo procurado (padrão 60)'),
+    max: z.number().optional().describe('BPM máximo procurado (padrão 200)'),
+  },
+  (a) => api('POST', '/api/tempo', a),
+);
+
+tool(
+  'set_tempo',
+  'Muda o BPM do projeto mantendo a duração em segundos dos clipes de áudio (eles não ficam cortados nem com sobra). Com clip + firstBeat (de detect_bpm), alinha esse clipe à grade. Para só trocar o número sem mexer nos áudios, use set_project.',
+  { bpm: z.number(), clip: z.string().optional(), firstBeat: z.number().optional(), align: z.boolean().optional() },
+  (a) => api('POST', '/api/actions', { actions: [{ name: 'applyTempo', args: a }], label: `BPM: ${a.bpm}` }),
 );
 
 await server.connect(new StdioServerTransport());

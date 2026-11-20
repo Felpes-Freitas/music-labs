@@ -28,10 +28,11 @@ const MAIN: Record<EffectType, string[]> = {
   cab: ['mic'],
   wah: ['sens'],
   tremolo: ['rate', 'depth'],
+  capo: ['semis', 'octave'],
 };
 
 /** Ordem do seletor: os básicos primeiro. */
-const ORDER: EffectType[] = ['reverb', 'delay', 'phaser', 'chorus', 'distortion', 'filter', 'eq', 'compressor', 'bitcrusher', 'stereo', 'limiter', 'overdrive', 'fuzz', 'amp', 'cab', 'wah', 'tremolo', 'gate'];
+const ORDER: EffectType[] = ['reverb', 'delay', 'phaser', 'chorus', 'distortion', 'filter', 'eq', 'compressor', 'bitcrusher', 'stereo', 'limiter', 'overdrive', 'fuzz', 'amp', 'cab', 'wah', 'tremolo', 'gate', 'capo'];
 
 const fmtFor = (d: ParamDef) => (x: number) => {
   if (d.unit === 'Hz') return x >= 1000 ? `${(x / 1000).toFixed(2)} kHz` : `${Math.round(x)} Hz`;

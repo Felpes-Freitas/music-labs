@@ -362,10 +362,20 @@ export const EFFECTS: Record<EffectType, { label: string; description: string; p
     description: 'Tremolo de amp: o volume pulsa num ritmo.',
     params: [num('rate', 'Velocidade', 0.5, 15, 5, 'Hz', 'log'), num('depth', 'Profund.', 0, 1, 0.6), en('wave', 'Onda', ['sine', 'square', 'triangle'], 'sine')],
   },
+  capo: {
+    label: 'Capotraste',
+    description: 'Muda o tom da entrada em tempo real: semitons (como um capotraste), oitavas (guitarra vira baixo com −1) e ajuste fino. Com Mix abaixo de 100%, soma o som original (oitavador).',
+    params: [
+      num('semis', 'Tom', -12, 12, 0, 'st', 'lin', 1),
+      num('octave', 'Oitava', -2, 2, 0, '', 'lin', 1),
+      num('cents', 'Fino', -50, 50, 0, 'cents', 'lin', 1),
+      num('grain', 'Janela', 20, 100, 45, 'ms'),
+    ],
+  },
 };
 
 /** Efeitos pensados para guitarra (aparecem primeiro no amp). */
-export const GUITAR_FX: EffectType[] = ['gate', 'wah', 'compressor', 'overdrive', 'fuzz', 'amp', 'cab', 'eq', 'tremolo', 'chorus', 'phaser', 'delay', 'reverb'];
+export const GUITAR_FX: EffectType[] = ['capo', 'gate', 'wah', 'compressor', 'overdrive', 'fuzz', 'amp', 'cab', 'eq', 'tremolo', 'chorus', 'phaser', 'delay', 'reverb'];
 
 export function defaults(defs: ParamDef[]): Params {
   const o: Params = {};

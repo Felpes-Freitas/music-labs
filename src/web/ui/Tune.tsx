@@ -4,13 +4,15 @@
 // variante na lista ou alterando o próprio áudio (o original fica guardado).
 // "Enviar para a playlist" coloca o áudio na música.
 
-import { useEffect, useReducer, useRef } from 'preact/hooks';
-import { useApp, state, toast, openWindow, setHint } from '../state';
+import { useEffect, useReducer, useRef, useState } from 'preact/hooks';
+import { useApp, state, toast, openWindow, setHint, act } from '../state';
 import { audio } from '../audio';
-import { noteName } from '../../core/model';
+import { noteName, PPQ } from '../../core/model';
+import { detectBpm, mono as monoOf } from '../../core/tempo';
+import { applyTempo } from '../../core/studio';
 import { trackPitch, segmentNotes, type PitchTrack, type Note } from '../../core/pitchtrack';
 import { shiftPitch } from '../../core/psola';
-import { Win, Knob, useCanvas } from './widgets';
+import { Win, Knob, useCanvas, MenuTree, type MenuItem } from './widgets';
 import { Icon } from './icons';
 import { accent, ui } from '../theme';
 import { loadAudio, pickAudioFiles, droppedAudio, acceptsAudio } from '../clipaudio';
@@ -50,8 +52,9 @@ const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((l) => l());
 
 /** Abre um áudio da lista no Afinador. */
-export async function openTuneAudio(id: string, opts: { inPlace?: boolean } = {}) {
+export async function openTuneAudio(id: string, opts: { inPlace?: boolean; clip?: string } = {}) {
   openWindow('tune');
+  tuneClip = opts.clip ?? null;
   const it = poolItem(id);
   if (!it) return;
   // reabrir o mesmo áudio (ex.: depois de aplicar) mantém o modo; outro áudio usa o pedido
@@ -86,7 +89,45 @@ export async function openTuneAudio(id: string, opts: { inPlace?: boolean } = {}
 /** Abre no Afinador o arquivo de um clipe da playlist (entra na lista de áudios). */
 export function openTune(clipId: string) {
   const c = state.project.clips.find((x) => x.id === clipId);
-  if (c?.sample) openTuneAudio(addToPool(c.sample));
+  if (c?.sample) openTuneAudio(addToPool(c.sample), { clip: clipId });
+}
+
+/** Clipe da playlist que abriu o áudio (duplo clique): é ele que o "BPM" alinha à grade. */
+let tuneClip: string | null = null;
+
+/** Detecta o BPM do áudio aberto e oferece usar no projeto. */
+function tempoMenu(d: Doc, x: number, y: number, show: (m: { x: number; y: number; items: MenuItem[] }) => void) {
+  const p = state.project;
+  // o clipe que abriu o áudio; senão, o único clipe da playlist com este arquivo
+  const mine = p.clips.filter((c) => c.kind === 'audio' && c.sample === d.path);
+  const clip = mine.find((c) => c.id === tuneClip) ?? (mine.length === 1 ? mine[0] : undefined);
+  let a = 0, z = d.ch[0].length;
+  if (clip) {
+    a = Math.min(z, Math.round((clip.startSec ?? 0) * d.sr));
+    z = Math.min(z, a + Math.round(((clip.len * 60) / (p.bpm * PPQ)) * d.sr));
+  }
+  const g = detectBpm(monoOf(d.ch.map((c) => c.subarray(a, z))), d.sr);
+  if (!g) return toast('Não achei um pulso nesse áudio: ele é curto (menos de 3 s) ou não tem ataques claros');
+  const first = g.firstBeat + a / d.sr;
+  const use = (bpm: number) =>
+    act(applyTempo, { bpm, clip: clip?.id, firstBeat: clip ? first : undefined }) &&
+    toast(`Projeto em ${bpm} BPM${clip ? ' · áudio alinhado ao compasso' : ''}`);
+  const conf = g.confidence > 0.6 ? 'alta' : g.confidence > 0.3 ? 'média' : 'baixa';
+  const fmt = (b: number) => String(+b.toFixed(2)).replace('.', ',');
+  show({
+    x,
+    y,
+    items: [
+      { label: `Detectado: ${fmt(g.bpm)} BPM · confiança ${conf}`, hint: `O projeto está em ${fmt(p.bpm)} BPM` },
+      { sep: true, label: '' },
+      {
+        label: `Usar ${fmt(g.bpm)} BPM no projeto`,
+        hint: clip ? 'Os áudios mantêm a duração e este clipe vai para a grade (primeiro tempo no começo do compasso)' : 'Os áudios mantêm a duração',
+        run: () => use(g.bpm),
+      },
+      ...g.alternatives.map((b) => ({ label: `Usar ${fmt(b)} BPM`, hint: Math.abs(b - g.bpm * 2) < 1 ? 'o dobro' : Math.abs(b - g.bpm / 2) < 1 ? 'a metade' : 'outra leitura possível', run: () => use(b) })),
+    ],
+  });
 }
 
 let fitNext = false;
@@ -168,6 +209,7 @@ async function toggleRec() {
 export function TuneWindow() {
   const s = useApp();
   const [, force] = useReducer((x: number) => x + 1, 0);
+  const [tempo, setTempo] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   useEffect(() => {
     listeners.add(force as () => void);
     return () => void listeners.delete(force as () => void);
@@ -318,6 +360,16 @@ export function TuneWindow() {
               {editsOn(cur.id) ? 'Desativar edições' : 'Edições desativadas · reativar'}
             </button>
           )}
+          <button
+            disabled={!doc || recording}
+            onClick={(e) => {
+              const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              if (doc) tempoMenu(doc, r.left, r.bottom + 2, setTempo);
+            }}
+            data-hint="Detecta o BPM deste áudio e oferece usar no projeto (a música fica no tempo do que você tocou)"
+          >
+            BPM
+          </button>
           <button disabled={!cur || recording} onClick={() => cur && sendToPlaylist(cur.id)} data-hint="Coloca este áudio na playlist (variantes vão logo abaixo do original, se ele estiver lá)">
             <Icon name="playlist" size={13} /> Enviar para a playlist
           </button>
@@ -333,6 +385,7 @@ export function TuneWindow() {
           <NotesCanvas />
         )}
       </div>
+      {tempo && <MenuTree x={tempo.x} y={tempo.y} items={tempo.items} onClose={() => setTempo(null)} />}
     </Win>
   );
 }

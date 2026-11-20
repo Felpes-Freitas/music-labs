@@ -17,7 +17,8 @@ import { SCALES } from '../core/theory.js';
 import { importFlp } from '../core/flp.js';
 import { encodeWav } from '../core/wav.js';
 import { analyzeMix } from '../core/analysis.js';
-import { emptyProject, PROJECT_EXT } from '../core/model.js';
+import { detectBpm, mono } from '../core/tempo.js';
+import { emptyProject, PPQ, PROJECT_EXT } from '../core/model.js';
 import { Store, listProjects, RENDERS_DIR, SAMPLES_DIR, PROJECTS_DIR, RECORDINGS_DIR, IMPORTS_DIR, STATE_DIR, safeName } from './store.js';
 import { startMonitor, stopMonitor, monitorStatus, monitorSources } from './monitor.js';
 import { loadSample } from './samples.js';
@@ -104,6 +105,7 @@ export const ACTIONS: Record<string, ActionFn> = {
   fillSteps: S.fillSteps,
   replaceInstrument: S.replaceInstrument,
   setPad: S.setPad,
+  applyTempo: S.applyTempo,
 };
 
 /** "localSample": nome de um som do kit local (ex. "Kick") vira um sampler com o caminho. */
@@ -277,6 +279,35 @@ function importFlpFile(path: string) {
   return report;
 }
 
+/**
+ * BPM de um áudio (clipe da playlist, item da lista de áudios ou arquivo). Com apply, muda o
+ * BPM do projeto (applyTempo); com um clipe, ainda o alinha à grade (align: false desliga).
+ */
+async function tempoOf(b: { clip?: string; audio?: string; path?: string; apply?: boolean; align?: boolean; min?: number; max?: number }) {
+  const p = store.project;
+  let path = b.path, from = 0, dur = Infinity, clipId: string | undefined;
+  if (b.clip) {
+    const c = p.clips.find((x) => x.id === b.clip && x.kind === 'audio');
+    if (!c?.sample) throw new Error(`Clipe de áudio "${b.clip}" não encontrado (veja get_clips)`);
+    path = c.sample;
+    from = c.startSec ?? 0;
+    dur = (c.len * 60) / (p.bpm * PPQ);
+    clipId = c.id;
+  } else if (b.audio) path = S.audioRef(p, b.audio).path;
+  if (!path) throw new Error('Diga qual áudio: clip, audio ou path');
+  const d = await loadSample(resolveFlPath(path));
+  const a = Math.min(d.ch[0].length, Math.round(from * d.sr));
+  const z = Math.min(d.ch[0].length, dur === Infinity ? d.ch[0].length : a + Math.round(dur * d.sr));
+  const guess = detectBpm(mono(d.ch.map((c) => c.subarray(a, z))), d.sr, { min: b.min, max: b.max });
+  if (!guess) return { found: false, message: 'Não deu para achar um pulso: o áudio é curto (menos de 3 s) ou não tem ataques claros.' };
+  const out: Record<string, unknown> = { found: true, ...guess, firstBeat: guess.firstBeat + from, projectBpm: p.bpm };
+  if (b.apply) {
+    const [r] = runActions([{ name: 'applyTempo', args: { bpm: guess.bpm, clip: clipId, firstBeat: guess.firstBeat + from, align: b.align } }], 'mcp', `BPM do áudio: ${guess.bpm}`);
+    out.applied = r;
+  }
+  return out;
+}
+
 async function doRender(args: any) {
   const r = await renderProject(store.project, args);
   const analysis = analyzeMix(r.L, r.R, r.sr);
@@ -395,6 +426,8 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         const results = runActions(b.actions, b.origin ?? 'mcp', b.label);
         return json(res, 200, { results, rev: store.rev });
       }
+      case 'POST /api/tempo':
+        return json(res, 200, await tempoOf(await body(req)));
       case 'POST /api/undo':
         return json(res, 200, { ok: store.undo() });
       case 'POST /api/redo':
