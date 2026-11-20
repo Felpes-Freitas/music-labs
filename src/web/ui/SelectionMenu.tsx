@@ -9,9 +9,9 @@ import { INSTRUMENTS, PRESETS } from '../../core/registry';
 import { patternLength, uid, color, STEP, type Clip, type InstrumentType, type Pattern } from '../../core/model';
 import { ins, rem, type Op } from '../../core/ops';
 import { MenuTree, type MenuItem } from './widgets';
+import { instrumentMenu, loadLib, libNow, type Lib } from '../addmenu';
 import { addSampleChannel } from './Browser';
 
-let libCache: { name: string; category: string; path: string }[] | null = null;
 
 /** Clipes do pattern repetido para encher [start, end) na track (o último é cortado). */
 export function fillOps(patId: string, track: number, start: number, end: number): Op[] {
@@ -25,13 +25,9 @@ export function fillOps(patId: string, track: number, start: number, end: number
 }
 
 export function SelectionMenu(p: { x: number; y: number; track: number; sel: { start: number; end: number }; onClose: () => void }) {
-  const [lib, setLib] = useState(libCache);
+  const [lib, setLib] = useState<Lib | null>(libNow());
   useEffect(() => {
-    if (!libCache)
-      api('GET', '/api/registry').then((r) => {
-        libCache = r.localInstruments ?? [];
-        setLib(libCache);
-      });
+    if (!lib) loadLib().then(setLib);
   }, []);
   const proj = state.project;
   const { start, end } = p.sel;
@@ -62,12 +58,6 @@ export function SelectionMenu(p: { x: number; y: number; track: number; sel: { s
     if (state.channelId && state.channelId !== before) placeNew(state.channelId, name);
   };
 
-  const byCat = new Map<string, { name: string; path: string }[]>();
-  for (const i of lib ?? []) {
-    const c = i.category || 'Biblioteca';
-    if (!byCat.has(c)) byCat.set(c, []);
-    byCat.get(c)!.push(i);
-  }
   const items: MenuItem[] = [
     {
       label: 'Preencher com',
@@ -87,11 +77,11 @@ export function SelectionMenu(p: { x: number; y: number; track: number; sel: { s
       label: 'Inserir instrumento',
       hint: 'Cria um instrumento e um pattern novo só com ele, ocupando a área',
       sub: [
-        { label: 'Instrumentos do Music Labs', sub: (Object.keys(INSTRUMENTS) as InstrumentType[]).map((t) => ({ label: INSTRUMENTS[t].label, hint: INSTRUMENTS[t].description, run: () => newChannel({ type: t }, INSTRUMENTS[t].label) })) },
-        { label: 'Presets', sub: Object.keys(PRESETS).map((k) => ({ label: k, run: () => newChannel({ preset: k }, k) })) },
-        ...(lib === null
-          ? [{ label: 'Carregando a biblioteca…' }]
-          : [...byCat.entries()].map(([cat, list]) => ({ label: cat, sub: list.slice(0, 400).map((i) => ({ label: i.name, run: () => newSample(i.path, i.name) })) }))),
+        ...instrumentMenu(lib, {
+          native: (t) => newChannel({ type: t }, INSTRUMENTS[t].label),
+          preset: (k) => newChannel({ preset: k }, k),
+          sample: (path, name) => void newSample(path, name),
+        }),
         { sep: true, label: '' },
         { label: 'Amp de guitarra', hint: 'O áudio vai para esta track, no começo da área', run: () => openTool('amp', 'Amp de guitarra') },
         { label: 'Afinador', hint: 'O áudio vai para esta track, no começo da área', run: () => openTool('tune', 'Afinador') },

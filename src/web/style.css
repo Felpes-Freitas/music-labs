@@ -701,7 +701,7 @@ body.alt-drag .win, body.alt-drag .win * { cursor: move !important; }
 .menutree { max-height: 80vh; overflow-y: auto; min-width: 200px; }
 .menutree button { display: flex; align-items: center; gap: 6px; height: 26px; }
 .menutree button .mt-label { flex: 1; text-align: left; white-space: nowrap; }
-.menutree button.open { background: var(--hover) !important; }
+.menutree button.open { background: var(--acc) !important; color: var(--acc-ink); }
 .menutree .menu-sep { margin: 3px 8px; }
 /* knob gravando automação: vermelho pulsando; knob com automação na música: ponto */
 .knob.auto-rec .knob-val { stroke: #ff5d5d !important; filter: drop-shadow(0 0 4px rgba(255, 80, 80, 0.8)); }
