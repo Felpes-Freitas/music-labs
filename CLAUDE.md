@@ -348,6 +348,15 @@ Z…M/Q…P teclado musical, -/= oitava.
 - **Knobs** (`Knob` em `widgets.tsx`): `auto={{path,label}}` habilita "Criar automação…"
   (botão direito, abre a Central) e a gravação de automação; durante o REC o knob mexido fica
   vermelho com "● AUTO"; knob com automação na música ganha um ponto.
+- **Botão direito num canal do rack** (`channelMenu` em ChannelRack.tsx, `MenuTree`):
+  **Preencher** ▸ cada 1/2/3/4/8/16 steps, contratempo, tempos 2 e 4, limpar (`fillSteps`,
+  usa a nota que o canal já toca); **Substituir instrumento** ▸ mesmo menu do "+ Canal"
+  (`replaceInstrument`: troca tipo/preset/params mantendo id, notas, efeitos, insert,
+  volume, pan e automações; sample de um tiro → raiz = nota mais tocada do canal);
+  **Clonar** = `duplicateChannel` com efeitos e notas. MCP: replace_instrument, fill_steps.
+- **Janelas** (`Win`): redimensionam pelas 4 bordas e 4 cantos (`.win-edge`, dir n/s/e/w…);
+  borda esquerda/de cima não passam da área de trabalho; a playlist continua no fundo
+  depois de redimensionada.
 - **Adicionar instrumento** (`web/addmenu.ts`, `instrumentMenu`): menu encadeado (`MenuTree`)
   usado no "+ Canal" do rack e no "Inserir instrumento" da área da playlist — Music Labs
   (nativos), Presets (por instrumento de base) e um item por programa da biblioteca (FL

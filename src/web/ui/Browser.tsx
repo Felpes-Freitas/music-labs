@@ -24,7 +24,7 @@ interface Source {
 }
 
 /** Parâmetros do sampler sugeridos pelo servidor para o arquivo/instrumento. */
-async function samplerParams(path: string) {
+export async function samplerParams(path: string) {
   const info: Source = await api('GET', `/api/source?path=${encodeURIComponent(path)}`);
   const sg = info.suggest;
   const params: Record<string, unknown> = { sample: info.kind === 'set' ? info.path : path, oneshot: sg.oneshot, loop: sg.loop, keytrack: sg.keytrack, root: sg.root ?? 60 };
@@ -34,7 +34,7 @@ async function samplerParams(path: string) {
   return { info, params };
 }
 
-function modeLabel(info: Source) {
+export function modeLabel(info: Source) {
   if (info.kind === 'set') return `instrumento com ${info.zones?.length ?? 0} samples · segura enquanto a tecla estiver pressionada${info.suggest.loop ? ' (com loop)' : ''}`;
   return info.suggest.oneshot ? 'one-shot (toca o arquivo inteiro)' : `segura enquanto a tecla estiver pressionada${info.suggest.loop ? ' (com loop)' : ''}`;
 }

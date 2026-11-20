@@ -162,7 +162,8 @@ export function Win(p: { id: WindowId; title: ComponentChildren; icon?: string; 
     }
     emit();
   };
-  const startDrag = (e: PointerEvent, kind: 'move' | 'size', anywhere = false) => {
+  /** kind 'size': dir diz quais bordas andam (n/s/e/w e cantos), como no Windows. */
+  const startDrag = (e: PointerEvent, kind: 'move' | 'size', anywhere = false, dir = 'se') => {
     if (!anywhere && (e.target as Element).closest('button, input, select, .knob, .nodrag')) return;
     e.preventDefault();
     focusWindow(p.id);
@@ -173,8 +174,30 @@ export function Win(p: { id: WindowId; title: ComponentChildren; icon?: string; 
         w.x = Math.max(-s.w + 80, s.x + ev.clientX - x0);
         w.y = Math.max(0, s.y + ev.clientY - y0);
       } else {
-        w.w = Math.max(p.minW ?? 260, s.w + ev.clientX - x0);
-        w.h = Math.max(p.minH ?? 140, s.h + ev.clientY - y0);
+        const dx = ev.clientX - x0, dy = ev.clientY - y0;
+        const minW = p.minW ?? 260, minH = p.minH ?? 140;
+        if (dir.includes('e')) w.w = Math.max(minW, s.w + dx);
+        if (dir.includes('s')) w.h = Math.max(minH, s.h + dy);
+        if (dir.includes('w')) {
+          // a borda esquerda anda; a direita fica parada
+          // (sem passar da beirada da área de trabalho, onde ficaria escondida atrás da lateral)
+          let nw = Math.max(minW, s.w - dx);
+          if (s.x >= 0 && s.x + s.w - nw < 0) nw = s.x + s.w;
+          w.x = s.x + s.w - nw;
+          w.w = nw;
+        }
+        if (dir.includes('n')) {
+          let nh = Math.max(minH, s.h - dy);
+          let ny = s.y + s.h - nh;
+          if (ny < 0) {
+            nh += ny;
+            ny = 0;
+          }
+          w.y = ny;
+          w.h = nh;
+        }
+        // redimensionou: não está mais maximizada (a playlist continua no fundo)
+        if (p.id !== 'playlist') delete (w as any).max;
       }
       emit();
     };
@@ -215,7 +238,11 @@ export function Win(p: { id: WindowId; title: ComponentChildren; icon?: string; 
       </div>
       {p.bar && <div class="win-bar nodrag">{p.bar}</div>}
       <div class="win-body">{p.children}</div>
-      <div class="win-resize" onPointerDown={(e) => startDrag(e as any, 'size')} />
+      {/* alças de redimensionar: 4 bordas e 4 cantos (a do canto inferior direito tem a marquinha) */}
+      {['n', 's', 'e', 'w', 'ne', 'nw', 'sw'].map((d) => (
+        <div class={`win-edge e-${d}`} onPointerDown={(e) => (e.stopPropagation(), startDrag(e as any, 'size', true, d))} />
+      ))}
+      <div class="win-resize" onPointerDown={(e) => (e.stopPropagation(), startDrag(e as any, 'size', true, 'se'))} />
     </div>
   );
 }

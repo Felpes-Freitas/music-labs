@@ -5,9 +5,10 @@ import * as A from '../../core/actions';
 import { PRESETS, INSTRUMENTS } from '../../core/registry';
 import { STEP, patternLength, uid, type Channel, type Note, type InstrumentType } from '../../core/model';
 import { set } from '../../core/ops';
-import { Knob, Win, dbFmt, panFmt, ContextMenu, MenuTree } from './widgets';
+import { Knob, Win, dbFmt, panFmt, MenuTree, type MenuItem } from './widgets';
+import * as S from '../../core/studio';
 import { instrumentMenu, loadLib, libNow, type Lib } from '../addmenu';
-import { addSampleChannel } from './Browser';
+import { addSampleChannel, samplerParams } from './Browser';
 import { Icon } from './icons';
 import { askConfirm, askText } from './Dialog';
 
@@ -29,8 +30,8 @@ export function ChannelRack() {
   const [adding, setAdding] = useState<HTMLElement | null>(null);
   const [lib, setLib] = useState<Lib | null>(libNow());
   useEffect(() => {
-    if (adding && !lib) loadLib().then(setLib);
-  }, [adding]);
+    if ((adding || menu) && !lib) loadLib().then(setLib);
+  }, [adding, menu]);
   const lastStep = useRef(-1);
   const flashes = useRef(new Map<string, HTMLElement>());
 
@@ -89,6 +90,68 @@ export function ChannelRack() {
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+  };
+
+  /** Menu do botão direito num canal: preencher, substituir instrumento, clonar... */
+  const channelMenu = (c: Channel): MenuItem[] => {
+    const fill = (every: number, offset = 0) => () => s.patternId && act(S.fillSteps, { pattern: s.patternId, channel: c.id, every, offset });
+    const replace = (args: { type?: InstrumentType; preset?: string; params?: Record<string, unknown>; name: string }) => {
+      const r = act(S.replaceInstrument, { channel: c.id, ...args });
+      if (r) toast(`${c.name} → ${args.name}: as notas continuam${r.root ? ` (raiz ${r.root})` : ''}`);
+    };
+    return [
+      { label: 'Piano roll', run: () => openWindow('piano') },
+      { label: 'Configurações', run: () => openWindow('channel') },
+      {
+        label: 'Renomear',
+        run: async () => {
+          const n = await askText({ title: 'Renomear canal', label: 'Nome', value: c.name, ok: 'Renomear' });
+          if (n) edit([set(['channels', c.id, 'name'], n)]);
+        },
+      },
+      { sep: true, label: '' },
+      {
+        label: 'Preencher',
+        hint: 'Liga os steps deste canal no pattern atual a cada intervalo (substitui o que tinha)',
+        sub: [
+          { label: 'Cada step (1/16)', run: fill(1) },
+          { label: 'A cada 2 steps (1/8)', run: fill(2) },
+          { label: 'A cada 3 steps', run: fill(3) },
+          { label: 'A cada 4 steps (1 tempo)', run: fill(4) },
+          { label: 'A cada 8 steps (2 tempos)', run: fill(8) },
+          { label: 'A cada 16 steps (1 compasso)', run: fill(16) },
+          { sep: true, label: '' },
+          { label: 'Contratempo (entre os tempos)', run: fill(4, 2) },
+          { label: 'Tempos 2 e 4', run: fill(8, 4) },
+          { sep: true, label: '' },
+          { label: 'Limpar', run: () => s.patternId && act(A.clearNotes, { pattern: s.patternId, channel: c.id }) },
+        ],
+      },
+      {
+        label: 'Substituir instrumento',
+        hint: 'Troca o som mantendo as notas, os efeitos, o insert e o volume',
+        sub: instrumentMenu(lib, {
+          native: (t) => replace({ type: t, name: INSTRUMENTS[t].label }),
+          preset: (k) => replace({ preset: k, name: k }),
+          sample: async (path, name) => {
+            try {
+              const { params } = await samplerParams(path);
+              audio.loadSample(String(params.sample));
+              replace({ type: 'sampler', params, name });
+            } catch (e) {
+              toast(`Erro: ${(e as Error).message}`);
+            }
+          },
+        }),
+      },
+      { label: 'Clonar', hint: 'Canal igual (instrumento, efeitos e notas) logo abaixo', run: () => act(S.duplicateChannel, { channel: c.id, name: `${c.name} 2`, copyNotes: true }) },
+      { sep: true, label: '' },
+      { label: 'Limpar notas neste pattern', run: () => s.patternId && act(A.clearNotes, { pattern: s.patternId, channel: c.id }) },
+      {
+        label: 'Excluir',
+        run: async () => (await askConfirm({ title: `Excluir ${c.name}?`, message: 'O canal e as notas dele em todos os patterns serão removidos.', ok: 'Excluir', danger: true })) && act(A.removeChannel, { channel: c.id }),
+      },
+    ];
   };
 
   const addChannel = (preset?: string, type?: InstrumentType) => {
@@ -218,31 +281,11 @@ export function ChannelRack() {
         </div>
       </div>
       {menu?.ch && (
-        <ContextMenu
+        <MenuTree
           x={menu.x}
           y={menu.y}
           onClose={() => setMenu(null)}
-          items={[
-            ['Piano roll', () => openWindow('piano')],
-            ['Configurações', () => openWindow('channel')],
-            [
-              'Renomear',
-              async () => {
-                const n = await askText({ title: 'Renomear canal', label: 'Nome', value: menu.ch!.name, ok: 'Renomear' });
-                if (n) edit([set(['channels', menu.ch!.id, 'name'], n)]);
-              },
-            ],
-            [
-              'Clonar',
-              () => {
-                const c = menu.ch!;
-                const r = act(A.addChannel, { name: `${c.name} 2`, type: c.type, insert: c.insert });
-                if (r) edit([set(['channels', r.id, 'params'], c.params)]);
-              },
-            ],
-            ['Limpar notas neste pattern', () => s.patternId && act(A.clearNotes, { pattern: s.patternId, channel: menu.ch!.id })],
-            ['Excluir', async () => (await askConfirm({ title: `Excluir ${menu.ch!.name}?`, message: 'O canal e as notas dele em todos os patterns serão removidos.', ok: 'Excluir', danger: true })) && act(A.removeChannel, { channel: menu.ch!.id })],
-          ]}
+          items={channelMenu(menu.ch)}
         />
       )}
     </Win>
