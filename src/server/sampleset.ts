@@ -275,14 +275,25 @@ export async function samplerParamsFor(path: string, given: Record<string, unkno
 
 export interface LocalInstrument {
   name: string;
+  /** Fonte (rótulo da biblioteca, ex. "FL Studio (Wine) · FL Studio 2025"). */
   category: string;
   path: string;
+  /** Programa de onde veio ("FL Studio", "Ableton Live"...). */
+  daw: string;
+  /** Família, pela pasta onde está (Piano, Bass, Guitar, Orchestral...). */
+  group: string;
+}
+
+/** Família do instrumento pela pasta (Keyboard, Bass...); nomes genéricos ("Instruments") usam a pasta de cima ("Legacy"). */
+function familyOf(path: string) {
+  const g = basename(dirname(path));
+  return /^(instruments?|instrumentos|samples|patches|multisamples?)$/i.test(g) ? basename(dirname(dirname(path))) : g;
 }
 
 /** Instrumentos multi-sample encontrados na biblioteca (todas as DAWs indexadas). */
 export function localInstruments(): LocalInstrument[] {
   const ix = library();
-  if (ix) return ix.instruments.map((i) => ({ name: i.name, category: ix.sources[i.s]?.label ?? '', path: i.path }));
+  if (ix) return ix.instruments.map((i) => ({ name: i.name, category: ix.sources[i.s]?.label ?? '', path: i.path, daw: ix.sources[i.s]?.daw ?? 'Outros', group: familyOf(i.path) }));
   // ainda sem índice: só os instrumentos de fábrica do FL
   const out: LocalInstrument[] = [];
   const base = join(FL_DIR, 'Data/Patches/Packs/Instruments');
@@ -292,7 +303,7 @@ export function localInstruments(): LocalInstrument[] {
       if (!statSync(cdir).isDirectory()) continue;
       for (const n of readdirSync(cdir).sort(natural)) {
         const d = join(cdir, n);
-        if (statSync(d).isDirectory() && audioFiles(d).length) out.push({ name: n, category: cat, path: d });
+        if (statSync(d).isDirectory() && audioFiles(d).length) out.push({ name: n, category: 'FL Studio', path: d, daw: 'FL Studio', group: cat });
       }
     }
   } catch {

@@ -5,7 +5,9 @@ import * as A from '../../core/actions';
 import { PRESETS, INSTRUMENTS } from '../../core/registry';
 import { STEP, patternLength, uid, type Channel, type Note, type InstrumentType } from '../../core/model';
 import { set } from '../../core/ops';
-import { Knob, Win, dbFmt, panFmt, ContextMenu, Popover } from './widgets';
+import { Knob, Win, dbFmt, panFmt, ContextMenu, MenuTree } from './widgets';
+import { instrumentMenu, loadLib, libNow, type Lib } from '../addmenu';
+import { addSampleChannel } from './Browser';
 import { Icon } from './icons';
 import { askConfirm, askText } from './Dialog';
 
@@ -25,6 +27,10 @@ export function ChannelRack() {
   const steps = pat ? Math.max(16, Math.round(patternLength(p, pat) / STEP)) : 16;
   const [menu, setMenu] = useState<{ x: number; y: number; ch?: Channel } | null>(null);
   const [adding, setAdding] = useState<HTMLElement | null>(null);
+  const [lib, setLib] = useState<Lib | null>(libNow());
+  useEffect(() => {
+    if (adding && !lib) loadLib().then(setLib);
+  }, [adding]);
   const lastStep = useRef(-1);
   const flashes = useRef(new Map<string, HTMLElement>());
 
@@ -190,30 +196,24 @@ export function ChannelRack() {
           })}
         </div>
         <div class="rack-foot">
-          <button class="ibtn" data-hint="Adicionar canal (instrumento, preset ou sample)" onClick={(e) => setAdding(adding ? null : (e.currentTarget as HTMLElement))}>
+          <button class="ibtn" data-hint="Adicionar canal: instrumentos do Music Labs, presets ou instrumentos de outros programas (FL Studio...)" onClick={(e) => setAdding(adding ? null : (e.currentTarget as HTMLElement))}>
             <Icon name="plus" size={12} /> Canal
           </button>
           <span class="hint">Arraste samples do navegador para cá · duplo clique no nome abre o canal</span>
           {adding && (
-            <Popover anchor={adding} onClose={() => setAdding(null)} class="add-menu">
-              <div class="add-col">
-                <b>Presets</b>
-                {Object.entries(PRESETS).map(([k, v]) => (
-                  <button title={v.description} onClick={() => addChannel(k)}>
-                    {k}
-                  </button>
-                ))}
-              </div>
-              <div class="add-col">
-                <b>Instrumentos</b>
-                {(Object.keys(INSTRUMENTS) as InstrumentType[]).map((t) => (
-                  <button title={INSTRUMENTS[t].description} onClick={() => addChannel(undefined, t)}>
-                    {INSTRUMENTS[t].label}
-                  </button>
-                ))}
-                <p class="hint">Samples: arraste do navegador para o rack.</p>
-              </div>
-            </Popover>
+            <MenuTree
+              x={adding.getBoundingClientRect().left}
+              y={adding.getBoundingClientRect().bottom + 2}
+              onClose={() => setAdding(null)}
+              items={instrumentMenu(lib, {
+                native: (t) => addChannel(undefined, t),
+                preset: (k) => addChannel(k),
+                sample: (path, name) => {
+                  setAdding(null);
+                  void addSampleChannel(path, name);
+                },
+              })}
+            />
           )}
         </div>
       </div>

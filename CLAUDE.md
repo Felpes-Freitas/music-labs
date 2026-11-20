@@ -348,7 +348,13 @@ Z…M/Q…P teclado musical, -/= oitava.
 - **Knobs** (`Knob` em `widgets.tsx`): `auto={{path,label}}` habilita "Criar automação…"
   (botão direito, abre a Central) e a gravação de automação; durante o REC o knob mexido fica
   vermelho com "● AUTO"; knob com automação na música ganha um ponto.
-- **Rack**: menu "+ Canal" usa `Popover` (abre em cima/embaixo do botão, rola se não couber).
+- **Adicionar instrumento** (`web/addmenu.ts`, `instrumentMenu`): menu encadeado (`MenuTree`)
+  usado no "+ Canal" do rack e no "Inserir instrumento" da área da playlist — Music Labs
+  (nativos), Presets (por instrumento de base) e um item por programa da biblioteca (FL
+  Studio, Ableton...) com famílias (pasta do instrumento: Keyboard, Bass...; nomes genéricos
+  como "Instruments" usam a pasta de cima, `familyOf` em sampleset.ts) e Bateria (kit local).
+  `/api/registry` → `localInstruments` traz `daw` e `group`. O item aberto do menu fica na
+  cor de destaque.
 - **Amp** (`Amp.tsx`): entrada e canal no título, visualizador (dB, linha do limiar),
   pedais reordenáveis (gate, wah, compressor, overdrive, fuzz, amp clean/crunch/lead,
   gabinete, EQ, tremolo, chorus, phaser, delay, reverb), presets, gravação inteligente

@@ -206,7 +206,7 @@ tool(
       if (!v) throw new Error(`Nada chamado ${name}`);
       return v;
     }
-    if (kind === 'samples') return { bateria: r.localSamples.map((x: any) => x.name), instrumentos: r.localInstruments.map((x: any) => `${x.name} (${x.category})`) };
+    if (kind === 'samples') return { bateria: r.localSamples.map((x: any) => x.name), instrumentos: r.localInstruments.map((x: any) => `${x.name} (${x.daw ?? x.category} · ${x.group ?? ''})`) };
     if (kind === 'presets') return Object.fromEntries(Object.entries(r.presets).map(([k, v]: any) => [k, `${v.type}: ${v.description}`]));
     if (kind === 'instruments') return summarize(r.instruments);
     if (kind === 'effects') return summarize(r.effects);
