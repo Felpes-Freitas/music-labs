@@ -326,6 +326,20 @@ tool(
   (a) => act('duplicateChannel', a, `Canal ${a.channel} duplicado`),
 );
 
+tool(
+  'replace_instrument',
+  'Troca o instrumento de um canal mantendo as notas (em todos os patterns), efeitos, insert, volume, pan e automações — ex.: trocar o Clap nativo pelo clap do FL. Use preset, type (+ params), ou localSample (som da instalação local, ex. "Clap", "Grand"). Sample de bateria: a nota raiz é ajustada para a nota que o canal toca.',
+  { channel: ref, preset: z.string().optional(), type: instrumentType.optional(), params: z.record(z.string(), z.any()).optional(), localSample: z.string().optional(), name: z.string().optional() },
+  (a) => act('replaceInstrument', a, `Instrumento de ${a.channel} trocado`),
+);
+
+tool(
+  'fill_steps',
+  'Preenche os steps de um canal num pattern a cada N steps (1 = semicolcheias, 2 = colcheias, 4 = cada tempo, 8 = a cada 2 tempos, 16 = cada compasso), começando em offset (ex.: every 4 offset 2 = contratempo). Usa a nota que o canal já toca. Substitui as notas do canal nesse pattern.',
+  { pattern: ref, channel: ref, every: z.number().min(1), offset: z.number().optional(), note: z.union([z.string(), z.number()]).optional(), velocity: z.number().min(0).max(1).optional() },
+  (a) => act('fillSteps', a, `Steps preenchidos em ${a.channel}`),
+);
+
 tool('remove_channel', 'Remove um canal e suas notas.', { channel: ref }, (a) => act('removeChannel', a, `Canal ${a.channel} removido`));
 
 // ------------------------------------------------------------ patterns e notas
@@ -597,7 +611,7 @@ tool('remove_effect', 'Remove um efeito de um insert ou de um canal.', { ...targ
 
 tool(
   'batch',
-  'Executa várias ações de uma vez, atomicamente (um passo de undo). Nomes: addChannel, updateChannel, removeChannel, duplicateChannel, addPattern, updatePattern, removePattern, duplicatePattern, addNotes, setSteps, addChords, clearNotes, transformNotes, copyNotes, placePattern, removeClips, editClips, copySection, insertBars, deleteBars, updateTrack, updateInsert, resetInsert, addEffect, updateEffect, removeEffect, addChannelEffect, updateChannelEffect, removeChannelEffect, copyEffects, addAudioClip, automate (= add_automation), editAutomation, addAudio, renameAudio, removeAudio, toggleAudioEdits, setProjectProps. Os args são iguais aos das ferramentas correspondentes (addNotes usa {pattern, channel, notes:[{note,start,length,velocity}]}). Canais/patterns criados no mesmo lote podem ser referenciados pelo nome.',
+  'Executa várias ações de uma vez, atomicamente (um passo de undo). Nomes: addChannel, updateChannel, removeChannel, duplicateChannel, replaceInstrument, addPattern, updatePattern, removePattern, duplicatePattern, addNotes, setSteps, fillSteps, addChords, clearNotes, transformNotes, copyNotes, placePattern, removeClips, editClips, copySection, insertBars, deleteBars, updateTrack, updateInsert, resetInsert, addEffect, updateEffect, removeEffect, addChannelEffect, updateChannelEffect, removeChannelEffect, copyEffects, addAudioClip, automate (= add_automation), editAutomation, addAudio, renameAudio, removeAudio, toggleAudioEdits, setProjectProps. Os args são iguais aos das ferramentas correspondentes (addNotes usa {pattern, channel, notes:[{note,start,length,velocity}]}). Canais/patterns criados no mesmo lote podem ser referenciados pelo nome.',
   { actions: z.array(z.object({ name: z.string(), args: z.record(z.string(), z.any()) })), label: z.string().optional() },
   async ({ actions, label }) => (await api('POST', '/api/actions', { actions, origin: 'mcp', label: label ?? `${actions.length} edições` })).results,
 );

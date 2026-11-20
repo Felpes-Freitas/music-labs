@@ -188,7 +188,15 @@ input[type='checkbox'] { height: auto; accent-color: var(--acc); }
 .win-btn:hover { background: var(--panel3) !important; }
 .win-close:hover { background: var(--bad) !important; color: #fff; }
 .win-body { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
-.win-resize { position: absolute; right: 0; bottom: 0; width: 14px; height: 14px; cursor: nwse-resize; background: linear-gradient(135deg, transparent 55%, var(--grip) 55%, var(--grip) 62%, transparent 62%, transparent 72%, var(--grip) 72%, var(--grip) 79%, transparent 79%); }
+.win-edge { position: absolute; z-index: 20; }
+.win-edge.e-n { top: 0; left: 10px; right: 10px; height: 5px; cursor: ns-resize; }
+.win-edge.e-s { bottom: 0; left: 10px; right: 14px; height: 5px; cursor: ns-resize; }
+.win-edge.e-e { right: 0; top: 10px; bottom: 14px; width: 5px; cursor: ew-resize; }
+.win-edge.e-w { left: 0; top: 10px; bottom: 10px; width: 5px; cursor: ew-resize; }
+.win-edge.e-ne { top: 0; right: 0; width: 10px; height: 10px; cursor: nesw-resize; }
+.win-edge.e-nw { top: 0; left: 0; width: 10px; height: 10px; cursor: nwse-resize; }
+.win-edge.e-sw { bottom: 0; left: 0; width: 10px; height: 10px; cursor: nesw-resize; }
+.win-resize { z-index: 21; position: absolute; right: 0; bottom: 0; width: 14px; height: 14px; cursor: nwse-resize; background: linear-gradient(135deg, transparent 55%, var(--grip) 55%, var(--grip) 62%, transparent 62%, transparent 72%, var(--grip) 72%, var(--grip) 79%, transparent 79%); }
 .tgroup { display: flex; align-items: center; gap: 2px; padding: 0 4px; border-left: 1px solid rgba(0,0,0,.35); color: var(--dim); }
 .tgroup:first-child { border-left: none; }
 .tgroup .ibtn { height: 21px; min-width: 23px; }

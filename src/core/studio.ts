@@ -5,10 +5,10 @@
 // BPM), mixer (resetar insert, copiar efeitos) e a lista de áudios do projeto.
 // Mesmo formato de actions.ts: (projeto, args) → { ops, result }.
 
-import type { AudioItem, AutoTarget, Channel, Clip, Effect, Note, Pattern, Project } from './model.js';
-import { PPQ, color, findPattern, makeInsert, noteName, patternLength, ticksPerBar, uid } from './model.js';
+import type { AudioItem, AutoTarget, Channel, Clip, Effect, InstrumentType, Note, Pattern, Project } from './model.js';
+import { PPQ, STEP, color, findPattern, makeInsert, noteName, parseNote, patternLength, ticksPerBar, uid } from './model.js';
 import { ins, rem, set, type Op } from './ops.js';
-import { autoTarget, channelRef, freeTrack, insertRef, normalizedNow, patternRef, toNorm, type ActionResult, type AutoDescriptor } from './actions.js';
+import { autoTarget, channelRef, freeTrack, insertRef, normalizedNow, patternRef, toNorm, updateChannel, type ActionResult, type AutoDescriptor } from './actions.js';
 import { GEN_DEFAULTS, GEN_PRESETS, renderGen, regen, trimAutoStart, type AutoGen, type GenKind, type Wave } from './autogen.js';
 import { INSTRUMENTS, sanitizeParams } from './registry.js';
 import { dbToGain } from './dsp.js';
@@ -592,3 +592,50 @@ export function clipsDetail(p: Project, f: ClipFilter, points = false) {
     });
 }
 
+
+// ------------------------------------------------------------ rack: preencher e substituir
+
+/**
+ * Preenche os steps de um canal no pattern a cada `every` steps (1 = todo step, 2 = a
+ * cada colcheia, 4 = a cada tempo...), começando em `offset`. Usa a nota que o canal já
+ * toca nesse pattern (ou a informada). Substitui as notas do canal no pattern.
+ */
+export function fillSteps(p: Project, a: { pattern: string; channel: string; every: number; offset?: number; note?: number | string; velocity?: number }): ActionResult {
+  const pat = patternRef(p, a.pattern);
+  const ch = channelRef(p, a.channel);
+  const every = Math.max(1, Math.round(a.every));
+  const steps = Math.round(patternLength(p, pat) / STEP);
+  const cur = pat.notes[ch.id] ?? [];
+  const key = a.note !== undefined ? parseNote(a.note) : (cur[0]?.key ?? 60);
+  const notes: Note[] = [];
+  for (let i = Math.max(0, a.offset ?? 0); i < steps; i += every) notes.push({ id: uid('n'), key, pos: i * STEP, len: STEP, vel: a.velocity ?? 0.78 });
+  return { ops: [set(['patterns', pat.id, 'notes', ch.id], notes)], result: { steps, hits: notes.length } };
+}
+
+/** Nota mais tocada pelo canal em todos os patterns (null se não tem notas). */
+function dominantKey(p: Project, chId: string): number | null {
+  const count = new Map<number, number>();
+  for (const pat of p.patterns) for (const n of pat.notes[chId] ?? []) count.set(n.key, (count.get(n.key) ?? 0) + 1);
+  let best: number | null = null, bn = 0;
+  for (const [k, n] of count) if (n > bn) (best = k), (bn = n);
+  return best;
+}
+
+/**
+ * Troca o instrumento de um canal mantendo tudo o mais: notas em todos os patterns,
+ * efeitos, insert, volume, pan, automações. type/preset/params como no update_channel
+ * (sampler: params.sample = arquivo ou pasta). Sample de um tiro (bateria): a nota raiz
+ * vira a nota que o canal toca, para o sample soar na altura original.
+ */
+export function replaceInstrument(
+  p: Project,
+  a: { channel: string; type?: InstrumentType; preset?: string; params?: Record<string, unknown>; name?: string },
+): ActionResult {
+  const ch = channelRef(p, a.channel);
+  const ops = updateChannel(p, { channel: ch.id, type: a.type, preset: a.preset, params: a.params, name: a.name }).ops;
+  const type = a.preset ? undefined : a.type;
+  const oneShot = (type === 'sampler' || (!type && ch.type === 'sampler')) && !!a.params?.oneshot;
+  const key = dominantKey(p, ch.id);
+  if (oneShot && key !== null) ops.push(set(['channels', ch.id, 'pitch'], 60 - key));
+  return { ops, result: { channel: ch.id, name: a.name ?? ch.name, ...(oneShot && key !== null ? { root: noteName(key) } : {}) } };
+}

@@ -99,11 +99,13 @@ export const ACTIONS: Record<string, ActionFn> = {
   renameAudio: S.renameAudio,
   removeAudio: S.removeAudio,
   toggleAudioEdits: S.toggleAudioEdits,
+  fillSteps: S.fillSteps,
+  replaceInstrument: S.replaceInstrument,
 };
 
 /** "localSample": nome de um som do kit local (ex. "Kick") vira um sampler com o caminho. */
 function expandLocalSample(name: string, args: any) {
-  if ((name !== 'addChannel' && name !== 'updateChannel') || !args?.localSample) return args;
+  if ((name !== 'addChannel' && name !== 'updateChannel' && name !== 'replaceInstrument') || !args?.localSample) return args;
   const { localSample: wanted, ...rest } = args;
   const ls = localSample(String(wanted));
   if (ls) return { name: ls.name, ...rest, type: 'sampler', preset: undefined, params: { sample: ls.path, keytrack: true, oneshot: true, ...(ls.cut ? { cut: ls.cut } : {}), ...(rest.params ?? {}) } };
