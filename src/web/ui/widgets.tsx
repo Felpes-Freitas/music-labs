@@ -379,6 +379,10 @@ export interface MenuItem {
   preview?: () => void;
 }
 
+/** Botão direito segurado dentro de um menu (prévia passando pelos itens). */
+let rightHeld = false;
+window.addEventListener('pointerup', (e) => e.button === 2 && (rightHeld = false), true);
+
 /** Menu de contexto com submenus (abrem ao passar o mouse). */
 export function MenuTree(p: { x: number; y: number; items: MenuItem[]; onClose: () => void }) {
   useEffect(() => {
@@ -414,12 +418,16 @@ function MenuLevel(p: { x: number; y: number; items: MenuItem[]; onClose: () => 
           ) : (
             <button
               class={`${it.sub ? 'has-sub' : ''} ${open?.i === i ? 'open' : ''}`}
-              data-hint={it.preview ? `${it.hint ? it.hint + ' · ' : ''}▶ ou botão direito: ouvir` : it.hint}
-              onContextMenu={(e) => {
-                e.preventDefault();
+              data-hint={it.preview ? `${it.hint ? it.hint + ' · ' : ''}botão direito: ouvir (segure e passe pelos outros)` : it.hint}
+              onContextMenu={(e) => e.preventDefault()}
+              onPointerDown={(e) => {
+                // botão direito: ouve; segurando, cada som por onde o mouse passa também toca
+                if (e.button !== 2) return;
+                rightHeld = true;
                 it.preview?.();
               }}
               onPointerEnter={(e) => {
+                if (rightHeld && (e.buttons & 2) && it.preview) it.preview();
                 if (!it.sub) return setOpen(null);
                 const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
                 setOpen({ i, x: r.right - 2, y: r.top - 4 });
@@ -432,19 +440,6 @@ function MenuLevel(p: { x: number; y: number; items: MenuItem[]; onClose: () => 
             >
               {it.swatch && <span class="menu-swatch" style={{ background: it.swatch }} />}
               <span class="mt-label">{it.label}</span>
-              {it.preview && (
-                <span
-                  class="mt-play"
-                  role="button"
-                  onClick={(e) => {
-                    // só ouve; não escolhe nem fecha o menu
-                    e.stopPropagation();
-                    it.preview!();
-                  }}
-                >
-                  <Icon name="play" size={9} />
-                </span>
-              )}
               {it.sub && <Icon name="chevron" size={10} />}
             </button>
           ),
