@@ -1,6 +1,7 @@
 // Teclado RGB (OpenRGB): a interface diz ao servidor como pintar o teclado do computador.
 // Instrumento comum: as teclas do "piano" (Z…M e Q…P) — brancas em branco, pretas na cor
-// de destaque; Soundpad: 1234/QWER/ASDF/ZXCV nas cores dos pads. A tecla tocada acende.
+// de destaque; Soundpad: 1234/QWER/ASDF/ZXCV nas cores dos pads. Só repinta
+// quando a cena muda e nenhuma tecla está apertada (ver sendScene).
 // O servidor fala com o OpenRGB e devolve o teclado ao normal quando o app fecha.
 
 import { state, onState, onConnect, sendServer, api, toast } from './state';
@@ -49,33 +50,45 @@ export function sceneKeys(): Record<string, number> {
   return keys;
 }
 
-const pressed = new Set<string>();
+/** Teclas do computador apertadas agora: o teclado não é repintado enquanto houver alguma. */
+const held = new Set<string>();
 let lastScene = '';
+let timer: ReturnType<typeof setTimeout> | null = null;
 
 function sendConfig(explicit = false) {
   const p = rgbPrefs();
   sendServer({ type: 'rgb', explicit, config: { enabled: p.enabled, host: p.host, port: p.port, brightness: p.brightness } });
 }
+/**
+ * Repinta o teclado só quando a cena muda (troca de instrumento, cor de destaque) e nunca
+ * com tecla apertada: em alguns teclados (SteelSeries Apex) cada atualização de LEDs reinicia
+ * a iluminação e o teclado perde o "soltou a tecla" que chega nesse instante — a nota ficava
+ * presa. Por isso também não há mais "tecla tocada acende".
+ */
 function sendScene() {
   if (!rgbPrefs().enabled) return;
-  const scene = { keys: sceneKeys(), base: BASE, pressed: [...pressed] };
-  const sig = JSON.stringify(scene);
-  if (sig === lastScene) return;
-  lastScene = sig;
-  sendServer({ type: 'rgb', scene });
+  if (timer) clearTimeout(timer);
+  timer = setTimeout(() => {
+    timer = null;
+    if (held.size) return; // tenta de novo quando soltar tudo
+    const scene = { keys: sceneKeys(), base: BASE, pressed: [] };
+    const sig = JSON.stringify(scene);
+    if (sig === lastScene) return;
+    lastScene = sig;
+    sendServer({ type: 'rgb', scene });
+  }, 400);
 }
 
-/** Tecla do computador apertada/solta (acende no teclado). */
-export function rgbPress(key: string, on: boolean) {
+/** Tecla do computador apertada/solta: só segura a repintura enquanto houver tecla apertada. */
+export function rgbKey(key: string, on: boolean) {
   const k = key.toLowerCase();
-  if (on) pressed.add(k);
-  else pressed.delete(k);
-  sendScene();
+  if (on) held.add(k);
+  else if (held.delete(k) && !held.size) sendScene();
 }
-/** Acende uma tecla por um instante (pad clicado ou tocado pela música). */
-export function rgbFlash(key: string, ms = 120) {
-  rgbPress(key, true);
-  setTimeout(() => rgbPress(key, false), ms);
+/** Solta tudo (janela perdeu o foco). */
+export function rgbKeysReleased() {
+  held.clear();
+  sendScene();
 }
 
 onConnect(() => {
