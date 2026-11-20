@@ -506,6 +506,10 @@ Z…M/Q…P teclado musical, -/= oitava.
 
 ### Dicas e barra de cima
 
+- Visual: botões ligados (`button.on`, PAT/SONG, steps, solo, mute, rec, play) usam cor
+  **chapada** (a de destaque do tema, ou verde/vermelho de estado), sem degradê nem brilho
+  em cima — pedido do usuário; não reintroduzir `linear-gradient` nesses estados.
+
 - `data-hint` (ou `setHint` de canvas) alimenta a barra de dicas (`HintBar`) ou, com
   Aparência → **Dicas em balão** (`prefs.tooltips` em theme.ts), o `HintTooltip`
   (Toolbar.tsx, montado em main.tsx): balão acima do mouse depois de 750 ms parado,
