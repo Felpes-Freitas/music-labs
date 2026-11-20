@@ -361,15 +361,21 @@ Z…M/Q…P teclado musical, -/= oitava.
   usado no "+ Canal" do rack e no "Inserir instrumento" da área da playlist — Music Labs
   (nativos), Presets (por instrumento de base) e um item por programa da biblioteca (FL
   Studio, Ableton...) com famílias (pasta do instrumento: Keyboard, Bass...; nomes genéricos
-  como "Instruments" usam a pasta de cima, `familyOf` em sampleset.ts). Cada programa:
-  **Instrumentos** (famílias), **Samples** (todos os sons soltos na árvore de pastas do
-  programa — `/api/sampletree`, `sampleTree()` em library.ts: sem loops e sem os arquivos
-  dos instrumentos multi-sample; pastas com uma pasta só dentro viram "A › B") e **Kit
-  rápido** (kit local). Listas longas rolam (menutree max 80vh). **Prévia**: `MenuItem.preview`
-  → botão redondo ▶ no fim do item e botão direito no item (não escolhe nem fecha);
-  instrumento toca a amostra mais perto do Dó central (`/api/source` + `/api/zone`,
-  `audio.previewUrl`). `/api/registry` → `localInstruments` traz `daw` e `group`. O item
-  aberto do menu fica na cor de destaque.
+  como "Instruments" usam a pasta de cima, `familyOf` em sampleset.ts). Cada programa
+  mostra **direto** (sem nível intermediário — pedido do usuário): as famílias e depois
+  **Bateria / Efeitos / Vocais / Outros** (`sampleCategories`: a primeira pasta, de cima
+  para baixo, cujo nome é de bateria/efeito/vocal leva a subárvore inteira, rótulo "A › B").
+  Árvore em `/api/sampletree` (`sampleTree()` em library.ts: sem loops, sem músicas demo,
+  sem os arquivos dos instrumentos multi-sample). Listas longas rolam (menutree max 80vh;
+  itens com `flex-shrink: 0`, senão encolhem). **Prévia só pelo botão direito**
+  (`MenuItem.preview`; o usuário não quis botão ▶): segurando o direito e passando pelos
+  itens, cada um toca (`rightHeld`); instrumento toca a amostra mais perto do Dó central
+  (`/api/source` + `/api/zone`, `audio.previewUrl`). O item aberto fica na cor de destaque.
+- **Servidor desatualizado**: `/api/build` traz `serverStale` (o arquivo do servidor mudou
+  depois que ele subiu). A interface recarrega sozinha com o build novo, mas o servidor
+  embutido no Electron não: então, parado e sem gravar, a interface pede ao app para
+  reiniciar (`mlabsWindow.relaunch` → `app:relaunch` em main.cjs, que grava o autosave
+  antes com `flushState`). Se o servidor não é do app (aberto pelo MCP), só avisa.
 - **Amp** (`Amp.tsx`): entrada e canal no título, visualizador (dB, linha do limiar),
   pedais reordenáveis (gate, wah, compressor, overdrive, fuzz, amp clean/crunch/lead,
   gabinete, EQ, tremolo, chorus, phaser, delay, reverb), presets, gravação inteligente

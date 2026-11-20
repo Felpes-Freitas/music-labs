@@ -362,9 +362,10 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       case 'GET /api/status':
         return json(res, 200, uiStatus);
       case 'GET /api/build': {
-        // versão da interface compilada (muda a cada build): a tela se recarrega quando muda
+        // versão da interface compilada (muda a cada build): a tela se recarrega quando muda;
+        // serverStale: o arquivo deste servidor mudou depois que ele subiu (precisa reiniciar)
         const html = existsSync(join(DIST, 'index.html')) ? readFileSync(join(DIST, 'index.html'), 'utf8') : '';
-        return json(res, 200, { build: /assets\/index-[^"']+\.js/.exec(html)?.[0] ?? '' });
+        return json(res, 200, { build: /assets\/index-[^"']+\.js/.exec(html)?.[0] ?? '', serverStale: serverStale() });
       }
       case 'POST /api/ops': {
         const b = await body(req);
@@ -531,6 +532,34 @@ function announceLibrary(ix: NonNullable<ReturnType<typeof library>>, first: boo
       : 'Nenhuma biblioteca de outra DAW encontrada nesta máquina.',
   });
   broadcast({ type: 'library' });
+}
+
+/** Data do arquivo deste servidor quando ele subiu (para saber se foi atualizado depois). */
+const SELF = (() => {
+  try {
+    return fileURLToPath(import.meta.url);
+  } catch {
+    return '';
+  }
+})();
+const selfStamp = (() => {
+  try {
+    return statSync(SELF).mtimeMs;
+  } catch {
+    return 0;
+  }
+})();
+function serverStale() {
+  try {
+    return !!selfStamp && statSync(SELF).mtimeMs > selfStamp + 1;
+  } catch {
+    return false;
+  }
+}
+
+/** Grava o autosave agora (antes de reiniciar o app). */
+export function flushState() {
+  store.flushAutosave();
 }
 
 export function startServer(port = PORT) {

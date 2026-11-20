@@ -128,6 +128,17 @@ export class Store {
     this.load(p, path);
   }
 
+  /** Grava o autosave já (sem esperar o intervalo). */
+  flushAutosave() {
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveTimer = null;
+    try {
+      writeFileSync(AUTOSAVE, JSON.stringify({ project: this.project, path: this.path, dirty: this.dirty }));
+    } catch {
+      /* sem disco: ignora */
+    }
+  }
+
   private scheduleAutosave() {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {

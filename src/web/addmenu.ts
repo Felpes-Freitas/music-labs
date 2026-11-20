@@ -1,9 +1,9 @@
 // Menu "adicionar instrumento" (encadeado): Music Labs (nativos), Presets e, para cada
-// programa cuja biblioteca foi encontrada (FL Studio, Ableton...): Instrumentos
-// (multi-sample, por família), Samples (todos os sons soltos, na árvore de pastas do
-// programa — baterias, efeitos, vocais...) e Kit rápido. Cada som tem prévia (▶ ou botão
-// direito). Usado no "+ Canal" do rack, no "Substituir instrumento" e no "Inserir
-// instrumento" da área selecionada da playlist.
+// programa cuja biblioteca foi encontrada (FL Studio, Ableton...), direto nele: as famílias
+// de instrumentos (Keyboard, Bass...), Bateria (todas as pastas de bateria do programa,
+// com subpastas), Efeitos, Vocais e Outros. Prévia: botão direito num som (segurando e
+// descendo, toca cada um por onde passa). Usado no "+ Canal" do rack, no "Substituir
+// instrumento" e no "Inserir instrumento" da área selecionada da playlist.
 
 import type { InstrumentType } from '../core/model';
 import { INSTRUMENTS, PRESETS } from '../core/registry';
@@ -83,19 +83,31 @@ export function instrumentMenu(lib: Lib | null, h: AddHandlers): MenuItem[] {
   if (lib.localSamples.length && !daws.has('FL Studio')) daws.set('FL Studio', []);
   if (daws.size) items.push({ sep: true, label: '' });
   for (const [daw, list] of [...daws.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-    const sub: MenuItem[] = [];
-    const families = instrumentFamilies(list, h);
-    if (families.length) sub.push({ label: 'Instrumentos', hint: 'Instrumentos multi-sample (uma amostra por região do teclado)', sub: families });
+    const sub: MenuItem[] = instrumentFamilies(list, h);
     const tree = lib.trees.find((t) => t.daw === daw)?.tree;
-    if (tree && (tree.dirs.length || tree.files.length)) sub.push({ label: 'Samples', hint: `Todos os sons soltos do ${daw}, nas pastas dele (baterias, efeitos, vocais...)`, sub: treeItems(tree, h) });
-    if (daw === 'FL Studio' && lib.localSamples.length)
-      sub.push({ label: 'Kit rápido', hint: 'Os sons de bateria mais usados (um por canal)', sub: lib.localSamples.map((x) => fileItem(x.name, x.path, h)) });
+    const cats = tree ? sampleCategories(tree) : null;
+    if (cats) {
+      const extra: MenuItem[] = [];
+      for (const [label, hint, entries] of [
+        ['Bateria', 'Todas as pastas de bateria (kicks, snares, hats, kits...)', cats.drums],
+        ['Efeitos', 'SFX, risers e efeitos', cats.fx],
+        ['Vocais', 'Vozes e frases', cats.vocals],
+        ['Outros', 'Os demais sons soltos', cats.other],
+      ] as const) {
+        if (!entries.length) continue;
+        const total = entries.reduce((n, e) => n + countFiles(e.node), 0);
+        extra.push({ label, hint: `${hint} · ${total} sons`, sub: entries.map((e) => ({ label: e.label, hint: `${countFiles(e.node)} sons`, sub: treeItems(e.node, h) })) });
+      }
+      if (extra.length) sub.push({ sep: true, label: '' }, ...extra);
+    } else if (daw === 'FL Studio' && lib.localSamples.length)
+      // sem o índice da biblioteca: pelo menos o kit de bateria local
+      sub.push({ sep: true, label: '' }, { label: 'Bateria', sub: lib.localSamples.map((x) => fileItem(x.name, x.path, h)) });
     items.push({ label: daw, hint: `Sons encontrados na instalação do ${daw}`, sub });
   }
   return items;
 }
 
-/** Um som (arquivo): escolher cria/troca o canal; ▶ ou botão direito ouve. */
+/** Um som (arquivo): escolher cria/troca o canal; botão direito ouve. */
 function fileItem(label: string, path: string, h: AddHandlers): MenuItem {
   return { label, hint: path, run: () => h.sample(path, label), preview: () => void audio.previewFile(path) };
 }
@@ -153,6 +165,34 @@ function treeItems(node: SampleNode, h: AddHandlers): MenuItem[] {
   });
   const files = node.files.map((f) => fileItem(f.n, f.p, h));
   return dirs.length && files.length ? [...dirs, { sep: true, label: '' }, ...files] : [...dirs, ...files];
+}
+
+type Cat = { label: string; node: SampleNode }[];
+const DRUM = /drum|perc|kit|kick|snare|hat|clap|cymbal|tom|shaker|rim/i;
+const FX = /sfx|\bfx\b|riser|impact|sweep/i;
+const VOCAL = /vocal|voice|vox|choir/i;
+
+/**
+ * Separa a árvore de samples por tipo, pelo nome das pastas: a primeira pasta (de cima
+ * para baixo) que for de bateria/efeitos/vocais leva tudo o que está dentro dela; as
+ * outras pastas são abertas até achar uma dessas, e o que sobra vai para "Outros".
+ */
+function sampleCategories(tree: SampleNode) {
+  const out = { drums: [] as Cat, fx: [] as Cat, vocals: [] as Cat, other: [] as Cat };
+  const walk = (node: SampleNode, path: string) => {
+    for (const d of node.dirs) {
+      const label = path ? `${path} › ${d.name}` : d.name;
+      if (DRUM.test(d.name)) out.drums.push({ label, node: d });
+      else if (FX.test(d.name)) out.fx.push({ label, node: d });
+      else if (VOCAL.test(d.name)) out.vocals.push({ label, node: d });
+      else {
+        walk(d, label);
+        if (d.files.length) out.other.push({ label, node: { name: d.name, dirs: [], files: d.files } });
+      }
+    }
+  };
+  walk(tree, '');
+  return out;
 }
 
 function countFiles(n: SampleNode): number {

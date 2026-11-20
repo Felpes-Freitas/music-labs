@@ -5,5 +5,7 @@ contextBridge.exposeInMainWorld('mlabsWindow', {
   toggleMaximize: () => ipcRenderer.send('win', 'max'),
   close: () => ipcRenderer.send('win', 'close'),
   isMaximized: () => ipcRenderer.invoke('win:isMax'),
+  /** Reinicia o app (servidor atualizado). Devolve false se o servidor não é deste app. */
+  relaunch: () => ipcRenderer.invoke('app:relaunch'),
   onState: (cb) => ipcRenderer.on('win:state', (_e, max) => cb(!!max)),
 });

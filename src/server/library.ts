@@ -391,6 +391,8 @@ export function sampleTree(): { daw: string; tree: SampleNode }[] {
     if (rel.startsWith('..')) continue;
     const parts = rel.split(sep);
     if (parts.length < 2) continue; // arquivo solto na raiz: sem pasta para agrupar
+    // loops e músicas de demonstração não são sons para tocar no rack
+    if (parts.slice(0, -1).some((d) => /loop|songs?\b|demo/i.test(d))) continue;
     let node: SampleNode = byDaw.get(src.daw) ?? { name: src.daw, dirs: [], files: [] };
     byDaw.set(src.daw, node);
     for (const d of parts.slice(0, -1)) {

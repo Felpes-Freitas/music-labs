@@ -135,7 +135,10 @@ audio.onStatus = (s) => {
     playingFlag = false;
     emit();
   }
-  if (!s.playing) reloadIfIdle();
+  if (!s.playing) {
+    reloadIfIdle();
+    restartIfIdle();
+  }
 };
 let playingFlag = false;
 
@@ -150,12 +153,42 @@ function checkBuild() {
   fetch('/api/build')
     .then((r) => r.json())
     .then((d) => {
+      if (d.serverStale) {
+        serverStale = true;
+        restartIfIdle();
+      }
       if (!d.build || d.build === myBuild) return;
       reloadPending = true;
       reloadIfIdle();
     })
     .catch(() => {});
 }
+let serverStale = false;
+let staleWarned = false;
+/**
+ * O servidor ficou com código antigo (o app foi atualizado depois de aberto): a interface
+ * nova pode pedir coisas que ele não tem. No app (Electron) reinicia sozinho quando nada
+ * está tocando/gravando; no navegador, ou se o servidor não é do app, só avisa.
+ */
+function restartIfIdle() {
+  if (!serverStale || audio.status.playing || audio.recording || audio.capturing) return;
+  const w = (window as unknown as { mlabsWindow?: { relaunch?: () => Promise<boolean> } }).mlabsWindow;
+  if (w?.relaunch && !staleWarned) {
+    staleWarned = true;
+    toast('Music Labs atualizado: reiniciando para terminar a atualização…');
+    setTimeout(
+      () =>
+        w.relaunch!().then((ok) => {
+          if (!ok) toast('O servidor do Music Labs está desatualizado (foi aberto por outro programa): feche-o e abra o app de novo.');
+        }),
+      1200,
+    );
+  } else if (!staleWarned) {
+    staleWarned = true;
+    toast('O servidor do Music Labs foi atualizado: reinicie-o para pegar a versão nova.');
+  }
+}
+
 function reloadIfIdle() {
   if (!reloadPending) return;
   if (audio.status.playing || audio.recording || audio.capturing) return; // tenta de novo ao parar

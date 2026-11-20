@@ -27,12 +27,14 @@ function ping() {
 }
 
 /** Sobe o servidor dentro do próprio app (a menos que já haja um rodando, ex.: iniciado pelo MCP). */
+let serverMod = null; // o servidor que roda dentro deste app (null se outro processo já servia)
 async function ensureServer() {
   if (await ping()) return;
   const { pathToFileURL } = require('node:url');
   const mod = await import(pathToFileURL(path.join(ROOT, 'build/server.mjs')).href);
   try {
     await mod.startServer(PORT);
+    serverMod = mod;
   } catch (e) {
     // outro processo pegou a porta no meio do caminho: usa o dele
     if (!(await ping())) throw e;
@@ -102,6 +104,20 @@ ipcMain.on('win', (e, cmd) => {
   if (cmd === 'min') w.minimize();
   else if (cmd === 'max') (w.isMaximized() ? w.unmaximize() : w.maximize());
   else if (cmd === 'close') w.close();
+});
+// O código do servidor foi atualizado (build novo): reinicia o app para ele subir com a
+// versão nova. Só se o servidor for deste app — se outro processo serve (ex.: o MCP),
+// reiniciar o app não adiantaria.
+ipcMain.handle('app:relaunch', () => {
+  if (!serverMod) return false;
+  try {
+    serverMod.flushState?.();
+  } catch {
+    /* segue */
+  }
+  app.relaunch();
+  app.exit(0);
+  return true;
 });
 ipcMain.handle('win:isMax', (e) => BrowserWindow.fromWebContents(e.sender)?.isMaximized() ?? false);
 
