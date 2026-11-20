@@ -17,9 +17,21 @@ import { ui, accent, prefs as looks } from '../theme';
 
 // ---------------------------------------------------------------- ações de arquivo
 
+/** Pasta dos projetos (onde o explorador de arquivos abre). */
+const projectsDir = () => api('GET', '/api/projects').then((r) => r.dir as string).catch(() => undefined);
+
 export async function saveProject(as = false) {
   const s = state;
   if (as || !s.path) {
+    const w = window.mlabsWindow;
+    if (w?.saveDialog) {
+      // app desktop: o "Salvar como" do sistema
+      const dir = s.path ? s.path.replace(/[\\/][^\\/]*$/, '') : await projectsDir();
+      const target = await w.saveDialog({ title: 'Salvar projeto', defaultPath: dir ? `${dir}/${s.project.name}${PROJECT_EXT}` : `${s.project.name}${PROJECT_EXT}`, filters: [{ name: 'Projeto do Music Labs', extensions: ['mlstudio'] }] });
+      if (!target) return;
+      const r = await api('POST', '/api/save', { path: target.endsWith(PROJECT_EXT) ? target : target + PROJECT_EXT });
+      return toast(`Salvo em ${r.path}`);
+    }
     const name = await askText({ title: 'Salvar como', label: 'Nome do projeto', value: s.project.name, ok: 'Salvar' });
     if (!name) return;
     edit([set(['name'], name)]);
@@ -47,10 +59,39 @@ async function newProject(template: 'kit' | 'empty') {
   await api('POST', '/api/new', { template });
 }
 
+/** Escolhe um projeto (.mlstudio) ou um .flp no explorador de arquivos e abre. */
 async function importPath() {
-  const path = await askText({ title: 'Abrir projeto', label: 'Caminho do arquivo (.mlstudio ou .flp)', placeholder: '/home/…/projeto.flp', ok: 'Abrir' });
-  if (!path) return;
+  if (state.dirty && !(await askConfirm({ title: 'Abrir outro projeto?', message: 'As alterações não salvas do projeto atual serão perdidas.', ok: 'Abrir', danger: true }))) return;
+  let path: string | null = null;
+  const w = window.mlabsWindow;
   try {
+    if (w?.openDialog) {
+      path = await w.openDialog({
+        title: 'Abrir projeto',
+        defaultPath: await projectsDir(),
+        filters: [
+          { name: 'Projetos (.mlstudio, .flp)', extensions: ['mlstudio', 'flp'] },
+          { name: 'Music Labs', extensions: ['mlstudio'] },
+          { name: 'FL Studio', extensions: ['flp'] },
+        ],
+      });
+    } else {
+      // navegador: o seletor de arquivos; o arquivo vai para ~/MusicLabs/Importados e abre de lá
+      const f = await new Promise<File | null>((ok) => {
+        const inp = document.createElement('input');
+        inp.type = 'file';
+        inp.accept = '.mlstudio,.flp';
+        inp.onchange = () => ok(inp.files?.[0] ?? null);
+        inp.click();
+      });
+      if (f) {
+        const r = await fetch(`/api/import?name=${encodeURIComponent(f.name)}`, { method: 'POST', body: f });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error);
+        path = d.path;
+      }
+    }
+    if (!path) return;
     const r = await api('POST', '/api/open', { path });
     if (r.imported) toast(`Importado: ${r.imported.channels} canais, ${r.imported.patterns} patterns, ${r.imported.notes} notas`);
   } catch (e) {
@@ -429,6 +470,12 @@ function BpmControl() {
   );
 }
 
+interface FileDialogOpts {
+  title?: string;
+  defaultPath?: string;
+  filters?: { name: string; extensions: string[] }[];
+}
+
 declare global {
   interface Window {
     mlabsWindow?: {
@@ -441,6 +488,9 @@ declare global {
       pendingFile?(): Promise<string | null>;
       /** Avisa quando o sistema pede para abrir um arquivo com o app já aberto. */
       onOpenFile?(cb: (path: string) => void): void;
+      /** Explorador de arquivos do sistema (abrir / salvar como): caminho ou null. */
+      openDialog?(o: FileDialogOpts): Promise<string | null>;
+      saveDialog?(o: FileDialogOpts): Promise<string | null>;
     };
   }
 }
