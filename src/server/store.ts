@@ -6,7 +6,7 @@ import { basename, dirname, extname, join } from 'node:path';
 import type { Project } from '../core/model.js';
 import { emptyProject, isProjectData, PROJECT_EXT, PROJECT_FORMAT } from '../core/model.js';
 import { History, Op, applyOps } from '../core/ops.js';
-import { completeOps } from '../core/audiochan.js';
+import { completeAll } from '../core/audiochan.js';
 
 export const HOME_DIR = process.env.MUSICLABS_HOME ?? join(homedir(), 'MusicLabs');
 export const PROJECTS_DIR = join(HOME_DIR, 'Projetos');
@@ -69,8 +69,9 @@ export class Store {
     try {
       this.project = applyOps(this.project, ops);
       // áudio novo → canal de áudio no rack, pattern-grupo, insert; tracks usadas existem
-      extra = completeOps(this.project);
-      if (extra.length) this.project = applyOps(this.project, extra);
+      const done = completeAll(this.project, applyOps);
+      extra = done.ops;
+      this.project = done.project;
     } catch (e) {
       this.project = JSON.parse(before);
       throw e;
@@ -109,8 +110,7 @@ export class Store {
 
   load(p: Project, path: string | null) {
     // projetos antigos: áudios sem canal ganham o canal deles (e o pattern-grupo)
-    const extra = completeOps(p);
-    this.project = extra.length ? applyOps(p, extra) : p;
+    this.project = completeAll(p, applyOps).project;
     this.path = path;
     this.dirty = path === null;
     this.history.clear();

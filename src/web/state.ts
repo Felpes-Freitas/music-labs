@@ -4,7 +4,7 @@
 import { useEffect, useReducer } from 'preact/hooks';
 import type { Project, AudioItem, Channel } from '../core/model';
 import { emptyProject, findPattern, findChannel, parseNote, PPQ, ticksPerBar, songLength, uid } from '../core/model';
-import { completeOps, newAudioChannel } from '../core/audiochan';
+import { completeAll, newAudioChannel } from '../core/audiochan';
 import { ampSig } from '../core/reamp';
 import { applyOps, set, ins, type Op } from '../core/ops';
 import type { ActionResult } from '../core/actions';
@@ -338,10 +338,10 @@ export function edit(ops: Op[], label?: string) {
   try {
     let next = applyOps(state.project, ops);
     // áudio novo vira canal do rack (com pattern-grupo e insert); tracks usadas passam a existir
-    const extra = completeOps(next);
-    if (extra.length) {
-      next = applyOps(next, extra);
-      ops = [...ops, ...extra];
+    const extra = completeAll(next, applyOps);
+    if (extra.ops.length) {
+      next = extra.project;
+      ops = [...ops, ...extra.ops];
     }
     state.project = next;
   } catch (e) {

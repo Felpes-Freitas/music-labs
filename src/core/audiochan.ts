@@ -10,7 +10,7 @@
 
 import type { Channel, Clip, Pattern, Project } from './model.js';
 import { color, uid } from './model.js';
-import { ins, set, type Op } from './ops.js';
+import { ins, rem, set, type Op } from './ops.js';
 
 /** Nome do arquivo sem pasta e sem extensão. */
 export const fileLabel = (path: string) => (path.split(/[\\/]/).pop() ?? path).replace(/\.[a-z0-9]{2,5}$/i, '');
@@ -43,6 +43,16 @@ export function channelInPattern(pat: Pattern, chId: string): boolean {
 
 export function completeOps(p: Project): Op[] {
   const ops: Op[] = [];
+  // lixo de versões antigas: canal criado para a prévia de um take ("live:") que ficou sem
+  // clipe nenhum — sai, com o pattern-grupo vazio dele e o nome do insert
+  for (const ch of p.channels) {
+    if (ch.type !== 'audio' || !String(ch.params.sample ?? '').startsWith('live:')) continue;
+    if (p.clips.some((c) => c.channel === ch.id) || (p.audios ?? []).some((a) => a.channel === ch.id)) continue;
+    ops.push(rem(['channels', ch.id]));
+    for (const pt of p.patterns) if (pt.channels?.length === 1 && pt.channels[0] === ch.id && !Object.values(pt.notes).some((n) => n.length)) ops.push(rem(['patterns', pt.id]));
+    if (ch.insert > 0 && p.mixer[ch.insert]?.name === ch.name && !p.channels.some((o) => o.id !== ch.id && o.insert === ch.insert)) ops.push(set(['mixer', ch.insert, 'name'], `Insert ${ch.insert}`));
+  }
+  if (ops.length) return ops; // o resto na próxima passada, com o projeto já limpo
   // tracks que os clipes usam
   let maxTrack = -1;
   for (const c of p.clips) if (c.track > maxTrack) maxTrack = c.track;
@@ -98,4 +108,16 @@ export function newAudioChannel(p: Project, name: string, sample: string, extra:
   ops.push(ins(['channels'], ch));
   ops.push(ins(['patterns'], { id: uid('p'), name, color: ch.color, length: 0, notes: {}, channels: [id] } satisfies Pattern));
   return { id, ops };
+}
+
+/** Roda completeOps até não faltar nada (a limpeza vem numa passada, o resto na seguinte). */
+export function completeAll(p: Project, apply: (p: Project, ops: Op[]) => Project): { project: Project; ops: Op[] } {
+  const all: Op[] = [];
+  for (let i = 0; i < 4; i++) {
+    const ops = completeOps(p);
+    if (!ops.length) break;
+    p = apply(p, ops);
+    all.push(...ops);
+  }
+  return { project: p, ops: all };
 }
