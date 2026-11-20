@@ -332,9 +332,39 @@ export function clearNotes(p: Project, a: { pattern: string; channel?: string; f
   return { ops, result: { removed } };
 }
 
+/**
+ * Transforma notas de um pattern/canal. Filtros: trecho (fromBeat..toBeat) e faixa de
+ * notas (lowNote..highNote). Por nota: transpor, quantizar (grade em beats, força),
+ * humanizar, escalar/definir velocity e duração, deslocar no tempo. No conjunto: inverter
+ * no tempo (reverse), legato (cada nota vai até a próxima), strum (acordes "dedilhados"),
+ * picotar (chop: repete a nota em pedaços de N beats) e dobrar oitava (addOctave ±1/±2).
+ */
 export function transformNotes(
   p: Project,
-  a: { pattern: string; channel?: string; transpose?: number; quantize?: number; strength?: number; humanizeTiming?: number; humanizeVelocity?: number; velocityScale?: number; lengthScale?: number; seed?: number },
+  a: {
+    pattern: string;
+    channel?: string;
+    fromBeat?: number;
+    toBeat?: number;
+    lowNote?: number | string;
+    highNote?: number | string;
+    transpose?: number;
+    quantize?: number;
+    strength?: number;
+    humanizeTiming?: number;
+    humanizeVelocity?: number;
+    velocityScale?: number;
+    setVelocity?: number;
+    lengthScale?: number;
+    setLength?: number;
+    shiftBeats?: number;
+    reverse?: boolean;
+    legato?: boolean;
+    strum?: number;
+    chop?: number;
+    addOctave?: number;
+    seed?: number;
+  },
 ): ActionResult {
   const pat = patternRef(p, a.pattern);
   let seed = a.seed ?? 1234;
@@ -342,10 +372,14 @@ export function transformNotes(
     seed = (seed * 1664525 + 1013904223) >>> 0;
     return seed / 4294967296 - 0.5;
   };
+  const lo = (a.fromBeat ?? 0) * PPQ, hi = a.toBeat !== undefined ? a.toBeat * PPQ : Infinity;
+  const kLo = a.lowNote !== undefined ? parseNote(a.lowNote) : 0, kHi = a.highNote !== undefined ? parseNote(a.highNote) : 127;
+  const inSel = (n: Note) => n.pos >= lo && n.pos < hi && n.key >= kLo && n.key <= kHi;
   const ops: Op[] = [];
   let count = 0;
   for (const [chId, notes] of selectNotes(p, pat, a.channel)) {
-    const next = notes.map((n0) => {
+    const keep = notes.filter((n) => !inSel(n));
+    let sel = notes.filter(inSel).map((n0) => {
       const n = { ...n0 };
       if (a.transpose) n.key = Math.max(0, Math.min(127, n.key + a.transpose));
       if (a.quantize) {
@@ -354,13 +388,52 @@ export function transformNotes(
         n.pos = Math.round(n.pos + (q - n.pos) * (a.strength ?? 1));
       }
       if (a.lengthScale) n.len = Math.max(1, Math.round(n.len * a.lengthScale));
+      if (a.setLength) n.len = Math.max(1, Math.round(a.setLength * PPQ));
       if (a.velocityScale) n.vel = Math.max(0, Math.min(1, n.vel * a.velocityScale));
+      if (a.setVelocity !== undefined) n.vel = Math.max(0, Math.min(1, a.setVelocity));
+      if (a.shiftBeats) n.pos = Math.max(0, Math.round(n.pos + a.shiftBeats * PPQ));
       if (a.humanizeTiming) n.pos = Math.max(0, Math.round(n.pos + rnd() * 2 * a.humanizeTiming * PPQ));
       if (a.humanizeVelocity) n.vel = Math.max(0.05, Math.min(1, n.vel + rnd() * 2 * a.humanizeVelocity));
-      count++;
       return n;
     });
-    ops.push(set(['patterns', pat.id, 'notes', chId], next));
+    if (a.reverse && sel.length) {
+      // espelha dentro do trecho (ou do pattern): o fim de cada nota vira o começo
+      const a0 = Math.max(lo, 0), a1 = Number.isFinite(hi) ? hi : Math.max(patternLength(p, pat), ...sel.map((n) => n.pos + n.len));
+      sel = sel.map((n) => ({ ...n, pos: Math.max(0, a0 + (a1 - (n.pos + n.len) - a0)) }));
+    }
+    if (a.legato && sel.length) {
+      const starts = [...new Set(sel.map((n) => n.pos))].sort((x, y) => x - y);
+      const end = Number.isFinite(hi) ? hi : patternLength(p, pat);
+      sel = sel.map((n) => {
+        const next = starts.find((t) => t > n.pos);
+        return { ...n, len: Math.max(1, (next ?? Math.max(end, n.pos + n.len)) - n.pos) };
+      });
+    }
+    if (a.strum && sel.length) {
+      // notas que começam juntas (acorde) entram uma depois da outra, da mais grave à mais aguda
+      const groups = new Map<number, Note[]>();
+      for (const n of sel) (groups.get(n.pos) ?? groups.set(n.pos, []).get(n.pos)!).push(n);
+      const d = a.strum * PPQ;
+      sel = [...groups.values()].flatMap((g) =>
+        g
+          .sort((x, y) => x.key - y.key)
+          .map((n, i) => {
+            const off = Math.round((d >= 0 ? i : g.length - 1 - i) * Math.abs(d));
+            return { ...n, pos: n.pos + off, len: Math.max(1, n.len - off) };
+          }),
+      );
+    }
+    if (a.chop && a.chop > 0) {
+      const step = Math.max(1, Math.round(a.chop * PPQ));
+      sel = sel.flatMap((n) => {
+        const out: Note[] = [];
+        for (let t = n.pos; t < n.pos + n.len; t += step) out.push({ ...n, id: uid('n'), pos: t, len: Math.max(1, Math.min(step, n.pos + n.len - t)) });
+        return out;
+      });
+    }
+    if (a.addOctave) sel = [...sel, ...sel.map((n) => ({ ...n, id: uid('n'), key: Math.max(0, Math.min(127, n.key + 12 * a.addOctave!)) }))];
+    count += sel.length;
+    ops.push(set(['patterns', pat.id, 'notes', chId], [...keep, ...sel]));
   }
   return { ops, result: { notes: count } };
 }
@@ -681,6 +754,10 @@ export function describe(p: Project) {
         ...(c.kind === 'audio' ? { audio: c.sample?.split(/[\\/]/).pop(), insert: c.insert ?? 0 } : c.kind === 'auto' ? { automation: c.target?.label, points: c.points?.length } : { pattern: p.patterns.find((x) => x.id === c.patternId)?.name }),
         muted: c.muted || undefined,
       })),
+    tracks: p.tracks
+      .map((t, i) => ({ n: i + 1, name: t.name, mute: t.mute || undefined, clips: p.clips.filter((c) => c.track === i).length }))
+      .filter((t) => t.clips || t.mute || !/^Track \d+$/.test(t.name)),
+    audios: (p.audios ?? []).map((au) => ({ id: au.id, name: au.name, variantOf: au.variantOf, edited: au.path !== au.original || !!au.edited || undefined })),
     mixer: p.mixer
       .map((m, i) => ({ i, name: m.name, volumeDb: Math.round(20 * Math.log10(Math.max(1e-6, m.volume)) * 10) / 10, pan: m.pan, mute: m.mute || undefined, output: i > 0 && m.output > 0 ? m.output : undefined, effects: m.effects.map((e) => `${e.type}${e.enabled ? '' : ' (off)'}#${e.id}`) }))
       .filter((m, i) => i === 0 || p.channels.some((c) => c.insert === i) || m.effects.length || !/^Insert \d+$/.test(m.name)),

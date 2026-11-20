@@ -231,6 +231,9 @@ function connect() {
       case 'preview':
         remotePreview(m);
         break;
+      case 'ui':
+        remoteUi(m);
+        break;
     }
   };
 }
@@ -251,7 +254,28 @@ function fixSelection() {
 // Status para o MCP saber o que está tocando.
 setInterval(() => {
   const s = audio.status;
-  send({ type: 'status', status: { playing: s.playing, mode: s.mode, bar: Math.floor(s.tick / ticksPerBar(state.project)) + 1, patternId: s.patternId, audioRunning: audio.running } });
+  const bar = ticksPerBar(state.project);
+  send({
+    type: 'status',
+    status: {
+      playing: s.playing,
+      mode: s.mode,
+      bar: Math.floor(s.tick / bar) + 1,
+      patternId: s.patternId,
+      pattern: state.project.patterns.find((x) => x.id === state.patternId)?.name,
+      channel: state.project.channels.find((c) => c.id === state.channelId)?.name,
+      audioRunning: audio.running,
+      recording: audio.recording || midiRecording() || undefined,
+      selection: state.sel ? [state.sel.start / bar + 1, state.sel.end / bar] : null,
+      loop: state.loopOn,
+      metronome: state.metronome,
+      countIn: state.countIn,
+      follow: state.followPlay,
+      windows: (Object.keys(state.windows) as WindowId[]).filter((w) => state.windows[w].open),
+      automationOpen: state.autoClip ?? undefined,
+      bpmNow: s.bpm,
+    },
+  });
 }, 1000);
 
 // ---------------------------------------------------------------- edição
@@ -664,6 +688,48 @@ export function selectPattern(id: string) {
 }
 export function selectChannel(id: string) {
   state.channelId = id;
+  emit();
+}
+
+/** Comandos do Claude (MCP) para a interface: área, loop, janelas, seleção... */
+function remoteUi(m: {
+  select?: [number, number] | null;
+  loop?: boolean;
+  metronome?: boolean;
+  countIn?: boolean;
+  follow?: boolean;
+  mode?: 'pattern' | 'song';
+  seekBar?: number;
+  open?: WindowId | WindowId[];
+  close?: WindowId | WindowId[];
+  pattern?: string;
+  channel?: string;
+  automation?: string;
+  message?: string;
+}) {
+  const bar = ticksPerBar(state.project);
+  if (m.select !== undefined) setSelection(m.select ? { start: Math.round((m.select[0] - 1) * bar), end: Math.round(m.select[1] * bar) } : null);
+  if (m.loop !== undefined && m.loop !== state.loopOn) toggleLoop();
+  if (m.metronome !== undefined && m.metronome !== state.metronome) toggleMetronome();
+  if (m.countIn !== undefined && m.countIn !== state.countIn) toggleCountIn();
+  if (m.follow !== undefined) state.followPlay = m.follow;
+  if (m.mode) setMode(m.mode);
+  if (m.pattern) {
+    const pat = findPattern(state.project, m.pattern);
+    if (pat) selectPattern(pat.id);
+  }
+  if (m.channel) {
+    const ch = findChannel(state.project, m.channel);
+    if (ch) selectChannel(ch.id);
+  }
+  if (m.seekBar !== undefined) audio.seek(Math.max(0, Math.round((m.seekBar - 1) * bar)));
+  for (const w of [m.close ?? []].flat()) if (state.windows[w]) closeWindow(w);
+  for (const w of [m.open ?? []].flat()) if (state.windows[w]) openWindow(w);
+  if (m.automation) {
+    state.autoClip = m.automation;
+    openWindow('autos');
+  }
+  if (m.message) toast(m.message, 'mcp');
   emit();
 }
 
