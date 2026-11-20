@@ -858,3 +858,7 @@ option, optgroup { background-color: var(--pop); color: var(--text); }
 .hint-corner { position: fixed; right: 8px; bottom: 6px; z-index: 100000; pointer-events: none; max-width: 50vw; padding: 3px 9px; border-radius: 5px; background: var(--pop); color: var(--text2); border: 1px solid var(--line2); box-shadow: 0 4px 12px var(--shadow); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* o olho do rack não ganha fundo (nem no hover, nem ligado) */
 .pr-tools .rack-eye, .pr-tools .rack-eye:hover:not(:disabled), .pr-tools .rack-eye.on, .pr-tools .rack-eye.on:hover:not(:disabled) { background: none; box-shadow: none; filter: none; border: none; }
+/* nome do pattern no título do rack: parece o texto apagado de sempre, mas dá para editar */
+.win-name .title-edit { font: inherit; color: var(--dim); background: transparent; border: 1px solid transparent; border-radius: 3px; padding: 0 3px; margin: 0 0 0 -3px; height: 20px; box-shadow: none; cursor: text; min-width: 0; }
+.win-name .title-edit:hover { border-color: var(--line2); }
+.win-name .title-edit:focus { color: var(--text); background: var(--well); border-color: var(--acc); outline: none; }

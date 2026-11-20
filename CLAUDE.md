@@ -516,6 +516,9 @@ Z…M/Q…P teclado musical, -/= oitava.
 - Arquivo → Abrir (Ctrl+O) e Salvar como usam o explorador de arquivos do sistema no app
   desktop (`mlabsWindow.openDialog/saveDialog` → `dialog:open/save` em main.cjs); no
   navegador, `<input type=file>` → `POST /api/import` (cópia em Importados) → `/api/open`.
+- Lista de patterns (Picker.tsx): duplo clique abre o pattern no rack; botão direito:
+  abrir, renomear, clonar, excluir. O nome do pattern no título do rack é um campo
+  (`.title-edit`, com cara de texto apagado): editar renomeia o pattern.
 - Navegador recolhido é lembrado (`browser.open` nas prefs, gravado em `emit()`).
 
 ### Convenções de código da interface
