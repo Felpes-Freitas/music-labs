@@ -114,3 +114,41 @@ test('cada play tem um número e zera as voltas (gravação ignora status de pla
   eng.play('song', null, 0);
   assert.equal(eng.status().playId, 43); // sem número: o seguinte
 });
+
+for (const mode of ['pattern', 'song'] as const)
+  test(`loop (${mode}): a nota no começo toca em toda volta`, () => {
+    const p = emptyProject();
+    p.bpm = 120; // compasso = 2 s
+    const r = A.addChannel(p, { type: 'synth' });
+    applyOps(p, r.ops);
+    const ch = (r.result as { id: string }).id;
+    const pat = p.patterns[0];
+    pat.length = 16; // 1 compasso
+    pat.notes[ch] = [{ id: 'n0', key: 60, pos: 0, len: PPQ / 2, vel: 0.9 }];
+    if (mode === 'song') applyOps(p, A.placePattern(p, { pattern: pat.id, track: 1, bar: 1, bars: 1 }).ops);
+    const eng = new Engine(SR);
+    eng.setProject(p);
+    eng.setTransport({ region: mode === 'song' ? [0, PPQ * 4] : null, loopOn: true });
+    eng.play(mode, pat.id, 0);
+    const x = run(eng, 8.2); // 4 voltas
+    for (let k = 0; k < 4; k++) assert.ok(rms(x, (k * 2 + 0.02) * SR, (k * 2 + 0.2) * SR) > 0.01, `volta ${k + 1}: a nota do começo tocou`);
+  });
+
+test('loop com volta caindo bem no fim de um bloco: a nota do começo toca', () => {
+  const p = emptyProject();
+  // 125 BPM: 1 tempo = 0,48 s = 23040 amostras = 180 blocos de 128 — a volta cai no fim do bloco
+  p.bpm = 125;
+  const r = A.addChannel(p, { type: 'synth' });
+  applyOps(p, r.ops);
+  const ch = (r.result as { id: string }).id;
+  const pat = p.patterns[0];
+  pat.length = 4; // 1 tempo
+  pat.notes[ch] = [{ id: 'n0', key: 60, pos: 0, len: PPQ / 4, vel: 0.9 }];
+  const eng = new Engine(SR);
+  eng.setProject(p);
+  eng.setTransport({ loopOn: true });
+  eng.play('pattern', pat.id, 0);
+  const beat = 0.48;
+  const x = run(eng, beat * 4 + 0.1);
+  for (let k = 0; k < 4; k++) assert.ok(rms(x, (k * beat + 0.01) * SR, (k * beat + 0.08) * SR) > 0.01, `volta ${k + 1}`);
+});
