@@ -26,7 +26,7 @@ class MusicLabsProcessor extends AudioWorkletProcessor {
         case 'ops':
           if (eng.project) {
             try {
-              eng.setProject(applyOps(eng.project, m.ops));
+              eng.setProject(applyOps(eng.project, m.ops, true)); // já são cópias (postMessage)
             } catch (err) {
               this.port.postMessage({ type: 'resync', error: String(err) });
             }

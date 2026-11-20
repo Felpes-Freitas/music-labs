@@ -247,63 +247,87 @@ export function renderGen(g: AutoGen, len: number): AutoPoint[] {
       const f = (t % per) / per;
       // cai na hora no começo do período e volta ao máximo ao longo de "release"
       const x = f >= rel ? 1 : shapeCurve(f / rel, c);
-      out.push({ t: Math.round(t), v: map(x) });
+      out.push({ t, v: map(x) });
     }
-    return simplify(out);
+    return toTicks(simplify(out), false);
   }
   // LFO: a fase anda conforme o período (que pode mudar ao longo do clipe e "respirar")
   const p0 = Math.max(1 / 16, val(g, 'period')) * PPQ, p1 = Math.max(1 / 16, val(g, 'periodEnd')) * PPQ;
   const br = Math.max(0, val(g, 'breathe')), brP = Math.max(0.25, val(g, 'breathePeriod')) * PPQ;
   const d0 = clamp01(val(g, 'depth')), d1 = clamp01(val(g, 'depthEnd'));
   const w = val(g, 'wave');
-  const minPer = Math.min(p0, p1) * Math.pow(2, -br);
-  const dt = Math.max(len / MAX, Math.min(minPer / 32, 4), 0.25);
-  let ph = val(g, 'phase');
   // período geométrico entre início e fim, contraído/expandido pela respiração
   const perAt = (tt: number) => p0 * Math.pow(p1 / p0, tt / len) * Math.pow(2, -br * Math.sin((2 * Math.PI * tt) / brP));
+  const ph0 = val(g, 'phase');
+  const jumps = w === 'square' || w === 'saw' || w === 'sawdown';
+  // pontos por ciclo: seno 24 (erro < 0,5%), triângulo nos vértices, quadrada/serra nos saltos
+  const step = w === 'sine' ? 1 / 24 : w === 'tri' ? 1 / 4 : w === 'square' ? 1 / 2 : 1;
+  const at = (t: number, ph: number) => {
+    const d = d0 + (d1 - d0) * (t / len);
+    return clamp01(0.5 + 0.5 * wave(w, ph) * d);
+  };
+  /** Pontos da fase a até b, com o tempo indo linearmente de t0 a t1 (um ciclo, ou parte dele). */
+  const emit = (a: number, b: number, t0: number, t1: number) => {
+    if (b <= a || t1 <= t0) return;
+    // começo do trecho (numa onda com salto, o valor depois do salto entra mesmo no mesmo instante)
+    if (!out.length || out[out.length - 1].t < t0 || jumps) out.push({ t: t0, v: at(t0, a) });
+    for (let k = Math.floor(a / step + 1e-9) + 1; k * step <= b + 1e-9 && out.length < MAX; k++) {
+      const ph = k * step;
+      const t = t0 + ((ph - a) / (b - a)) * (t1 - t0);
+      if (jumps) out.push({ t, v: at(t, ph - 1e-7) }); // valor logo antes do salto
+      if (!jumps || ph < b - 1e-9) out.push({ t, v: at(t, ph) });
+    }
+    const last = out[out.length - 1];
+    if (last.t < t1 - 1e-6) out.push({ t: t1, v: at(t1, b - (jumps ? 1e-7 : 0)) });
+  };
   const unit = val(g, 'grid') * PPQ;
   if (val(g, 'quantize') && unit > 0) {
     // ciclos na grade: cada ciclo tem um tamanho que cabe nela; abaixo de uma célula,
     // n ciclos iguais enchem a célula inteira — todo começo de célula cai numa linha
     let t = 0;
-    while (t < len && out.length < MAX) {
+    while (t < len - 1e-6 && out.length < MAX) {
       const per = gridPeriod(perAt(t), unit);
       const n = per < unit ? Math.round(unit / per) : 1;
-      for (let k = 0; k < n && t < len; k++) {
-        const steps = w === 'square' ? 2 : 32;
-        for (let i = 0; i < steps; i++) {
-          const tt = t + (per * i) / steps;
-          if (tt >= len) break;
-          const d = d0 + (d1 - d0) * (tt / len);
-          out.push({ t: tt, v: clamp01(0.5 + 0.5 * wave(w, ph + i / steps) * d) });
-          if (w === 'square') out.push({ t: Math.min(len, tt + per / 2) - 0.5, v: clamp01(0.5 + 0.5 * wave(w, ph + i / steps) * d) });
-        }
-        // o ponto final do ciclo (ou do clipe, se ele acabar no meio)
+      for (let k = 0; k < n && t < len - 1e-6; k++) {
         const end = Math.min(len, t + per);
-        const d = d0 + (d1 - d0) * (end / len);
-        const frac = (end - t) / per;
-        if (end >= len) out.push({ t: len, v: clamp01(0.5 + 0.5 * wave(w, ph + frac) * d) });
+        emit(ph0, ph0 + (end - t) / per, t, end);
         t += per;
       }
     }
   } else {
-    for (let t = 0; ; t += dt) {
-      const tt = Math.min(t, len);
-      const u = tt / len;
-      const d = d0 + (d1 - d0) * u;
-      out.push({ t: Math.round(tt * 4) / 4, v: clamp01(0.5 + 0.5 * wave(w, ph) * d) });
-      if (tt >= len) break;
-      ph += dt / perAt(tt);
+    // a fase é integrada fino só para achar onde cada ciclo começa; dentro de um ciclo
+    // ela anda linear (o período quase não muda em um ciclo)
+    const minPer = Math.min(p0, p1) * Math.pow(2, -br);
+    const dt = Math.max(minPer / 64, len / 200000);
+    let ph = ph0, t = 0, segT = 0, segPh = ph0;
+    while (t < len && out.length < MAX) {
+      const h = Math.min(dt, len - t);
+      const nph = ph + h / perAt(t);
+      const cross = Math.floor(ph + 1e-12) + 1; // próximo começo de ciclo
+      if (nph >= cross) {
+        const tc = t + (h * (cross - ph)) / (nph - ph);
+        emit(segPh, cross, segT, tc);
+        segT = tc;
+        segPh = cross;
+      }
+      ph = nph;
+      t += h;
     }
+    emit(segPh, ph, segT, len);
   }
-  // ticks inteiros (a engine e o projeto usam ticks inteiros nos pontos)
-  const merged: AutoPoint[] = [];
-  for (const p of out) {
+  return toTicks(out.map((p) => ({ t: p.t, v: map(p.v) })), jumps);
+}
+
+/** Ticks inteiros (como a engine e o projeto usam). Saltos (onda quadrada/serra) guardam os dois valores no mesmo tick. */
+function toTicks(pts: AutoPoint[], jumps: boolean): AutoPoint[] {
+  const out: AutoPoint[] = [];
+  for (const p of pts) {
     const t = Math.round(p.t);
-    if (merged.length && merged[merged.length - 1].t === t && !(w === 'square' || w === 'saw' || w === 'sawdown')) merged[merged.length - 1].v = p.v;
-    else merged.push({ t, v: p.v });
+    const last = out[out.length - 1];
+    if (last && last.t === t && (!jumps || (out.length > 1 && out[out.length - 2].t === t))) last.v = p.v;
+    else out.push({ t, v: p.v });
   }
-  return simplify(merged.map((p) => ({ t: p.t, v: map(p.v) })));
+  return out;
 }
 
 /** Recalcula os pontos de um clipe gerado por função (para o tamanho atual). */

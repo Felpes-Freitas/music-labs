@@ -315,7 +315,8 @@ function Graph({ clip, custom, grid, onCustom }: { clip: Clip; custom: boolean; 
         }
       }
     },
-    [clip, custom, grid],
+    // o clipe é mudado no lugar: observa os pontos (array novo a cada edição), não o objeto
+    [clip.points, clip.len, clip.pos, custom, grid],
   );
 
   const toTV = (e: PointerEvent) => {
