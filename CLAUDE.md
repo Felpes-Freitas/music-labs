@@ -295,6 +295,9 @@ Z…M/Q…P teclado musical, -/= oitava.
   Delete apaga; Esc limpa (atalhos
   valem se o último clique foi na playlist — `playlistFocused()`; ela fica no fundo, nunca é
   a janela da frente, e o piano roll ignora o teclado nesse caso).
+  **Duplo clique** (evento `dblclick` do canvas; o `detail` do pointerdown não traz a
+  contagem no Chrome): pattern → seleciona e abre o rack; automação → Central; áudio →
+  Afinador (até existir o editor de áudio do ROADMAP); nome da track → renomear.
   Bordas: direita e **esquerda** redimensionam (esquerda anda o começo e mantém o conteúdo:
   `startSec` no áudio, `offset` no pattern). **Snap** (`core/snap.ts`, ímã "auto/tempo/
   compasso", pref `pl.snap`): auto segue o zoom como no FL (compasso … 1/16 de tempo,
@@ -317,7 +320,7 @@ Z…M/Q…P teclado musical, -/= oitava.
 - **Central de Automações** (`AutoCenter.tsx`, `web/autos.ts`, `core/autogen.ts`): botão
   direito num knob com `auto` ou no BPM → "Criar automação…" (`createAutomation`: clipe na
   área selecionada ou 4 compassos na agulha, track livre) e abre a Central nele; duplo
-  clique ou Shift+botão direito num clipe de automação abre o existente (`state.autoClip`).
+  clique num clipe de automação abre o existente (`state.autoClip`).
   O clipe guarda `gen` (função) e `points` (o que a engine toca). Funções: rampa (riser,
   exponencial, fade in/out, curva S), LFO (seno/triângulo/quadrada/serra; período no
   início e no fim = acelera; "respiração" contrai/expande a frequência; intensidade início/
