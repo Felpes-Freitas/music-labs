@@ -91,3 +91,33 @@ test('automação de BPM acelera a música', () => {
   assert.ok(Math.abs(eng.tick / PPQ - 2.5) < 0.05, `tempos em 1 s: ${eng.tick / PPQ}`);
   assert.equal(eng.status().bpm, 150);
 });
+
+import { gridPeriod, snapToGrid } from '../src/core/autogen.ts';
+
+test('período na grade: múltiplos ou divisões exatas de uma célula', () => {
+  assert.equal(gridPeriod(0.9, 0.25), 1);
+  assert.equal(gridPeriod(0.6, 0.25), 0.5);
+  assert.equal(gridPeriod(0.13, 0.25), 0.125);
+  assert.equal(gridPeriod(0.09, 0.25), 0.25 / 3);
+});
+
+test('snap magnético: trava perto da grade, fica livre longe dela', () => {
+  assert.equal(snapToGrid(1.04, 0.25), 1); // 4% de 1 tempo: trava
+  assert.equal(snapToGrid(1.13, 0.25), 1.13); // entre 1 e 1,25: número quebrado fica
+  assert.equal(snapToGrid(1.13, 0), 1.13); // grade livre
+});
+
+test('ciclos na grade: seno acelerando muda de período em passos e cada célula começa numa linha', () => {
+  const unit = PPQ / 4;
+  const g: AutoGen = { kind: 'lfo', lo: 0, hi: 1, wave: 'saw', period: 2, periodEnd: 1 / 8, grid: 1 / 4, quantize: true };
+  const pts = renderGen(g, 8 * BAR);
+  // começo de cada ciclo da serra = ponto com valor mínimo logo depois de um máximo
+  const starts = pts.filter((p, i) => i > 0 && pts[i - 1].v > 0.9 && p.v < 0.1).map((p) => p.t);
+  assert.ok(starts.length > 20, `ciclos: ${starts.length}`);
+  // ciclos de 1/8 de tempo vêm em pares: pelo menos um a cada dois começa numa linha da grade
+  const onGrid = starts.filter((t) => Math.abs(t / unit - Math.round(t / unit)) < 0.05).length;
+  assert.ok(onGrid >= starts.length / 2, `na grade: ${onGrid} de ${starts.length}`);
+  // e os períodos usados são só valores da grade
+  const lens = new Set(starts.slice(1).map((t, i) => Math.round(t - starts[i])));
+  for (const l of lens) assert.ok([PPQ * 2, PPQ * 1.75, PPQ * 1.5, PPQ * 1.25, PPQ, PPQ * 0.75, PPQ / 2, PPQ / 4, PPQ / 8].some((x) => Math.abs(x - l) <= 1), `período ${l}`);
+});
