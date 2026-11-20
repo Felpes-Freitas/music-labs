@@ -2,9 +2,10 @@
 // seleção atual, janelas e status ao vivo da engine.
 
 import { useEffect, useReducer } from 'preact/hooks';
-import type { Project, AudioItem } from '../core/model';
+import type { Project, AudioItem, Channel } from '../core/model';
 import { emptyProject, findPattern, findChannel, parseNote, PPQ, ticksPerBar, songLength, uid } from '../core/model';
-import { completeOps } from '../core/audiochan';
+import { completeOps, newAudioChannel } from '../core/audiochan';
+import { ampSig } from '../core/reamp';
 import { applyOps, set, ins, type Op } from '../core/ops';
 import type { ActionResult } from '../core/actions';
 import * as A from '../core/actions';
@@ -643,14 +644,6 @@ function placeLiveTake(k: number) {
   if (ids.length) liveTakes.set(k, ids);
 }
 
-/** Gravação nova → lista de áudios do projeto (junto dos patterns), com nome numerado. */
-function addRecordingToPool(path: string, base: string) {
-  const list = state.project.audios ?? [];
-  if (list.some((a) => a.path === path)) return;
-  const n = list.filter((a) => a.name.startsWith(base + ' ')).length + 1;
-  edit([ins(['audios'], { id: uid('au'), name: `${base} ${n}`, path, original: path } satisfies AudioItem)]);
-}
-
 async function finishRecording() {
   const r = audio.stopRecording();
   const amp = ampTake;
@@ -672,6 +665,19 @@ async function finishRecording() {
   }
   if (amp) toast(`Aplicando os efeitos em alta qualidade (${takes.length} ${takes.length > 1 ? 'takes' : 'take'})…`);
   let placed = 0;
+  // todos os takes desta gravação vão para um canal só no rack (com a cadeia do amp, para reamp)
+  const base = amp ? 'Guitarra' : 'Gravação';
+  const taken = new Set([...state.project.channels.map((c) => c.name), ...(state.project.audios ?? []).map((a) => a.name)]);
+  let num = 1;
+  while (taken.has(`${base} ${num}`)) num++;
+  const sessionName = `${base} ${num}`;
+  let session: string | null = null;
+  const uploadWav = async (L: Float32Array, R: Float32Array) => {
+    const res = await fetch(`/api/recording?name=${encodeURIComponent(state.project.name)}`, { method: 'POST', headers: { 'content-type': 'audio/wav' }, body: new Blob([encodeWav(L, R, r.sr, 24) as BlobPart], { type: 'audio/wav' }) });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error);
+    return d.path as string;
+  };
   const tps = (state.project.bpm * PPQ) / 60;
   for (const t of takes) {
     try {
@@ -700,11 +706,18 @@ async function finishRecording() {
         }
       }
       last.b = L.length;
-      const wav = encodeWav(L, R, r.sr, 24);
-      const res = await fetch(`/api/recording?name=${encodeURIComponent(state.project.name)}`, { method: 'POST', headers: { 'content-type': 'audio/wav' }, body: new Blob([wav as BlobPart], { type: 'audio/wav' }) });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error);
-      addRecordingToPool(d.path, amp ? 'Guitarra' : 'Gravação');
+      const d = { path: await uploadWav(L, R) };
+      // amp: o bruto também (sem os pedais), para mudar os efeitos depois
+      const raw = amp ? await uploadWav(t.L, t.R) : undefined;
+      if (!session) {
+        const ac = amp ? { amp: { chain: JSON.parse(JSON.stringify(amp.chain)), outGainDb: amp.outGainDb } } : {};
+        if (ac.amp) (ac.amp as NonNullable<Channel['amp']>).sig = ampSig(ac.amp);
+        const nc = newAudioChannel(state.project, sessionName, d.path, ac);
+        edit(nc.ops, 'Gravação');
+        session = nc.id;
+      }
+      const itemName = takes.length > 1 ? `${sessionName}.${placed + 1}` : sessionName;
+      edit([ins(['audios'], { id: uid('au'), name: itemName, path: d.path, original: d.path, channel: session, ...(raw ? { raw } : {}) } satisfies AudioItem)]);
       pieces.forEach((pc, i) => {
         const lenTicks = Math.max(1, Math.round(((pc.b - pc.a) / r.sr) * tps));
         const id = liveIds[i];
@@ -712,7 +725,7 @@ async function finishRecording() {
         if (id && !clip) return; // este pedaço foi apagado durante a gravação
         if (clip) {
           // a prévia vira o arquivo em alta qualidade, no mesmo lugar (mesmo que você tenha movido)
-          edit([set(['clips', clip.id, 'sample'], d.path), set(['clips', clip.id, 'startSec'], pc.a / r.sr), set(['clips', clip.id, 'len'], lenTicks)]);
+          edit([set(['clips', clip.id, 'sample'], d.path), set(['clips', clip.id, 'channel'], session), set(['clips', clip.id, 'startSec'], pc.a / r.sr), set(['clips', clip.id, 'len'], lenTicks)]);
           ids.push(clip.id);
         } else {
           const track = freeTrackFrom(recBaseTrack, pc.tick, lenTicks); // depois dos pedaços já colocados

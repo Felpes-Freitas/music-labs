@@ -76,9 +76,26 @@ export function completeOps(p: Project): Op[] {
     ops.push(set(['audios', it.id, 'channel'], id));
   }
   for (const c of p.clips) {
-    if (c.kind !== 'audio' || !c.sample || exists(c.channel)) continue;
+    // prévias da gravação em andamento ("live:"): ganham canal só quando viram arquivo
+    if (c.kind !== 'audio' || !c.sample || c.sample.startsWith('live:') || exists(c.channel)) continue;
     const id = byPath.get(c.sample) ?? make(c.sample, fileLabel(c.sample), c.insert);
     ops.push(set(['clips', c.id, 'channel'], id));
   }
   return ops;
+}
+
+/**
+ * Ops de um canal de áudio novo (com o pattern-grupo e um insert livre com o nome dele).
+ * Usado pela gravação, que põe todos os takes de uma vez no mesmo canal.
+ */
+export function newAudioChannel(p: Project, name: string, sample: string, extra: Partial<Channel> = {}): { id: string; ops: Op[] } {
+  const ops: Op[] = [];
+  const taken = new Set(p.channels.map((c) => c.insert));
+  const id = uid('c');
+  const insert = freeInsert(p, taken);
+  if (insert > 0) ops.push(set(['mixer', insert, 'name'], name));
+  const ch: Channel = { id, name, color: color(p.channels.length), type: 'audio', params: { sample }, volume: 0.78, pan: 0, pitch: 0, mute: false, insert, effects: [], ...extra };
+  ops.push(ins(['channels'], ch));
+  ops.push(ins(['patterns'], { id: uid('p'), name, color: ch.color, length: 0, notes: {}, channels: [id] } satisfies Pattern));
+  return { id, ops };
 }

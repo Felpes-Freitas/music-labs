@@ -11,10 +11,17 @@ import { state, act, edit } from './state';
 
 const cache = new Map<string, Promise<{ sr: number; ch: Float32Array[] }>>();
 
-/** Áudio decodificado de um arquivo (em cache). */
+/** Quantos áudios decodificados ficam guardados (os mais recentes; o resto é lido de novo). */
+const CACHE_MAX = 8;
+
+/** Áudio decodificado de um arquivo (em cache, só os últimos usados). */
 export function loadAudio(path: string) {
   let p = cache.get(path);
-  if (!p) {
+  if (p) {
+    // usado agora: vai para o fim da fila
+    cache.delete(path);
+    cache.set(path, p);
+  } else {
     p = fetch(`/api/sample?path=${encodeURIComponent(path)}`)
       .then(async (r) => {
         if (!r.ok) throw new Error(`não consegui ler ${path.split('/').pop()}`);
@@ -26,6 +33,7 @@ export function loadAudio(path: string) {
         throw e;
       });
     cache.set(path, p);
+    while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!);
   }
   return p;
 }

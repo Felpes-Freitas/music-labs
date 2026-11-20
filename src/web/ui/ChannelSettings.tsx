@@ -19,6 +19,7 @@ import { ChannelMix } from './ChannelMix';
 import { openTuneAudio } from './Tune';
 import { addStitchAudios } from './Stitch';
 import { addToPool } from '../pool';
+import { openAmpReamp } from '../reamp';
 import { openWindow, selectChannel, state } from '../state';
 import { askConfirm } from './Dialog';
 
@@ -226,6 +227,11 @@ function AudioChannelWin() {
             <Waveform path={path} />
           </div>
           <div class="audio-tools">
+            {ch.amp && (
+              <button onClick={() => openAmpReamp(ch.id)} data-hint="Gravação do amp: mude os pedais e a gravação é refeita a partir do áudio bruto">
+                <Icon name="guitar" size={13} /> Amp (pedais)
+              </button>
+            )}
             <button onClick={() => openTuneAudio(itemId())} data-hint="Editar as notas do áudio (afinação, tom) e detectar o BPM">
               <Icon name="tune" size={13} /> Melodify
             </button>

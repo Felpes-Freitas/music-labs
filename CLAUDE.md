@@ -164,6 +164,24 @@ scripts/     ferramentas de diagnóstico e testes de UI (os _*.mts são temporá
 - `ChannelMix.tsx` (volume, pan, mute, insert, efeitos) aparece no canal de áudio
   (`AudioChannelWin` em ChannelSettings.tsx), na engrenagem do Melodify e do Stitcher.
 
+### Reamp e memória (`src/core/reamp.ts`, `src/web/reamp.ts`)
+
+- Gravação do amp salva o **bruto** (`AudioItem.raw`) e a versão processada (`path`); todos
+  os takes de uma gravação vão para **um** canal de áudio (`newAudioChannel` em
+  finishRecording) com `amp = { chain, outGainDb, sig }`. Prévias "live:" não ganham canal
+  (`completeOps` as ignora; tocam direto no insert até virar arquivo).
+- `ampLive(p, ch)`: toca o bruto pelos pedais em tempo real (engine: `st.amp`, automação
+  em `['channels', id, 'amp', 'chain', fxId, 'params', key]` = `ampParamPath`) quando
+  `amp.sig !== ampSig(amp)` (cadeia mudou, versão processada velha) ou há automação num
+  pedal; senão a versão processada (custo zero). Sem o bruto carregado, a processada.
+- `web/reamp.ts`: observa o projeto e refaz em segundo plano (renderChain HQ, sobe o WAV,
+  troca `path` do item, `sample` dos clipes e grava `sig`). `openAmpReamp(ch)` abre o amp
+  no `ReampView` (Amp.tsx; `Chain` recebe a cadeia e `update`); duplo clique numa gravação
+  do amp abre ali.
+- Memória: `audio.ts` descarrega da engine (`unsample` → `Engine.dropSamples`) o que o
+  projeto não usa mais, 4 s depois da última mudança (não durante gravação); o cache de
+  áudio decodificado das ferramentas (`clipaudio.loadAudio`) guarda só os 8 últimos.
+
 ### Engine (`src/core/engine.ts`)
 - Roda no AudioWorklet (`src/web/worklet.ts`) e no Node (render offline). Blocos de 128.
 - Modo pattern/song; `collect()` gera eventos de notas; clipes de áudio são mixados no
