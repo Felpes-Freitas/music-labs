@@ -15,7 +15,7 @@ import { SCALES } from '../core/theory.js';
 import { importFlp } from '../core/flp.js';
 import { encodeWav } from '../core/wav.js';
 import { analyzeMix } from '../core/analysis.js';
-import { emptyProject } from '../core/model.js';
+import { emptyProject, PROJECT_EXT } from '../core/model.js';
 import { Store, listProjects, RENDERS_DIR, SAMPLES_DIR, PROJECTS_DIR, RECORDINGS_DIR, IMPORTS_DIR, STATE_DIR, safeName } from './store.js';
 import { startMonitor, stopMonitor, monitorStatus, monitorSources } from './monitor.js';
 import { loadSample } from './samples.js';
@@ -101,10 +101,18 @@ export const ACTIONS: Record<string, ActionFn> = {
   toggleAudioEdits: S.toggleAudioEdits,
   fillSteps: S.fillSteps,
   replaceInstrument: S.replaceInstrument,
+  setPad: S.setPad,
 };
 
 /** "localSample": nome de um som do kit local (ex. "Kick") vira um sampler com o caminho. */
 function expandLocalSample(name: string, args: any) {
+  if (name === 'setPad' && args?.localSample) {
+    // pad com um som da instalação local (kit de bateria ou instrumento multi-sample)
+    const { localSample: wanted, ...rest } = args;
+    const hit = localSample(String(wanted)) ?? localInstrument(String(wanted));
+    if (!hit) throw new Error(`Som local "${wanted}" não encontrado`);
+    return { name: hit.name, ...rest, sample: hit.path };
+  }
   if ((name !== 'addChannel' && name !== 'updateChannel' && name !== 'replaceInstrument') || !args?.localSample) return args;
   const { localSample: wanted, ...rest } = args;
   const ls = localSample(String(wanted));
@@ -204,7 +212,7 @@ function browse(dir: string) {
     else if (AUDIO_EXT.has(ext)) out.push({ name: e, path: full, kind: 'audio' });
     else if (ext === '.flp') out.push({ name: e, path: full, kind: 'flp' });
     else if (ext === '.fst' && setFolder(full)) out.push({ name: e.replace(/\.fst$/i, ''), path: full, kind: 'instrument' });
-    else if (ext === '.musiclabs') out.push({ name: e, path: full, kind: 'project' });
+    else if (ext === PROJECT_EXT) out.push({ name: e, path: full, kind: 'project' });
   }
   return out.sort((a, b) => (a.kind === 'dir' ? 0 : 1) - (b.kind === 'dir' ? 0 : 1) || a.name.localeCompare(b.name));
 }

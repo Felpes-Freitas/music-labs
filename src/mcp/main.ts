@@ -264,11 +264,11 @@ tool(
   (a) => act('setProjectProps', a, 'Projeto atualizado'),
 );
 
-tool('save_project', 'Salva o projeto (.musiclabs). Sem path usa o arquivo atual ou ~/MusicLabs/Projetos/<nome>.musiclabs.', { path: z.string().optional() }, (a) => api('POST', '/api/save', a));
+tool('save_project', 'Salva o projeto (.mlstudio). Sem path usa o arquivo atual ou ~/MusicLabs/Projetos/<nome>.mlstudio.', { path: z.string().optional() }, (a) => api('POST', '/api/save', a));
 
 tool(
   'open_project',
-  'Abre um .musiclabs ou importa um .flp do FL Studio (canais, patterns, notas, playlist, mixer; plugins do FL viram instrumentos nativos equivalentes). Se o relatório vier com locked=true, o .flp foi salvo por um FL não registrado: o FL embaralha tempo e outros valores nesses arquivos (trava de licença) e eles ficam no padrão; pergunte o BPM ao usuário. Não tente decodificar esses valores.',
+  'Abre um .mlstudio ou importa um .flp do FL Studio (canais, patterns, notas, playlist, mixer; plugins do FL viram instrumentos nativos equivalentes). Se o relatório vier com locked=true, o .flp foi salvo por um FL não registrado: o FL embaralha tempo e outros valores nesses arquivos (trava de licença) e eles ficam no padrão; pergunte o BPM ao usuário. Não tente decodificar esses valores.',
   { path: z.string() },
   (a) => api('POST', '/api/open', a),
 );
@@ -280,7 +280,7 @@ tool('redo', 'Refaz.', {}, () => api('POST', '/api/redo'));
 
 // ------------------------------------------------------------ canais
 
-const instrumentType = z.enum(['synth', 'prisma', 'sampler', 'drum', 'pluck', 'fm']);
+const instrumentType = z.enum(['synth', 'prisma', 'sampler', 'drum', 'pluck', 'fm', 'pads']);
 
 tool(
   'add_channel',
@@ -338,6 +338,26 @@ tool(
   'Preenche os steps de um canal num pattern a cada N steps (1 = semicolcheias, 2 = colcheias, 4 = cada tempo, 8 = a cada 2 tempos, 16 = cada compasso), começando em offset (ex.: every 4 offset 2 = contratempo). Usa a nota que o canal já toca. Substitui as notas do canal nesse pattern.',
   { pattern: ref, channel: ref, every: z.number().min(1), offset: z.number().optional(), note: z.union([z.string(), z.number()]).optional(), velocity: z.number().min(0).max(1).optional() },
   (a) => act('fillSteps', a, `Steps preenchidos em ${a.channel}`),
+);
+
+tool(
+  'set_pad',
+  'Soundpad (canal type "pads", 16 pads 4×4): define o som de um pad — pad 1..16 (1 = embaixo à esquerda = C2, pad n = C2+n-1) — por localSample (som da instalação, ex. "Clap", "Grand"), sample (arquivo/pasta), type (+ params) ou preset; name, gain (dB), tune (semitons); clear esvazia. kit ("basico", "break") troca todos os pads. Para tocar, escreva notas C2..D#3 no canal (set_steps com note, add_notes).',
+  {
+    channel: ref,
+    pad: z.number().min(1).max(16).optional(),
+    localSample: z.string().optional(),
+    sample: z.string().optional(),
+    type: instrumentType.optional(),
+    preset: z.string().optional(),
+    params: z.record(z.string(), z.any()).optional(),
+    name: z.string().optional(),
+    gain: z.number().optional(),
+    tune: z.number().optional(),
+    clear: z.boolean().optional(),
+    kit: z.string().optional(),
+  },
+  (a) => act('setPad', a, a.kit ? `Kit ${a.kit} em ${a.channel}` : `Pad ${a.pad} de ${a.channel}`),
 );
 
 tool('remove_channel', 'Remove um canal e suas notas.', { channel: ref }, (a) => act('removeChannel', a, `Canal ${a.channel} removido`));
@@ -611,7 +631,7 @@ tool('remove_effect', 'Remove um efeito de um insert ou de um canal.', { ...targ
 
 tool(
   'batch',
-  'Executa várias ações de uma vez, atomicamente (um passo de undo). Nomes: addChannel, updateChannel, removeChannel, duplicateChannel, replaceInstrument, addPattern, updatePattern, removePattern, duplicatePattern, addNotes, setSteps, fillSteps, addChords, clearNotes, transformNotes, copyNotes, placePattern, removeClips, editClips, copySection, insertBars, deleteBars, updateTrack, updateInsert, resetInsert, addEffect, updateEffect, removeEffect, addChannelEffect, updateChannelEffect, removeChannelEffect, copyEffects, addAudioClip, automate (= add_automation), editAutomation, addAudio, renameAudio, removeAudio, toggleAudioEdits, setProjectProps. Os args são iguais aos das ferramentas correspondentes (addNotes usa {pattern, channel, notes:[{note,start,length,velocity}]}). Canais/patterns criados no mesmo lote podem ser referenciados pelo nome.',
+  'Executa várias ações de uma vez, atomicamente (um passo de undo). Nomes: addChannel, updateChannel, removeChannel, duplicateChannel, replaceInstrument, setPad, addPattern, updatePattern, removePattern, duplicatePattern, addNotes, setSteps, fillSteps, addChords, clearNotes, transformNotes, copyNotes, placePattern, removeClips, editClips, copySection, insertBars, deleteBars, updateTrack, updateInsert, resetInsert, addEffect, updateEffect, removeEffect, addChannelEffect, updateChannelEffect, removeChannelEffect, copyEffects, addAudioClip, automate (= add_automation), editAutomation, addAudio, renameAudio, removeAudio, toggleAudioEdits, setProjectProps. Os args são iguais aos das ferramentas correspondentes (addNotes usa {pattern, channel, notes:[{note,start,length,velocity}]}). Canais/patterns criados no mesmo lote podem ser referenciados pelo nome.',
   { actions: z.array(z.object({ name: z.string(), args: z.record(z.string(), z.any()) })), label: z.string().optional() },
   async ({ actions, label }) => (await api('POST', '/api/actions', { actions, origin: 'mcp', label: label ?? `${actions.length} edições` })).results,
 );

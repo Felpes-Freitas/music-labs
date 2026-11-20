@@ -10,7 +10,8 @@ import { PPQ, STEP, color, findPattern, makeInsert, noteName, parseNote, pattern
 import { ins, rem, set, type Op } from './ops.js';
 import { autoTarget, channelRef, freeTrack, insertRef, normalizedNow, patternRef, toNorm, updateChannel, type ActionResult, type AutoDescriptor } from './actions.js';
 import { GEN_DEFAULTS, GEN_PRESETS, renderGen, regen, trimAutoStart, type AutoGen, type GenKind, type Wave } from './autogen.js';
-import { INSTRUMENTS, sanitizeParams } from './registry.js';
+import { INSTRUMENTS, presetParams, sanitizeParams } from './registry.js';
+import { PAD_BASE, PAD_COUNT, PAD_KITS, parsePads, stringifyPads, type PadSlot } from './pads.js';
 import { dbToGain } from './dsp.js';
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
@@ -606,7 +607,7 @@ export function fillSteps(p: Project, a: { pattern: string; channel: string; eve
   const every = Math.max(1, Math.round(a.every));
   const steps = Math.round(patternLength(p, pat) / STEP);
   const cur = pat.notes[ch.id] ?? [];
-  const key = a.note !== undefined ? parseNote(a.note) : (cur[0]?.key ?? 60);
+  const key = a.note !== undefined ? parseNote(a.note) : (cur[0]?.key ?? (ch.type === 'pads' ? PAD_BASE : 60));
   const notes: Note[] = [];
   for (let i = Math.max(0, a.offset ?? 0); i < steps; i += every) notes.push({ id: uid('n'), key, pos: i * STEP, len: STEP, vel: a.velocity ?? 0.78 });
   return { ops: [set(['patterns', pat.id, 'notes', ch.id], notes)], result: { steps, hits: notes.length } };
@@ -638,4 +639,46 @@ export function replaceInstrument(
   const key = dominantKey(p, ch.id);
   if (oneShot && key !== null) ops.push(set(['channels', ch.id, 'pitch'], 60 - key));
   return { ops, result: { channel: ch.id, name: a.name ?? ch.name, ...(oneShot && key !== null ? { root: noteName(key) } : {}) } };
+}
+
+// ------------------------------------------------------------ Soundpad
+
+/**
+ * Mexe num pad de um canal Soundpad (pad 1..16; 1 = embaixo à esquerda = C2). Som: sample
+ * (arquivo ou pasta de instrumento), type (+ params) ou preset; name, gain (dB), tune
+ * (semitons); clear esvazia. kit troca a grade inteira por um kit pronto.
+ */
+export function setPad(
+  p: Project,
+  a: { channel: string; pad?: number; name?: string; sample?: string; type?: InstrumentType; preset?: string; params?: Record<string, unknown>; gain?: number; tune?: number; note?: number | string; clear?: boolean; kit?: string },
+): ActionResult {
+  const ch = channelRef(p, a.channel);
+  if (ch.type !== 'pads') throw new Error(`"${ch.name}" não é um Soundpad`);
+  if (a.kit) {
+    const kit = PAD_KITS.find((k) => k.id === a.kit || k.label.toLowerCase() === a.kit!.toLowerCase());
+    if (!kit) throw new Error(`Kit "${a.kit}" não existe. Opções: ${PAD_KITS.map((k) => k.id).join(', ')}`);
+    return { ops: [set(['channels', ch.id, 'params', 'pads'], stringifyPads(kit.pads))], result: { kit: kit.label } };
+  }
+  const i = Math.round(a.pad ?? 0) - 1;
+  if (i < 0 || i >= PAD_COUNT) throw new Error('pad vai de 1 a 16 (1 = embaixo à esquerda)');
+  const pads = parsePads(ch.params.pads);
+  let slot: PadSlot | null = pads[i];
+  if (a.clear) slot = null;
+  else {
+    if (a.preset) {
+      const pr = need(presetParams(a.preset), `Preset ${a.preset}`);
+      slot = { name: a.name ?? a.preset, type: pr.type, params: pr.params, gain: slot?.gain, tune: slot?.tune };
+    } else if (a.sample) slot = { name: a.name ?? (a.sample.split(/[\\/]/).pop() ?? a.sample).replace(/\.[a-z0-9]{2,5}$/i, ''), sample: a.sample, params: (a.params as PadSlot['params']) ?? {}, gain: slot?.gain, tune: slot?.tune };
+    else if (a.type) {
+      if (a.type === 'pads') throw new Error('Um pad não pode ter outro Soundpad');
+      slot = { name: a.name ?? INSTRUMENTS[a.type].label, type: a.type, params: sanitizeParams(INSTRUMENTS[a.type].params, a.params ?? {}), gain: slot?.gain, tune: slot?.tune };
+    }
+    if (!slot) throw new Error(`O pad ${i + 1} está vazio: informe sample, type ou preset`);
+    if (a.name !== undefined) slot = { ...slot, name: a.name };
+    if (a.gain !== undefined) slot = { ...slot, gain: a.gain };
+    if (a.tune !== undefined) slot = { ...slot, tune: Math.round(a.tune) };
+    if (a.note !== undefined) slot = { ...slot, note: parseNote(a.note) };
+  }
+  pads[i] = slot;
+  return { ops: [set(['channels', ch.id, 'params', 'pads'], stringifyPads(pads))], result: { pad: i + 1, note: noteName(PAD_BASE + i), name: slot?.name ?? null } };
 }

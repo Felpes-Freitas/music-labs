@@ -23,7 +23,7 @@ if [ "${1:-}" = "--server-only" ]; then
 fi
 
 if [ -x "$ELECTRON" ]; then
-  exec "$ELECTRON" "$DIR/desktop/main.cjs" >/dev/null 2>&1
+  exec "$ELECTRON" "$DIR/desktop/main.cjs" "$@" >/dev/null 2>&1
 fi
 
 "$0" --server-only

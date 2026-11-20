@@ -59,7 +59,8 @@ function addPreset(name: string) {
   if (r) selectChannel(r.id);
 }
 
-async function openFile(e: Entry) {
+/** Abre um projeto (.mlstudio) ou importa um .flp, pedindo confirmação se houver alterações não salvas. */
+export async function openFile(e: { name: string; path: string }) {
   if (state.dirty && !(await askConfirm({ title: `Abrir ${e.name}?`, message: 'As alterações não salvas do projeto atual serão perdidas.', ok: 'Abrir', danger: true }))) return;
   try {
     const r = await api('POST', '/api/open', { path: e.path });

@@ -1,9 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <rect x="64" y="64" width="896" height="896" rx="200" fill="#22292d"/>
-  <rect x="64" y="64" width="896" height="448" rx="200" fill="#2a3237"/>
-  <rect x="64" y="300" width="896" height="212" fill="#2a3237"/>
-  <circle cx="512" cy="512" r="300" fill="#e09a2f"/>
-  <circle cx="490" cy="490" r="270" fill="#f2a93b"/>
-  <circle cx="512" cy="512" r="118" fill="#14191c"/>
-  <path d="M300 512 C 360 380, 420 380, 452 512 S 540 644, 572 512 S 664 380, 724 512" fill="none" stroke="#4fc3e8" stroke-width="34" stroke-linecap="round"/>
+  <!-- Ícone do Music Labs: a mesma logo da tela de carregamento (anel cheio + onda) -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1c2327"/>
+      <stop offset="1" stop-color="#0f1315"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#bg)"/>
+  <rect x="64.5" y="64.5" width="895" height="895" rx="199.5" fill="none" stroke="#3b464c" stroke-opacity=".6" stroke-width="3"/>
+  <g transform="translate(512 512) scale(6.6) translate(-60 -60)">
+    <circle cx="60" cy="60" r="44" fill="none" stroke="#f2a93b" stroke-width="14" opacity=".55" filter="url(#glow)"/>
+    <circle cx="60" cy="60" r="44" fill="none" stroke="#f2a93b" stroke-width="14"/>
+    <circle cx="60" cy="60" r="28" fill="#0b0e10"/>
+    <path d="M33 60 C39 44, 49 42, 53 56 C56 66, 58 71, 60 71 C62 71, 64 66, 67 56 C71 42, 81 44, 87 60" fill="none" stroke="#4fc3e8" stroke-width="6.5" stroke-linecap="round"/>
+  </g>
 </svg>

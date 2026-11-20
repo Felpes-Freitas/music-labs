@@ -170,7 +170,7 @@ aparece na hora na interface, com aviso "Claude · …". Ferramentas:
 | grupo | ferramentas |
 | --- | --- |
 | leitura | `get_project`, `get_notes`, `list_sounds`, `search_samples`, `sample_library`, `music_theory` |
-| projeto | `new_project`, `set_project`, `save_project`, `open_project` (.musiclabs e .flp), `list_projects`, `undo`, `redo` |
+| projeto | `new_project`, `set_project`, `save_project`, `open_project` (.mlstudio e .flp), `list_projects`, `undo`, `redo` |
 | canais | `add_channel`, `update_channel` (inclui nota raiz e ajuste fino), `remove_channel` |
 | notas | `add_pattern`, `edit_pattern`, `set_steps`, `add_notes`, `add_chords`, `clear_notes`, `transform_notes` |
 | arranjo | `arrange`, `update_track` |

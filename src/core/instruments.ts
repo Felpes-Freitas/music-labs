@@ -4,6 +4,7 @@
 import type { InstrumentType, Params } from './model.js';
 import { Adsr, DelayLine, Osc, OnePole, Svf, TAU, Wave, clamp, dbToGain, mtof, panGains } from './dsp.js';
 import { INSTRUMENTS, defaults } from './registry.js';
+import { PAD_BASE, PAD_COUNT, parsePads } from './pads.js';
 import { Ensemble, PrismaVoice } from './prisma.js';
 
 export interface SampleData {
@@ -812,8 +813,96 @@ export class PrismaInstrument extends Instrument {
   }
 }
 
+// ---------------------------------------------------------------- Soundpad
+
+/**
+ * 16 pads, cada um um instrumento próprio (sampler com o arquivo do pad, ou o instrumento
+ * nativo/preset escolhido). A nota que chega escolhe o pad (C2 = pad 1); o pad toca a
+ * nota dele (C4 = altura original do sample) com a afinação e o ganho do pad.
+ */
+class PadsInstrument extends Instrument {
+  private subs: (Instrument | null)[] = [];
+  private sigs: string[] = [];
+  private gains: number[] = [];
+  private notes: number[] = [];
+  private tl = new Float32Array(0);
+  private tr = new Float32Array(0);
+  constructor(sr: number, type: InstrumentType, params: Params, private lookup: SampleLookup) {
+    super(sr, type, params, lookup);
+    this.build();
+  }
+  setParams(params: Params) {
+    super.setParams(params);
+    this.build();
+  }
+  /** Recria só os pads que mudaram (os outros continuam tocando). */
+  private build() {
+    const pads = parsePads(this.p.pads);
+    for (let i = 0; i < PAD_COUNT; i++) {
+      const s = pads[i];
+      const sig = s ? JSON.stringify([s.sample, s.type, s.params]) : '';
+      if (sig !== this.sigs[i]) {
+        this.sigs[i] = sig;
+        this.subs[i] = !s
+          ? null
+          : s.sample
+            ? createInstrument(this.sr, 'sampler', { sample: s.sample, oneshot: true, keytrack: true, root: 60, ...(s.params ?? {}) }, this.lookup)
+            : s.type && s.type !== 'pads'
+              ? createInstrument(this.sr, s.type, s.params ?? {}, this.lookup)
+              : null;
+      }
+      this.gains[i] = s ? dbToGain(s.gain ?? 0) : 1;
+      this.notes[i] = s ? (s.note ?? 60) + (s.tune ?? 0) : 60;
+    }
+  }
+  protected makeVoice(): Voice | null {
+    return null;
+  }
+  noteOn(n: NoteOn) {
+    const i = n.key - PAD_BASE;
+    const sub = i >= 0 && i < PAD_COUNT ? this.subs[i] : null;
+    if (sub) sub.noteOn({ ...n, key: this.notes[i] });
+  }
+  choke() {
+    for (const s of this.subs) s?.choke();
+  }
+  allOff() {
+    for (const s of this.subs) s?.allOff();
+  }
+  hardStop() {
+    for (const s of this.subs) s?.hardStop();
+  }
+  get busy() {
+    return this.subs.some((s) => s?.busy);
+  }
+  render(L: Float32Array, R: Float32Array, from: number, to: number) {
+    if (this.tl.length < L.length) {
+      this.tl = new Float32Array(L.length);
+      this.tr = new Float32Array(L.length);
+    }
+    for (let i = 0; i < PAD_COUNT; i++) {
+      const s = this.subs[i];
+      if (!s?.busy) continue;
+      const g = this.gains[i];
+      if (g === 1) {
+        s.render(L, R, from, to);
+        continue;
+      }
+      this.tl.fill(0, from, to);
+      this.tr.fill(0, from, to);
+      s.render(this.tl, this.tr, from, to);
+      for (let f = from; f < to; f++) {
+        L[f] += this.tl[f] * g;
+        R[f] += this.tr[f] * g;
+      }
+    }
+  }
+}
+
 export function createInstrument(sr: number, type: InstrumentType, params: Params, samples: SampleLookup): Instrument {
   switch (type) {
+    case 'pads':
+      return new PadsInstrument(sr, type, params, samples);
     case 'prisma':
       return new PrismaInstrument(sr, type, params, samples);
     case 'synth':

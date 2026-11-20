@@ -228,7 +228,8 @@ scripts/     ferramentas de diagnóstico e testes de UI (os _*.mts são temporá
   roots/browse/library/search, source/zone/sample/peaks, recording, **import**, render,
   transport, preview, registry, status) + WebSocket.
 - `store.ts`: pastas — `~/MusicLabs/{Projetos,Renders,Samples,Gravações,Importados}`;
-  estado em `~/.local/share/musiclabs` (Linux). Env: `MUSICLABS_PORT`, `MUSICLABS_HOME`,
+  estado em `~/.local/share/musiclabs` (Linux). Projetos são `.mlstudio` (`PROJECT_EXT`/
+  `PROJECT_FORMAT` em model.ts; `isProjectData` aceita arquivos de versões antigas pela estrutura). Env: `MUSICLABS_PORT`, `MUSICLABS_HOME`,
   `MUSICLABS_STATE_DIR`, `MUSICLABS_FL_DIR`, `MUSICLABS_WINE_C`, `MUSICLABS_FFMPEG`.
 - `library.ts`: na primeira execução varre pastas de samples de DAWs (Linux/Windows/Mac
   e prefixos Wine/Bottles/Lutris). `sampleset.ts`: instrumentos multi-sample (smpl,
@@ -354,6 +355,22 @@ Z…M/Q…P teclado musical, -/= oitava.
   (`replaceInstrument`: troca tipo/preset/params mantendo id, notas, efeitos, insert,
   volume, pan e automações; sample de um tiro → raiz = nota mais tocada do canal);
   **Clonar** = `duplicateChannel` com efeitos e notas. MCP: replace_instrument, fill_steps.
+- **Soundpad** (tipo `pads`; `core/pads.ts`, `PadsInstrument` em instruments.ts,
+  `PadsPanel.tsx`): 16 pads 4×4, cada um um mini-instrumento (sampler com arquivo/pasta,
+  ou nativo/preset) em `params.pads` (texto JSON, `parsePads`/`stringifyPads`). Pad i toca
+  na nota C2+i (pad 1 = embaixo à esquerda); o som do pad toca em `note` (padrão C4 =
+  altura original) + `tune`, com `gain` em dB. Cores por linha (vermelho, laranja, verde,
+  azul — `PAD_ROW_COLORS`). Com o canal selecionado, o teclado vira a grade:
+  1234/QWER/ASDF/ZXCV (`PAD_BY_KEY` em main.tsx). Na janela do canal (sem o piano):
+  clique toca, botão direito troca o som (instrumentMenu sem o próprio Soundpad), renomeia
+  ou limpa, arrastar áudio do navegador para o pad, ganho/afinação do pad selecionado,
+  Kits (básico e break sintetizados — funcionam sem samples —, bateria do FL, limpar).
+  Pads acendem ao tocar (teclado, clique e música via `audio.watch` + `status.lit`).
+  Samples dos pads carregam por `channelSamples` (interface e render). Step/preencher sem
+  notas usa C2. MCP: `set_pad` (pad, localSample/sample/type/preset, name, gain, tune,
+  clear, kit).
+- **Menus encadeados** (`MenuTree`): submenu que não cabe à direita abre à esquerda do
+  pai (`altX`), sem cobrir os níveis anteriores.
 - **Janelas** (`Win`): redimensionam pelas 4 bordas e 4 cantos (`.win-edge`, dir n/s/e/w…);
   borda esquerda/de cima não passam da área de trabalho; a playlist continua no fundo
   depois de redimensionada.
