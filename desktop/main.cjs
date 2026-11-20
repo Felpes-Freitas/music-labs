@@ -51,6 +51,7 @@ function ping() {
 
 /** Sobe o servidor dentro do próprio app (a menos que já haja um rodando, ex.: iniciado pelo MCP). */
 let serverMod = null; // o servidor que roda dentro deste app (null se outro processo já servia)
+let quitting = false; // já gravou o projeto e soltou o teclado RGB: pode sair
 async function ensureServer() {
   if (await ping()) return;
   const { pathToFileURL } = require('node:url');
@@ -133,14 +134,15 @@ ipcMain.on('win', (e, cmd) => {
 // reiniciar o app não adiantaria.
 ipcMain.handle('app:relaunch', () => {
   if (!serverMod) return false;
-  try {
-    serverMod.flushState?.();
-  } catch {
-    /* segue */
-  }
-  // sem o arquivo da linha de comando: ao reiniciar, segue o projeto atual (autosave)
-  app.relaunch({ args: process.argv.slice(1).filter((a) => !PROJECT_FILE.test(a)) });
-  app.exit(0);
+  // grava o projeto e solta o teclado RGB antes de reiniciar
+  quitting = true;
+  Promise.resolve(serverMod.shutdown ? serverMod.shutdown() : serverMod.flushState?.())
+    .catch(() => {})
+    .finally(() => {
+      // sem o arquivo da linha de comando: ao reiniciar, segue o projeto atual (autosave)
+      app.relaunch({ args: process.argv.slice(1).filter((a) => !PROJECT_FILE.test(a)) });
+      app.exit(0);
+    });
   return true;
 });
 ipcMain.handle('win:isMax', (e) => BrowserWindow.fromWebContents(e.sender)?.isMaximized() ?? false);
@@ -150,3 +152,13 @@ app.whenReady().then(async () => {
   createWindow();
 });
 app.on('window-all-closed', () => app.quit());
+
+// Antes de sair: grava o projeto e devolve o teclado RGB (OpenRGB) ao que era.
+app.on('before-quit', (e) => {
+  if (quitting || !serverMod?.shutdown) return;
+  e.preventDefault();
+  quitting = true;
+  Promise.resolve(serverMod.shutdown())
+    .catch(() => {})
+    .finally(() => app.quit());
+});

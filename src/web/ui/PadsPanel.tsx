@@ -16,11 +16,16 @@ import { Knob, MenuTree, type MenuItem } from './widgets';
 import { askText } from './Dialog';
 import { instrumentMenu, loadLib, libNow, type Lib } from '../addmenu';
 import { samplerParams } from './Browser';
+import { rgbFlash } from '../rgb';
 
 /** Pads acesos agora (tecla do computador, clique ou música tocando). */
 const hits = new Set<(ch: string, i: number) => void>();
 export function padHit(ch: string, i: number) {
   for (const f of hits) f(ch, i);
+}
+/** Pad clicado ou tocado pela música: acende a tecla dele no teclado RGB. */
+function padFlash(i: number) {
+  rgbFlash(padKey(i));
 }
 
 /** Pad com um arquivo de áudio: o sample toca na altura original. */
@@ -65,7 +70,10 @@ export function PadsPanel({ ch }: { ch: Channel }) {
       const sig = keys.join(',');
       if (sig === last) return;
       last = sig;
-      for (const i of keys) padHit(ch.id, i);
+      for (const i of keys) {
+        padHit(ch.id, i);
+        padFlash(i);
+      }
     });
     return () => {
       off();
@@ -91,6 +99,7 @@ export function PadsPanel({ ch }: { ch: Channel }) {
   };
   const play = (i: number) => {
     padHit(ch.id, i);
+    padFlash(i);
     audio.liveOn(ch.id, padNote(i), 0.85);
   };
   const stop = (i: number) => audio.liveOff(ch.id, padNote(i));

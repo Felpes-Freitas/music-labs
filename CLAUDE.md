@@ -369,6 +369,20 @@ Z…M/Q…P teclado musical, -/= oitava.
   Samples dos pads carregam por `channelSamples` (interface e render). Step/preencher sem
   notas usa C2. MCP: `set_pad` (pad, localSample/sample/type/preset, name, gain, tune,
   clear, kit).
+- **Teclado RGB / OpenRGB** (`src/server/rgb.ts`, `src/web/rgb.ts`, Configurações →
+  Iluminação RGB): cliente próprio do protocolo SDK do OpenRGB (v3; porta 6742; sem
+  dependências). Só dispositivos tipo teclado (5); LED por nome ("Key: Q" → `ledKey` "q").
+  Ao conectar guarda modo ativo (bytes da descrição) e cores de cada teclado e entra no
+  modo custom; a interface manda a cena (`{type:'rgb', config|scene}` pelo WebSocket:
+  piano = brancas `#d8dde4`, pretas na cor de destaque; Soundpad = cores dos pads; fundo
+  `#080808`; teclas apertadas clareiam). **Restaurar sempre** (`rgbRelease`: cores
+  originais e depois UPDATEMODE com o modo original): ao desligar, quando a última janela
+  desconecta, em SIGINT/SIGTERM e no Electron (`before-quit` espera `shutdown()`; o
+  relançamento por servidor desatualizado também). Sem OpenRGB: estado "não encontrado" e
+  nova tentativa a cada 10 s. Testes: `test/rgb.test.ts` (servidor OpenRGB falso no formato
+  da documentação). Nunca testado com o OpenRGB real nesta máquina (o sistema de permissões
+  bloqueou baixar/rodar o AppImage); o teclado do usuário é um Apex Pro TKL e
+  `/dev/hidraw*` já é acessível sem sudo.
 - **Menus encadeados** (`MenuTree`): submenu que não cabe à direita abre à esquerda do
   pai (`altX`), sem cobrir os níveis anteriores.
 - **Janelas** (`Win`): redimensionam pelas 4 bordas e 4 cantos (`.win-edge`, dir n/s/e/w…);

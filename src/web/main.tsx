@@ -1,5 +1,6 @@
 import { PAD_COUNT, padKey, padNote } from '../core/pads';
 import { padHit } from './ui/PadsPanel';
+import { rgbPress } from './rgb';
 import { AutoCenterWindow } from './ui/AutoCenter';
 import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
@@ -99,6 +100,7 @@ function onKeyDown(e: KeyboardEvent) {
       const i = PAD_BY_KEY[k];
       held.set(k, { ch: sel.id, key: padNote(i) });
       padHit(sel.id, i);
+      rgbPress(k, true);
       audio.liveOn(sel.id, padNote(i), 0.85);
     }
     return;
@@ -107,6 +109,7 @@ function onKeyDown(e: KeyboardEvent) {
     const key = KEYMAP[k] + octave * 12;
     held.set(k, { ch: state.channelId, key });
     audio.liveOn(state.channelId, key, 0.85);
+    rgbPress(k, true);
   }
 }
 function onKeyUp(e: KeyboardEvent) {
@@ -114,6 +117,7 @@ function onKeyUp(e: KeyboardEvent) {
   if (h) {
     audio.liveOff(h.ch, h.key);
     held.delete(e.key.toLowerCase());
+    rgbPress(e.key, false);
   }
 }
 

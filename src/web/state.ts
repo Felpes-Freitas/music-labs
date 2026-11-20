@@ -113,6 +113,22 @@ export function emit() {
   });
 }
 
+/** Avisado a cada mudança de estado (fora de componentes). */
+export function onState(fn: () => void) {
+  listeners.add(fn);
+  return () => void listeners.delete(fn);
+}
+/** Avisado quando a conexão com o servidor abre (inclusive ao reconectar). */
+const connectHooks = new Set<() => void>();
+export function onConnect(fn: () => void) {
+  connectHooks.add(fn);
+  return () => void connectHooks.delete(fn);
+}
+/** Manda uma mensagem ao servidor pelo WebSocket (sem resposta). */
+export function sendServer(m: unknown) {
+  send(m);
+}
+
 export function useApp() {
   const [, force] = useReducer((x: number) => x + 1, 0);
   useEffect(() => {
@@ -210,6 +226,7 @@ function connect() {
     state.connected = true;
     emit();
     checkBuild();
+    for (const f of connectHooks) f();
   };
   ws.onclose = () => {
     state.connected = false;
