@@ -1,3 +1,4 @@
+import { AutoCenterWindow } from './ui/AutoCenter';
 import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import './style.css';
@@ -249,6 +250,7 @@ function App() {
           <AmpWindow />
           <TuneWindow />
           <StitchWindow />
+          <AutoCenterWindow />
 
         </div>
       </div>

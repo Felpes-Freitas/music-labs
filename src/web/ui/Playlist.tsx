@@ -5,6 +5,8 @@ import { audio } from '../audio';
 import { PPQ, patternLength, songLength, ticksPerBar, uid, isPatternClip, type Clip, type AutoTarget } from '../../core/model';
 import { set, ins, rem } from '../../core/ops';
 import { autoSnap } from '../../core/snap';
+import { regen, trimAutoStart } from '../../core/autogen';
+import { openAutoCenter } from '../autos';
 import * as A from '../../core/actions';
 import { Win, IconBtn, useCanvas } from './widgets';
 import { askText } from './Dialog';
@@ -53,6 +55,8 @@ export function Playlist() {
   const pickedRef = useRef(picked);
   /** Onde o mouse está na grade (Ctrl+V cola ali). */
   const hover = useRef<{ tick: number; track: number } | null>(null);
+  /** Último ponto posto num clipe de automação (o duplo clique desfaz ele). */
+  const lastAutoAdd = useRef<{ id: string; prev: { t: number; v: number }[]; at: number } | null>(null);
   /** snapNow do render atual (os atalhos de teclado são registrados uma vez só). */
   const snapRef = useRef<() => number>(() => PPQ);
   pickedRef.current = picked;
@@ -419,7 +423,7 @@ export function Playlist() {
       const cy = RULER + c.track * v.rowH - v.scrollY;
       const cw = c.len * v.zx;
       if (x >= cx && x <= cx + cw && y >= cy && y < cy + v.rowH) {
-        const edge = cw > 14 && x > cx + cw - 6 ? 'r' : cw > 14 && x < cx + 6 && c.kind !== 'auto' ? 'l' : null;
+        const edge = cw > 14 && x > cx + cw - 6 ? 'r' : cw > 14 && x < cx + 6 ? 'l' : null;
         return { c, edge } as { c: Clip; edge: 'l' | 'r' | null };
       }
     }
@@ -428,10 +432,14 @@ export function Playlist() {
   const clipOps = (c: Clip): ReturnType<typeof set>[] => [set(['clips', c.id], c)];
   /**
    * Anda o começo de um clipe dt ticks sem mexer no conteúdo (áudio começa mais adiante
-   * no arquivo; pattern muda o offset). Automação não tem começo móvel: fica como está.
+   * no arquivo; pattern muda o offset; automação: a função se recalcula, pontos ficam
+   * no mesmo instante da música).
    */
   const trimStart = (c: Clip, dt: number, sn: number): Clip => {
-    if (c.kind === 'auto') return c;
+    if (c.kind === 'auto') {
+      const pos = Math.max(0, Math.min(c.pos + dt, c.pos + c.len - Math.min(sn, c.len)));
+      return trimAutoStart(c, pos - c.pos);
+    }
     const secPerTick = 60 / (p.bpm * PPQ);
     let pos = Math.min(c.pos + dt, c.pos + c.len - Math.min(sn, c.len));
     pos = Math.max(0, pos);
@@ -472,6 +480,16 @@ export function Playlist() {
         return;
       }
     }
+    // automação: duplo clique ou Shift + botão direito abre na Central de Automações
+    if (h && h.c.kind === 'auto' && !h.edge && (e.detail === 2 || (e.button === 2 && e.shiftKey))) {
+      // o primeiro clique do duplo clique pôs um ponto: tira
+      const la = lastAutoAdd.current;
+      if (e.detail === 2 && la && la.id === h.c.id && performance.now() - la.at < 600) edit([set(['clips', la.id, 'points'], la.prev)]);
+      lastAutoAdd.current = null;
+      drag.current = null;
+      openAutoCenter(h.c.id);
+      return;
+    }
     // edição de pontos no corpo de um clipe de automação
     if (h && h.c.kind === 'auto' && !h.edge && tool === 'draw') {
       const c = h.c;
@@ -482,7 +500,7 @@ export function Playlist() {
         const pts = c.points ?? [];
         const near = pts.findIndex((pt) => Math.hypot(tx(c.pos + pt.t) - x, top + (1 - pt.v) * hh - y) < 7);
         if (e.button === 2) {
-          if (near >= 0 && pts.length > 1) edit([set(['clips', c.id, 'points'], pts.filter((_, i) => i !== near))]);
+          if (near >= 0 && pts.length > 1) edit([set(['clips', c.id, 'points'], pts.filter((_, i) => i !== near)), ...(c.gen ? [set(['clips', c.id, 'gen'], { ...c.gen, custom: true })] : [])]);
           return;
         }
         let idx = near;
@@ -491,7 +509,8 @@ export function Playlist() {
           const val = Math.max(0, Math.min(1, 1 - (y - top) / hh));
           const next = [...pts, { t, v: val }].sort((a, b) => a.t - b.t);
           idx = next.findIndex((pt) => pt.t === t && pt.v === val);
-          previewEdit([set(['clips', c.id, 'points'], next)]);
+          lastAutoAdd.current = { id: c.id, prev: pts, at: performance.now() };
+          previewEdit([set(['clips', c.id, 'points'], next), ...(c.gen && !c.gen.custom ? [set(['clips', c.id, 'gen'], { ...c.gen, custom: true })] : [])]);
         }
         drag.current = { kind: 'point', id: c.id, idx, orig: { ...state.project.clips.find((q) => q.id === c.id)! } };
         return;
@@ -520,7 +539,9 @@ export function Playlist() {
         const mid = autoNorm(c, cut);
         const first = [...pts.filter((q) => q.t < cut), { t: cut, v: mid }];
         const rest = [{ t: 0, v: mid }, ...pts.filter((q) => q.t > cut).map((q) => ({ t: q.t - cut, v: q.v }))];
-        edit([set(['clips', c.id, 'len'], cut), set(['clips', c.id, 'points'], first), ins(['clips'], { ...c, id: uid('k'), pos: at, len: c.len - cut, points: rest })]);
+        // fatiada, a função vira pontos (cada metade guarda o que tinha)
+        const g = c.gen ? { ...c.gen, custom: true } : undefined;
+        edit([set(['clips', c.id, 'len'], cut), set(['clips', c.id, 'points'], first), set(['clips', c.id, 'gen'], g), ins(['clips'], { ...c, id: uid('k'), pos: at, len: c.len - cut, points: rest, gen: g })]);
       } else {
         const pat = p.patterns.find((q) => q.id === c.patternId);
         const plen = pat ? patternLength(p, pat) : c.len;
@@ -676,7 +697,7 @@ export function Playlist() {
       if (d.side === 'r') {
         const end = Math.round((o.pos + o.len + (x - d.x0) / v.zx) / sn) * sn;
         const dl = Math.max(sn, end - o.pos) - o.len;
-        previewEdit(d.group.flatMap((c) => clipOps({ ...c, len: Math.max(Math.min(sn, c.len), c.len + dl) })));
+        previewEdit(d.group.flatMap((c) => clipOps(regen({ ...c, len: Math.max(Math.min(sn, c.len), c.len + dl) }))));
       } else {
         const dt = Math.round((o.pos + (x - d.x0) / v.zx) / sn) * sn - o.pos;
         previewEdit(d.group.flatMap((c) => clipOps(trimStart(c, dt, sn))));
@@ -727,7 +748,8 @@ export function Playlist() {
     }
     if (d.kind === 'point') {
       const c = state.project.clips.find((x) => x.id === d.id);
-      if (c) edit([set(['clips', c.id, 'points'], c.points ?? [])]);
+      // editou à mão: uma automação de função vira personalizada
+      if (c) edit([set(['clips', c.id, 'points'], c.points ?? []), ...(c.gen ? [set(['clips', c.id, 'gen'], { ...c.gen, custom: true })] : [])]);
       return;
     }
     if (d.kind === 'move') {
@@ -803,6 +825,16 @@ export function Playlist() {
           onPointerDown={onDown as any}
           onPointerMove={onMove as any}
           onPointerLeave={() => void (hover.current = null)}
+          onDblClick={(e) => {
+            // duplo clique num clipe de automação: abre na Central (o 1º clique pode ter posto um ponto: tira)
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            const h = hit(e.clientX - r.left, e.clientY - r.top);
+            if (!h || h.c.kind !== 'auto') return;
+            const la = lastAutoAdd.current;
+            if (la && la.id === h.c.id && performance.now() - la.at < 800) edit([set(['clips', la.id, 'points'], la.prev)]);
+            lastAutoAdd.current = null;
+            openAutoCenter(h.c.id);
+          }}
           onPointerUp={onUp as any}
           onWheel={onWheel as any}
           onContextMenu={(e) => e.preventDefault()}
@@ -882,7 +914,7 @@ function autoNorm(c: Clip, t: number): number {
   return pts[pts.length - 1].v;
 }
 
-function fmtAuto(t: AutoTarget, v: number) {
+export function fmtAuto(t: AutoTarget, v: number) {
   const real = t.log && t.min > 0 ? t.min * Math.pow(t.max / t.min, v) : t.min + v * (t.max - t.min);
   if (t.path[t.path.length - 1] === 'volume') return real <= 0.0001 ? '-∞ dB' : `${(20 * Math.log10(real)).toFixed(1)} dB`;
   return Math.abs(real) >= 100 ? real.toFixed(0) : real.toFixed(2);

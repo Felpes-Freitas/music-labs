@@ -290,8 +290,23 @@ Z…M/Q…P teclado musical, -/= oitava.
 - **Transporte** (`Toolbar.tsx`): PAT/SONG, play, stop, **REC geral** (grava notas ao vivo
   e automações de knobs — `midirec.ts`; com loop cada volta vira um pattern novo em
   outra track), toggles **loop / metrônomo / contagem (321)**, BPM, posição, master, swing.
-- **Knobs** (`Knob` em `widgets.tsx`): `auto={{path,label}}` habilita "Criar clipe de
-  automação" (botão direito) e a gravação de automação; durante o REC o knob mexido fica
+- **Central de Automações** (`AutoCenter.tsx`, `web/autos.ts`, `core/autogen.ts`): botão
+  direito num knob com `auto` ou no BPM → "Criar automação…" (`createAutomation`: clipe na
+  área selecionada ou 4 compassos na agulha, track livre) e abre a Central nele; duplo
+  clique ou Shift+botão direito num clipe de automação abre o existente (`state.autoClip`).
+  O clipe guarda `gen` (função) e `points` (o que a engine toca). Funções: rampa (riser,
+  exponencial, fade in/out, curva S), LFO (seno/triângulo/quadrada/serra; período no
+  início e no fim = acelera; "respiração" contrai/expande a frequência; intensidade início/
+  fim; fase), bombeamento, escada, aleatório. Períodos em tempos (travados em valores
+  musicais com "Períodos no tempo"). `renderGen` amostra e `simplify` tira pontos
+  redundantes (reta = 2 pontos; seno mantém o período e ganha ciclos ao crescer). `regen`
+  ao redimensionar; `trimAutoStart` corta/estende o começo. Editar ponto (na Central ou
+  na playlist) marca `gen.custom` (valem os pontos; "Voltar à função" desfaz); fatiar
+  também. **BPM automatizável**: alvo `['bpm']` (40–240); `Engine.bpmAt` usa o clipe ativo
+  em song mode, status traz `bpm` (o LCD mostra em roxo). Áudios seguem os ticks e
+  aceleram junto (como fita), com a conversão de tempo no BPM do projeto.
+- **Knobs** (`Knob` em `widgets.tsx`): `auto={{path,label}}` habilita "Criar automação…"
+  (botão direito, abre a Central) e a gravação de automação; durante o REC o knob mexido fica
   vermelho com "● AUTO"; knob com automação na música ganha um ponto.
 - **Rack**: menu "+ Canal" usa `Popover` (abre em cima/embaixo do botão, rola se não couber).
 - **Amp** (`Amp.tsx`): entrada e canal no título, visualizador (dB, linha do limiar),

@@ -1,3 +1,4 @@
+import { createAutomation, BPM_TARGET } from '../autos';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { toggleLoop, toggleMetronome, toggleCountIn } from '../state';
 import { midiRecording } from '../midirec';
@@ -7,7 +8,7 @@ import * as A from '../../core/actions';
 import { INSTRUMENTS, PRESETS } from '../../core/registry';
 import { PPQ, STEP, ticksPerBar, type InstrumentType } from '../../core/model';
 import { set } from '../../core/ops';
-import { Knob, IconBtn, dbFmt } from './widgets';
+import { Knob, IconBtn, dbFmt, ContextMenu } from './widgets';
 import { Icon } from './icons';
 import { askConfirm, askText } from './Dialog';
 import { openSettings } from './Settings';
@@ -291,7 +292,12 @@ function Scope() {
 
 function BpmControl() {
   const s = state;
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  // tocando com automação de BPM: mostra o andamento do momento
+  const [live, setLive] = useState<number | null>(null);
+  useEffect(() => onLive((st) => setLive(st.playing && st.bpm !== undefined && Math.abs(st.bpm - state.project.bpm) > 0.005 ? st.bpm : null)), []);
   const onDown = (e: PointerEvent) => {
+    if (e.button !== 0) return;
     const el = e.currentTarget as HTMLElement;
     el.setPointerCapture(e.pointerId);
     const y0 = e.clientY, b0 = s.project.bpm;
@@ -312,15 +318,20 @@ function BpmControl() {
   const bpm = s.project.bpm;
   return (
     <span
-      class="lcd bpmval"
-      data-hint="Tempo: arraste para cima/baixo (Shift = fino), duplo clique para digitar"
+      class={`lcd bpmval ${live !== null ? 'auto' : ''}`}
+      data-hint="Tempo: arraste para cima/baixo (Shift = fino), duplo clique para digitar · botão direito: automação"
       onPointerDown={onDown as any}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setMenu({ x: e.clientX, y: e.clientY });
+      }}
       onDblClick={async () => {
         const v = await askText({ title: 'Tempo', label: 'BPM (20 a 400)', value: String(bpm), numeric: { min: 20, max: 400 }, ok: 'Aplicar' });
         if (v) edit([set(['bpm'], Number(v.replace(',', '.')))]);
       }}
     >
-      {String(+bpm.toFixed(3)).padStart(3, ' ')}
+      {String(+(live ?? bpm).toFixed(live !== null ? 1 : 3)).padStart(3, ' ')}
+      {menu && <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)} items={[['Criar automação do BPM…', () => createAutomation(BPM_TARGET)]]} />}
     </span>
   );
 }

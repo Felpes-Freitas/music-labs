@@ -332,7 +332,8 @@ const KEYS: [string, string][] = [
   ['Z…M · Q…P', 'Teclado musical (duas oitavas)'],
   ['- / =', 'Oitava abaixo / acima'],
   ['Botão do meio no knob', 'Volta ao valor padrão'],
-  ['Botão direito no knob', 'Criar clipe de automação'],
+  ['Botão direito no knob ou no BPM', 'Criar automação (abre a Central de Automações)'],
+  ['Duplo clique (ou Shift + botão direito) num clipe de automação', 'Abrir na Central de Automações'],
   ['Alt + arrastar', 'Mover janela (se ativado em Aparência)'],
 ];
 
