@@ -19,7 +19,7 @@ import { emptyProject } from '../core/model.js';
 import { Store, listProjects, RENDERS_DIR, SAMPLES_DIR, PROJECTS_DIR, RECORDINGS_DIR, IMPORTS_DIR, STATE_DIR, safeName } from './store.js';
 import { startMonitor, stopMonitor, monitorStatus, monitorSources } from './monitor.js';
 import { loadSample } from './samples.js';
-import { initLibrary, library, libraryStatus, rescanLibrary, searchLibrary } from './library.js';
+import { initLibrary, library, libraryStatus, rescanLibrary, sampleTree, searchLibrary } from './library.js';
 import { AUDIO_EXT, FL_DIR, resolveFlPath, wavFor } from './samples.js';
 import { renderProject } from './render.js';
 import { localKit, localSample } from './localkit.js';
@@ -410,6 +410,8 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         return json(res, 200, browseRoots());
       case 'GET /api/browse':
         return json(res, 200, browse(q('dir')));
+      case 'GET /api/sampletree':
+        return json(res, 200, sampleTree());
       case 'GET /api/library':
         return json(res, 200, libraryStatus());
       case 'POST /api/library/rescan': {

@@ -7,7 +7,7 @@
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import { readdir, realpath, stat } from 'node:fs/promises';
 import { homedir, platform as osPlatform } from 'node:os';
-import { basename, dirname, extname, join } from 'node:path';
+import { basename, dirname, extname, join, relative, sep } from 'node:path';
 import { noteFromName } from '../core/pitch.js';
 
 export const AUDIO_EXTS = new Set(['.wav', '.mp3', '.ogg', '.flac', '.aif', '.aiff', '.m4a', '.opus', '.wv', '.caf']);
@@ -359,4 +359,54 @@ export function findFlInstall(e: ScanEnv = defaultEnv()): string | null {
   else for (const c of wineDrives(e)) pats.push(join(c, 'Program Files/Image-Line/FL Studio*'), join(c, 'Program Files (x86)/Image-Line/FL Studio*'));
   for (const p of pats) for (const d of expand(p)) if (existsSync(join(d, 'Data/Patches'))) return d;
   return null;
+}
+
+// ---------------------------------------------------------------- árvore de samples (menus)
+
+export interface SampleNode {
+  name: string;
+  dirs: SampleNode[];
+  files: { n: string; p: string }[];
+}
+
+let treeCache: { key: string; out: { daw: string; tree: SampleNode }[] } | null = null;
+
+/**
+ * Samples soltos de cada programa, em árvore de pastas como estão no disco (para os
+ * menus de instrumento). Fora: loops e os arquivos dos instrumentos multi-sample (esses
+ * aparecem como instrumento). Várias pastas do mesmo programa viram uma árvore só.
+ */
+export function sampleTree(): { daw: string; tree: SampleNode }[] {
+  const ix = library();
+  if (!ix) return [];
+  if (treeCache?.key === ix.scannedAt) return treeCache.out;
+  const instDirs = ix.instruments.map((i) => i.path + sep);
+  const byDaw = new Map<string, SampleNode>();
+  for (const f of ix.files) {
+    if (f.c === 'loop') continue;
+    if (instDirs.some((d) => f.p.startsWith(d))) continue;
+    const src = ix.sources[f.s];
+    if (!src) continue;
+    const rel = relative(src.root, f.p);
+    if (rel.startsWith('..')) continue;
+    const parts = rel.split(sep);
+    if (parts.length < 2) continue; // arquivo solto na raiz: sem pasta para agrupar
+    let node: SampleNode = byDaw.get(src.daw) ?? { name: src.daw, dirs: [], files: [] };
+    byDaw.set(src.daw, node);
+    for (const d of parts.slice(0, -1)) {
+      let next: SampleNode | undefined = node.dirs.find((x) => x.name === d);
+      if (!next) node.dirs.push((next = { name: d, dirs: [], files: [] }));
+      node = next;
+    }
+    node.files.push({ n: parts[parts.length - 1].replace(/\.[a-z0-9]{2,5}$/i, ''), p: f.p });
+  }
+  const nat = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+  const sortAll = (n: SampleNode) => {
+    n.dirs.sort((a, b) => nat(a.name, b.name));
+    n.files.sort((a, b) => nat(a.n, b.n));
+    n.dirs.forEach(sortAll);
+  };
+  const out = [...byDaw.entries()].map(([daw, tree]) => (sortAll(tree), { daw, tree }));
+  treeCache = { key: ix.scannedAt, out };
+  return out;
 }
