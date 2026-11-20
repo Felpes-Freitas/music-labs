@@ -7,16 +7,14 @@ import { useRef, useState } from 'preact/hooks';
 import type { AutoPoint, Clip } from '../../core/model';
 import { PPQ, ticksPerBar } from '../../core/model';
 import { set } from '../../core/ops';
-import { GEN_DEFAULTS, GEN_PRESETS, renderGen, regen, type AutoGen, type Wave } from '../../core/autogen';
+import { GEN_DEFAULTS, GEN_PRESETS, GRID_STEPS, renderGen, regen, snapToGrid, type AutoGen, type Wave } from '../../core/autogen';
 import { useApp, state, edit, previewEdit, toast } from '../state';
 import { Win, Knob, useCanvas } from './widgets';
 import { fmtAuto } from './Playlist';
 import { ui, accent } from '../theme';
 
-const NICE = [1 / 16, 1 / 12, 1 / 8, 1 / 6, 1 / 4, 1 / 3, 1 / 2, 2 / 3, 3 / 4, 1, 1.5, 2, 3, 4, 6, 8, 12, 16, 24, 32];
 /** Período em tempos → texto ("1/4 t", "2 t"). */
 const fmtBeats = (v: number) => (v >= 1 ? `${+v.toFixed(2)} t` : Math.abs(1 / v - Math.round(1 / v)) < 0.01 ? `1/${Math.round(1 / v)} t` : `${+v.toFixed(3)} t`);
-const snapNice = (v: number) => NICE.reduce((b, x) => (Math.abs(Math.log(x / v)) < Math.abs(Math.log(b / v)) ? x : b), NICE[0]);
 
 const WAVES: [Wave, string][] = [
   ['sine', 'Seno'],
@@ -51,7 +49,6 @@ function Center({ clip }: { clip: Clip }) {
   const g = { ...GEN_DEFAULTS, ...(gen ?? { kind: 'ramp' as const }) };
   /** Última função antes de editar à mão (para voltar a ela). */
   const lastGen = useRef<AutoGen | null>(null);
-  const [sync, setSync] = useState(true);
 
   /** Muda a função (live = só prévia, enquanto arrasta um knob). */
   const apply = (next: AutoGen, live = false) => {
@@ -64,7 +61,8 @@ function Center({ clip }: { clip: Clip }) {
 
   const knob = (k: keyof typeof GEN_DEFAULTS, label: string, opt: { min?: number; max?: number; log?: boolean; fmt?: (v: number) => string; step?: number; period?: boolean; bipolar?: boolean } = {}) => {
     const v = g[k] as number;
-    const fix = (x: number) => (opt.period && sync ? snapNice(x) : x);
+    // períodos: snap magnético na grade (trava perto de um valor dela, livre no resto)
+    const fix = (x: number) => (opt.period ? snapToGrid(x, g.grid) : x);
     return (
       <div class="ac-knob">
         <Knob
@@ -117,6 +115,9 @@ function Center({ clip }: { clip: Clip }) {
         {knob('depth', 'Intensidade (início)', { fmt: pct })}
         {knob('depthEnd', 'Intensidade (fim)', { fmt: pct })}
         {knob('phase', 'Fase', { fmt: (x) => `${Math.round(x * 360)}°` })}
+        <label class="ac-check" data-hint="Cada ciclo tem um tamanho da grade e começa numa linha dela: acelerar e respirar acontecem em passos, no ritmo da música">
+          <input type="checkbox" checked={g.quantize} disabled={!g.grid} onChange={(e) => patch('quantize', (e.target as HTMLInputElement).checked, false)} /> Ciclos na grade
+        </label>
       </>
     ) : kind === 'pump' ? (
       <>
@@ -145,6 +146,7 @@ function Center({ clip }: { clip: Clip }) {
       </>
     );
 
+  const gridIdx = Math.max(0, GRID_STEPS.findIndex((x) => Math.abs(x.v - g.grid) < 1e-6));
   const bar = ticksPerBar(p);
   const num = (label: string, value: number, onSet: (v: number) => void, hint: string) => (
     <label class="ac-num" data-hint={hint}>
@@ -182,7 +184,7 @@ function Center({ clip }: { clip: Clip }) {
         ))}
       </div>
       <div class="ac-main">
-        <Graph clip={clip} custom={custom} onCustom={() => gen && !gen.custom && (lastGen.current = gen)} />
+        <Graph clip={clip} custom={custom} grid={gen ? g.grid : 0} onCustom={() => gen && !gen.custom && (lastGen.current = gen)} />
         <div class="ac-ctrls">
           {custom ? (
             <div class="ac-custom">
@@ -209,8 +211,19 @@ function Center({ clip }: { clip: Clip }) {
             const len = Math.max(PPQ / 4, Math.round(v * bar));
             edit([set(['clips', clip.id], regen({ ...clip, len }))]);
           }, 'Tamanho do clipe (a função se ajusta)')}
-          <label class="ac-check" data-hint="Períodos travados em valores do tempo da música (1/16, 1/8, 1/4… tempos)">
-            <input type="checkbox" checked={sync} onChange={(e) => setSync((e.target as HTMLInputElement).checked)} /> Períodos no tempo
+          <label class="ac-grid" data-hint="Grade rítmica (no BPM da música): as linhas aparecem no gráfico e os períodos travam nela quando chegam perto. Livre = sem trava">
+            Grade
+            <input
+              type="range"
+              min={0}
+              max={GRID_STEPS.length - 1}
+              step={1}
+              value={gridIdx}
+              disabled={custom}
+              onInput={(e) => patch('grid', GRID_STEPS[Number((e.target as HTMLInputElement).value)].v, true)}
+              onChange={(e) => patch('grid', GRID_STEPS[Number((e.target as HTMLInputElement).value)].v, false)}
+            />
+            <b>{GRID_STEPS[gridIdx].label}</b>
           </label>
           <span class="ac-info">{(clip.points ?? []).length} pontos · faixa {fmtAuto(tg, 0)} a {fmtAuto(tg, 1)}</span>
         </div>
@@ -234,7 +247,7 @@ function PresetIcon({ gen }: { gen: AutoGen }) {
 }
 
 /** Gráfico da automação no tamanho do clipe; clique/arraste edita os pontos. */
-function Graph({ clip, custom, onCustom }: { clip: Clip; custom: boolean; onCustom: () => void }) {
+function Graph({ clip, custom, grid, onCustom }: { clip: Clip; custom: boolean; grid: number; onCustom: () => void }) {
   const p = state.project;
   const tg = clip.target!;
   const PAD = { l: 52, r: 12, t: 10, b: 20 };
@@ -249,8 +262,13 @@ function Graph({ clip, custom, onCustom }: { clip: Clip; custom: boolean; onCust
       const Y = (v: number) => G.y1 - v * (G.y1 - G.y0);
       ctx.fillStyle = ui('#171c1f');
       ctx.fillRect(0, 0, w, h);
-      // grade: tempos e compassos
+      // grade escolhida (fina, em tracejado leve) e por cima os tempos e compassos
       const bar = ticksPerBar(p);
+      const gu = grid * PPQ;
+      if (gu > 0 && (gu / clip.len) * (G.x1 - G.x0) >= 5) {
+        ctx.fillStyle = ui('#1f272b');
+        for (let t = 0; t <= clip.len; t += gu) ctx.fillRect(Math.round(X(t)) + 0.5, G.y0, 1, G.y1 - G.y0);
+      }
       const step = (G.x1 - G.x0) / (clip.len / PPQ) < 8 ? bar : PPQ;
       ctx.font = '10px sans-serif';
       for (let t = 0; t <= clip.len; t += step) {
@@ -297,7 +315,7 @@ function Graph({ clip, custom, onCustom }: { clip: Clip; custom: boolean; onCust
         }
       }
     },
-    [clip, custom],
+    [clip, custom, grid],
   );
 
   const toTV = (e: PointerEvent) => {

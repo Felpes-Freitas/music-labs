@@ -297,8 +297,12 @@ Z…M/Q…P teclado musical, -/= oitava.
   O clipe guarda `gen` (função) e `points` (o que a engine toca). Funções: rampa (riser,
   exponencial, fade in/out, curva S), LFO (seno/triângulo/quadrada/serra; período no
   início e no fim = acelera; "respiração" contrai/expande a frequência; intensidade início/
-  fim; fase), bombeamento, escada, aleatório. Períodos em tempos (travados em valores
-  musicais com "Períodos no tempo"). `renderGen` amostra e `simplify` tira pontos
+  fim; fase), bombeamento, escada, aleatório. Períodos em tempos. **Grade** (`gen.grid`,
+  controle deslizante: livre, 4 tempos … 1/16, com tercinas; linhas no gráfico): os knobs
+  de período têm snap magnético (`snapToGrid`: trava a ±7% de um valor da grade —
+  múltiplos dela ou divisões exatas de uma célula, `gridPeriod` —, livre no resto).
+  **Ciclos na grade** (`gen.quantize`, LFO): cada ciclo tem um período da grade e começa
+  numa linha dela (acelerar/respirar em passos rítmicos). `renderGen` amostra e `simplify` tira pontos
   redundantes (reta = 2 pontos; seno mantém o período e ganha ciclos ao crescer). `regen`
   ao redimensionar; `trimAutoStart` corta/estende o começo. Editar ponto (na Central ou
   na playlist) marca `gen.custom` (valem os pontos; "Voltar à função" desfaz); fatiar

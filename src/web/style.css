@@ -791,3 +791,6 @@ option, optgroup { background-color: var(--pop); color: var(--text); }
 .ac-num input { width: 64px; }
 .ac-info { margin-left: auto; opacity: 0.7; }
 .lcd.bpmval.auto { color: #b58cf0; }
+.ac-grid { display: flex; align-items: center; gap: 6px; }
+.ac-grid input[type='range'] { width: 130px; accent-color: var(--acc); }
+.ac-grid b { min-width: 86px; font-weight: 600; }

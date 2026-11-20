@@ -39,6 +39,10 @@ export interface AutoGen {
   depthEnd?: number;
   /** LFO: fase inicial (0..1). */
   phase?: number;
+  /** Grade rítmica em tempos (0 = livre): linhas no gráfico e o snap magnético dos períodos. */
+  grid?: number;
+  /** LFO: cada ciclo tem um tamanho da grade e começa numa linha dela (acelerar/respirar em passos). */
+  quantize?: boolean;
   /** Bombeamento: fração do período que leva para voltar (0..1). */
   release?: number;
   /** Escada: número de degraus. */
@@ -61,6 +65,8 @@ export const GEN_DEFAULTS: Required<Omit<AutoGen, 'custom' | 'kind' | 'preset'>>
   depth: 1,
   depthEnd: 1,
   phase: 0,
+  grid: 0.25,
+  quantize: false,
   release: 0.8,
   count: 8,
   smooth: 0,
@@ -151,6 +157,44 @@ export function simplify(pts: AutoPoint[], eps = 0.004): AutoPoint[] {
   return pts.filter((_, i) => keep[i]);
 }
 
+/** Resoluções da grade (em tempos), da mais larga à mais fina; 0 = livre. */
+export const GRID_STEPS: { v: number; label: string }[] = [
+  { v: 0, label: 'livre' },
+  { v: 4, label: '4 tempos' },
+  { v: 2, label: '2 tempos' },
+  { v: 1, label: '1 tempo' },
+  { v: 1 / 2, label: '1/2 tempo' },
+  { v: 1 / 3, label: '1/3 (tercina)' },
+  { v: 1 / 4, label: '1/4 tempo' },
+  { v: 1 / 6, label: '1/6 (tercina)' },
+  { v: 1 / 8, label: '1/8 tempo' },
+  { v: 1 / 16, label: '1/16 tempo' },
+];
+
+/**
+ * Período que "cabe" na grade mais perto de p: um múltiplo dela (2, 3... células) ou
+ * uma divisão exata de uma célula (2, 3... ciclos por célula). Mesma unidade de p e unit.
+ */
+export function gridPeriod(p: number, unit: number) {
+  if (unit <= 0) return p;
+  const cands: number[] = [];
+  if (p >= unit) {
+    const n = p / unit;
+    cands.push(Math.max(1, Math.floor(n)) * unit, Math.ceil(n) * unit);
+  } else {
+    const n = unit / p;
+    cands.push(unit / Math.max(1, Math.floor(n)), unit / Math.min(64, Math.ceil(n)));
+  }
+  return cands.reduce((b, x) => (Math.abs(Math.log(x / p)) < Math.abs(Math.log(b / p)) ? x : b), cands[0]);
+}
+
+/** Snap magnético: trava no valor da grade se estiver perto (tol = distância relativa), senão fica livre. */
+export function snapToGrid(p: number, unit: number, tol = 0.07) {
+  if (unit <= 0) return p;
+  const q = gridPeriod(p, unit);
+  return Math.abs(Math.log(q / p)) < Math.log(1 + tol) ? q : p;
+}
+
 /** Calcula os pontos da função para um clipe de len ticks. */
 export function renderGen(g: AutoGen, len: number): AutoPoint[] {
   len = Math.max(1, Math.round(len));
@@ -215,15 +259,42 @@ export function renderGen(g: AutoGen, len: number): AutoPoint[] {
   const minPer = Math.min(p0, p1) * Math.pow(2, -br);
   const dt = Math.max(len / MAX, Math.min(minPer / 32, 4), 0.25);
   let ph = val(g, 'phase');
-  for (let t = 0; ; t += dt) {
-    const tt = Math.min(t, len);
-    const u = tt / len;
-    const d = d0 + (d1 - d0) * u;
-    out.push({ t: Math.round(tt * 4) / 4, v: clamp01(0.5 + 0.5 * wave(w, ph) * d) });
-    if (tt >= len) break;
-    // período geométrico entre início e fim, contraído/expandido pela respiração
-    const per = p0 * Math.pow(p1 / p0, u) * Math.pow(2, -br * Math.sin((2 * Math.PI * tt) / brP));
-    ph += dt / per;
+  // período geométrico entre início e fim, contraído/expandido pela respiração
+  const perAt = (tt: number) => p0 * Math.pow(p1 / p0, tt / len) * Math.pow(2, -br * Math.sin((2 * Math.PI * tt) / brP));
+  const unit = val(g, 'grid') * PPQ;
+  if (val(g, 'quantize') && unit > 0) {
+    // ciclos na grade: cada ciclo tem um tamanho que cabe nela; abaixo de uma célula,
+    // n ciclos iguais enchem a célula inteira — todo começo de célula cai numa linha
+    let t = 0;
+    while (t < len && out.length < MAX) {
+      const per = gridPeriod(perAt(t), unit);
+      const n = per < unit ? Math.round(unit / per) : 1;
+      for (let k = 0; k < n && t < len; k++) {
+        const steps = w === 'square' ? 2 : 32;
+        for (let i = 0; i < steps; i++) {
+          const tt = t + (per * i) / steps;
+          if (tt >= len) break;
+          const d = d0 + (d1 - d0) * (tt / len);
+          out.push({ t: tt, v: clamp01(0.5 + 0.5 * wave(w, ph + i / steps) * d) });
+          if (w === 'square') out.push({ t: Math.min(len, tt + per / 2) - 0.5, v: clamp01(0.5 + 0.5 * wave(w, ph + i / steps) * d) });
+        }
+        // o ponto final do ciclo (ou do clipe, se ele acabar no meio)
+        const end = Math.min(len, t + per);
+        const d = d0 + (d1 - d0) * (end / len);
+        const frac = (end - t) / per;
+        if (end >= len) out.push({ t: len, v: clamp01(0.5 + 0.5 * wave(w, ph + frac) * d) });
+        t += per;
+      }
+    }
+  } else {
+    for (let t = 0; ; t += dt) {
+      const tt = Math.min(t, len);
+      const u = tt / len;
+      const d = d0 + (d1 - d0) * u;
+      out.push({ t: Math.round(tt * 4) / 4, v: clamp01(0.5 + 0.5 * wave(w, ph) * d) });
+      if (tt >= len) break;
+      ph += dt / perAt(tt);
+    }
   }
   // ticks inteiros (a engine e o projeto usam ticks inteiros nos pontos)
   const merged: AutoPoint[] = [];
