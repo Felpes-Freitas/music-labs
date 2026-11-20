@@ -9,7 +9,8 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
 import * as A from '../core/actions.js';
 import * as S from '../core/studio.js';
-import { rgbConfigure, rgbRelease, rgbScene, rgbStatus } from './rgb.js';
+import { rgbConfigure, rgbScene, rgbShutdown, rgbStatus } from './rgb.js';
+import { installDeviceAccess, installOpenRgb } from './openrgb.js';
 import { applyOps, type Op } from '../core/ops.js';
 import { EFFECTS, INSTRUMENTS, PRESETS } from '../core/registry.js';
 import { SCALES } from '../core/theory.js';
@@ -422,6 +423,19 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         return json(res, 200, browse(q('dir')));
       case 'GET /api/rgb':
         return json(res, 200, rgbStatus());
+      case 'POST /api/rgb/install':
+        // baixa o OpenRGB oficial (SHA-256 conferido) e liga o teclado RGB quando terminar
+        installOpenRgb()
+          .then(() => rgbConfigure({ enabled: true }))
+          .catch(() => {});
+        return json(res, 200, rgbStatus());
+      case 'POST /api/rgb/access':
+        try {
+          await installDeviceAccess();
+          return json(res, 200, { ok: true });
+        } catch (e) {
+          return json(res, 400, { error: (e as Error).message });
+        }
       case 'GET /api/sampletree':
         return json(res, 200, sampleTree());
       case 'GET /api/library':
@@ -576,7 +590,7 @@ export function flushState() {
 /** Antes de o app fechar: grava o projeto e devolve o teclado RGB ao normal. */
 export async function shutdown() {
   store.flushAutosave();
-  await Promise.race([rgbRelease().catch(() => {}), new Promise((r) => setTimeout(r, 1000))]);
+  await Promise.race([rgbShutdown(), new Promise((r) => setTimeout(r, 1000))]);
 }
 
 export function startServer(port = PORT) {
@@ -616,7 +630,7 @@ export function startServer(port = PORT) {
     ws.on('close', () => {
       sockets.delete(ws);
       // nenhuma janela aberta: o teclado volta ao normal (o servidor pode seguir pelo MCP)
-      if (!sockets.size) void rgbRelease();
+      if (!sockets.size) void rgbShutdown();
       if (!sockets.size) uiStatus = { ...uiStatus, connected: false, playing: false };
     });
   });
@@ -652,7 +666,7 @@ async function setPwQuantum(q: number) {
 for (const sig of ['SIGINT', 'SIGTERM'] as const)
   process.once(sig, async () => {
     // devolve o teclado RGB ao normal antes de sair (no máximo ~1 s)
-    await Promise.race([rgbRelease().catch(() => {}), new Promise((r) => setTimeout(r, 1000))]);
+    await Promise.race([rgbShutdown(), new Promise((r) => setTimeout(r, 1000))]);
     if (!forcedQuantum) process.exit(0);
     execFile('pw-metadata', ['-n', 'settings', '0', 'clock.force-quantum', '0'], () => process.exit(0));
   });

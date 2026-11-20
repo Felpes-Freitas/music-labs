@@ -157,9 +157,11 @@ git push --follow-tags
 - **Teclado RGB** (opcional, via [OpenRGB](https://openrgb.org)): as teclas acompanham o
   instrumento selecionado — o "piano" do teclado em branco e preto, ou as cores dos pads do
   Soundpad — e a tecla tocada acende. Funciona com os teclados que o OpenRGB controla
-  (SteelSeries, Corsair, Razer, Logitech, HyperX…); ligue o servidor SDK do OpenRGB
-  (`openrgb --server`) e veja Configurações → Iluminação RGB. Ao fechar o Music Labs, o
-  teclado volta à iluminação que tinha.
+  (SteelSeries, Corsair, Razer, Logitech, HyperX…). Na primeira abertura, se houver um
+  periférico RGB plugado, o Music Labs oferece baixar o OpenRGB oficial (conferido pelo
+  SHA-256; Linux e Windows x64) e o roda sozinho, sem janela, só enquanto o app está aberto;
+  quem já usa o OpenRGB com o servidor SDK ligado não baixa nada. Configurações → Iluminação
+  RGB. Ao fechar o Music Labs, o teclado volta à iluminação que tinha.
 
 Atalhos: Espaço tocar/parar · L pattern/song · F5 playlist · F6 rack · F7 piano roll ·
 F8 navegador · F9 mixer · Ctrl+S salvar · Ctrl+Z/Y desfazer/refazer.

@@ -11,6 +11,7 @@
 // mais novos respondem na versão pedida.
 
 import { Socket, connect } from 'node:net';
+import { needsDeviceAccess, openRgbExe, openRgbState, startOpenRgb, stopOpenRgb } from './openrgb.js';
 
 const PROTOCOL = 3;
 const PKT = {
@@ -262,13 +263,27 @@ let retryAt = 0;
 let pushTimer: NodeJS.Timeout | null = null;
 let active = false; // assumimos os teclados (e devemos devolver)
 
-export const rgbStatus = () => ({ ...status, enabled: cfg.enabled, host: cfg.host, port: cfg.port });
+export const rgbStatus = () => ({ ...status, enabled: cfg.enabled, host: cfg.host, port: cfg.port, openrgb: openRgbState() });
+
+let retryTimer: NodeJS.Timeout | null = null;
+/** Tenta de novo sozinho em `ms` (o OpenRGB pode estar subindo ou detectando os dispositivos). */
+function retryIn(ms: number) {
+  retryAt = Date.now() + ms;
+  if (retryTimer) clearTimeout(retryTimer);
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    if (cfg.enabled) schedule();
+  }, ms + 20);
+  retryTimer.unref?.();
+}
+let launchedAt = 0; // quando o app iniciou o OpenRGB dele (tentativas rápidas enquanto ele detecta)
+const justLaunched = () => Date.now() - launchedAt < 30000;
 
 /** Liga/ajusta (chamado pela interface). Desligar devolve os teclados ao que eram. */
 export async function rgbConfigure(c: Partial<RgbConfig>) {
   const prev = cfg;
   cfg = { ...cfg, ...c };
-  if (!cfg.enabled) return rgbRelease();
+  if (!cfg.enabled) return rgbShutdown();
   if (prev.host !== cfg.host || prev.port !== cfg.port) {
     await rgbRelease();
     retryAt = 0;
@@ -312,16 +327,22 @@ async function ensure() {
         });
       if (!keyboards.length) {
         c.close();
-        status = { state: 'missing', devices: devs.map((d) => d.name), error: devs.length ? 'O OpenRGB não encontrou nenhum teclado' : 'O OpenRGB não encontrou dispositivos' };
-        retryAt = Date.now() + 15000;
+        const access = needsDeviceAccess();
+        status = {
+          state: 'missing',
+          devices: devs.map((d) => d.name),
+          error: access ? 'o sistema não dá acesso aos dispositivos USB: use "Dar acesso aos dispositivos"' : devs.length ? 'o OpenRGB não encontrou nenhum teclado' : 'o OpenRGB não encontrou dispositivos',
+        };
+        // recém-iniciado, o OpenRGB ainda pode estar detectando: tenta de novo logo
+        retryIn(justLaunched() ? 2500 : 15000);
         return;
       }
       c.onClose = () => {
         // o OpenRGB fechou: tenta de novo depois (as cores originais ficaram com ele)
         active = false;
         client = null;
-        status = { state: 'error', devices: [], error: 'O OpenRGB fechou a conexão' };
-        retryAt = Date.now() + 5000;
+        status = { state: 'error', devices: [], error: 'o OpenRGB fechou a conexão' };
+        retryIn(5000);
       };
       for (const k of keyboards) c.setCustomMode(k.index);
       client = c;
@@ -329,8 +350,17 @@ async function ensure() {
       status = { state: 'on', devices: keyboards.map((k) => k.name) };
     } catch (e) {
       c.close();
-      status = { state: 'missing', devices: [], error: (e as NodeJS.ErrnoException).code === 'ECONNREFUSED' ? 'OpenRGB não está rodando (ou o servidor SDK está desligado)' : (e as Error).message };
-      retryAt = Date.now() + 10000;
+      const refused = (e as NodeJS.ErrnoException).code === 'ECONNREFUSED';
+      // ninguém servindo: se o app tem o OpenRGB dele, inicia (só no próprio computador)
+      const local = cfg.host === '127.0.0.1' || cfg.host === 'localhost';
+      if (refused && local && openRgbExe() && startOpenRgb(cfg.port)) {
+        if (!justLaunched()) launchedAt = Date.now();
+        status = { state: 'connecting', devices: [], error: 'iniciando o OpenRGB…' };
+        retryIn(1500);
+      } else {
+        status = { state: 'missing', devices: [], error: refused ? 'o OpenRGB não está rodando (ou o servidor SDK está desligado)' : (e as Error).message };
+        retryIn(10000);
+      }
     }
   })().finally(() => (connecting = null));
   await connecting;
@@ -358,6 +388,14 @@ async function push() {
   if (!(await ensure())) return;
   const c = client!;
   for (const kb of keyboards) c.updateLeds(kb.index, sceneColors(kb, scene, cfg.brightness));
+}
+
+/** Ao fechar o app: devolve os teclados e encerra o OpenRGB que o app iniciou. */
+export async function rgbShutdown() {
+  if (retryTimer) clearTimeout(retryTimer);
+  retryTimer = null;
+  await rgbRelease().catch(() => {});
+  stopOpenRgb();
 }
 
 /** Devolve cada teclado ao modo e às cores de antes e solta a conexão. */
