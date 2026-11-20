@@ -108,7 +108,7 @@ test('lê a descrição do dispositivo (protocolo v3)', () => {
 test('pinta as teclas da cena e, ao soltar, devolve cores e modo originais', async () => {
   const srv = await fakeServer([deviceData(6, 'Mouse'), deviceData(5, 'Apex de teste')]);
   try {
-    await rgbConfigure({ enabled: true, host: '127.0.0.1', port: srv.port, brightness: 1 });
+    await rgbConfigure({ enabled: true, host: '127.0.0.1', port: srv.port, brightness: 1 }, true);
     rgbScene({ keys: { q: 0xe5484d, '1': 0x3e8ed0, ',': 0xffffff }, base: 0x080808, pressed: [] });
     await until(() => srv.got.some((p) => p.id === 1050));
     assert.equal(rgbStatus().state, 'on');
@@ -155,12 +155,12 @@ test('pinta as teclas da cena e, ao soltar, devolve cores e modo originais', asy
 });
 
 test('sem OpenRGB rodando: não quebra e explica', async () => {
-  await rgbConfigure({ enabled: true, host: '127.0.0.1', port: 1, brightness: 1 });
+  await rgbConfigure({ enabled: true, host: '127.0.0.1', port: 1, brightness: 1 }, true);
   rgbScene({ keys: { q: 0xff0000 } });
   await until(() => rgbStatus().state === 'missing');
   assert.equal(rgbStatus().state, 'missing');
   assert.match(rgbStatus().error ?? '', /OpenRGB/);
-  await rgbConfigure({ enabled: false });
+  await rgbConfigure({ enabled: false }, true);
 });
 
 test('brilho escala as cores', () => {
@@ -173,7 +173,7 @@ test('teclado no modo direto com modo "Onboard": ao soltar, volta à iluminaçã
   const onboard = mode('Onboard', 1, []);
   const srv = await fakeServer([deviceData(5, 'Apex Pro TKL', [MODES[0], onboard], 0)]);
   try {
-    await rgbConfigure({ enabled: true, host: '127.0.0.1', port: srv.port, brightness: 1 });
+    await rgbConfigure({ enabled: true, host: '127.0.0.1', port: srv.port, brightness: 1 }, true);
     rgbScene({ keys: { q: 0xff0000 }, base: 0, pressed: [] });
     await until(() => srv.got.some((p) => p.id === 1050));
     // não reenvia o quadro sozinho (o reenvio contínuo travou a digitação num Apex Pro TKL)
@@ -192,4 +192,13 @@ test('teclado no modo direto com modo "Onboard": ao soltar, volta à iluminaçã
     await rgbRelease();
     srv.close();
   }
+});
+
+test('interface que só reconecta não liga o teclado RGB (só a escolha explícita)', async () => {
+  await rgbConfigure({ enabled: false }, true);
+  await rgbConfigure({ enabled: true, host: '127.0.0.1', port: 1, brightness: 1 });
+  assert.equal(rgbStatus().enabled, false);
+  await rgbConfigure({ enabled: true }, true);
+  assert.equal(rgbStatus().enabled, true);
+  await rgbConfigure({ enabled: false }, true);
 });

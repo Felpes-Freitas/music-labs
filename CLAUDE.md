@@ -389,7 +389,9 @@ Z…M/Q…P teclado musical, -/= oitava.
   cores mas o teclado não mudava (a 0.9 só tem o protocolo antigo 0x3A; firmware ≥ 1.19.7
   usa init 0x4B + pacotes 0x40, suportado a partir da 1.1, que também tem o modo "Onboard").
   Ao entrar: SetCustomMode + UpdateMode do modo Direct. **Teclado RGB vem desligado por
-  padrão** (liga em Configurações ou ao aceitar a oferta). **Situação no Apex Pro TKL do
+  padrão** e o **servidor decide** (`STATE_DIR/rgb.json`): só muda com escolha explícita
+  (`{type:'rgb', explicit:true}` — botão nas Configurações ou aceitar a oferta); a interface
+  que só reconecta manda a config sem `explicit` e não liga nada. **Situação no Apex Pro TKL do
   usuário (firmware KBD 4.15.7, OpenRGB 1.1): não funciona** — as cores só "piscam" ao trocar
   de instrumento e o teclado volta ao perfil próprio. Tentativa de passar por Onboard → Direct
   + reenviar o quadro a cada 0,5 s fez o teclado **piscar sem parar e parar de digitar**

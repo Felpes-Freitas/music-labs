@@ -345,6 +345,7 @@ const KEYS: [string, string][] = [
 function RgbSection() {
   const [p, setP] = useState(rgbPrefs());
   const [st, setSt] = useState<{
+    enabled?: boolean;
     state: string;
     devices: string[];
     error?: string;
@@ -365,7 +366,10 @@ function RgbSection() {
     const next = { ...p, ...patch };
     setP(next);
     setRgbPrefs(patch);
+    if (patch.enabled !== undefined) setSt((x) => (x ? { ...x, enabled: patch.enabled } : x));
   };
+  // ligado/desligado vale o que o servidor guardou (é ele quem decide)
+  const on = st?.enabled ?? p.enabled;
   const label: Record<string, string> = { on: 'Conectado', connecting: 'Conectando…', missing: 'Não encontrado', error: 'Erro', off: 'Desligado' };
   return (
     <>
@@ -374,10 +378,10 @@ function RgbSection() {
         <div class="set-row">
           <span class="set-lbl">Usar</span>
           <div class="seg">
-            <button class={p.enabled ? 'on' : ''} onClick={() => change({ enabled: true })}>
+            <button class={on ? 'on' : ''} onClick={() => change({ enabled: true })}>
               Ligado
             </button>
-            <button class={!p.enabled ? 'on' : ''} onClick={() => change({ enabled: false })}>
+            <button class={!on ? 'on' : ''} onClick={() => change({ enabled: false })}>
               Desligado
             </button>
           </div>
@@ -385,9 +389,9 @@ function RgbSection() {
         <div class="set-row">
           <span class="set-lbl">Estado</span>
           <span class={`rgb-state ${st?.state ?? ''}`}>
-            {p.enabled ? label[st?.state ?? 'off'] ?? st?.state : 'Desligado'}
-            {p.enabled && st?.state === 'on' && st.devices.length ? `: ${st.devices.join(', ')}` : ''}
-            {p.enabled && st?.error ? ` — ${st.error}` : ''}
+            {on ? label[st?.state ?? 'off'] ?? st?.state : 'Desligado'}
+            {on && st?.state === 'on' && st.devices.length ? `: ${st.devices.join(', ')}` : ''}
+            {on && st?.error ? ` — ${st.error}` : ''}
           </span>
         </div>
         <div class="set-row">

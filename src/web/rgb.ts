@@ -19,7 +19,7 @@ export interface RgbPrefs {
 export const rgbPrefs = (): RgbPrefs => ({ enabled: false, host: '127.0.0.1', port: 6742, brightness: 1, ...getPref<Partial<RgbPrefs>>('rgb', {}) });
 export function setRgbPrefs(p: Partial<RgbPrefs>) {
   setPref('rgb', { ...rgbPrefs(), ...p });
-  sendConfig();
+  sendConfig(p.enabled !== undefined); // ligar/desligar é escolha explícita
   lastScene = '';
   sendScene();
 }
@@ -52,9 +52,9 @@ export function sceneKeys(): Record<string, number> {
 const pressed = new Set<string>();
 let lastScene = '';
 
-function sendConfig() {
+function sendConfig(explicit = false) {
   const p = rgbPrefs();
-  sendServer({ type: 'rgb', config: { enabled: p.enabled, host: p.host, port: p.port, brightness: p.brightness } });
+  sendServer({ type: 'rgb', explicit, config: { enabled: p.enabled, host: p.host, port: p.port, brightness: p.brightness } });
 }
 function sendScene() {
   if (!rgbPrefs().enabled) return;

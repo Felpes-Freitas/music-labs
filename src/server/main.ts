@@ -426,7 +426,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       case 'POST /api/rgb/install':
         // baixa o OpenRGB oficial (SHA-256 conferido) e liga o teclado RGB quando terminar
         installOpenRgb()
-          .then(() => rgbConfigure({ enabled: true }))
+          .then(() => rgbConfigure({ enabled: true }, true))
           .catch(() => {});
         return json(res, 200, rgbStatus());
       case 'POST /api/rgb/access':
@@ -617,7 +617,7 @@ export function startServer(port = PORT) {
         else if (m.type === 'status') uiStatus = { ...m.status, connected: true };
         else if (m.type === 'rgb') {
           // teclado RGB (OpenRGB): configuração e cena pedidas pela interface
-          if (m.config) void rgbConfigure(m.config);
+          if (m.config) void rgbConfigure(m.config, m.explicit === true);
           if (m.scene) rgbScene(m.scene);
         }
         else if (m.type === 'action') runActions(m.actions, id);
