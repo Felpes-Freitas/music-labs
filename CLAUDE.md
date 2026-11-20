@@ -169,7 +169,8 @@ scripts/     ferramentas de diagnóstico e testes de UI (os _*.mts são temporá
 - Gravação do amp salva o **bruto** (`AudioItem.raw`) e a versão processada (`path`); todos
   os takes de uma gravação vão para **um** canal de áudio (`newAudioChannel` em
   finishRecording) com `amp = { chain, outGainDb, sig }`. Prévias "live:" não ganham canal
-  (`completeOps` as ignora; tocam direto no insert até virar arquivo).
+  (`completeOps` as ignora; tocam direto no insert até virar arquivo). Canais de prévia
+  órfãos de versões antigas são removidos por `completeOps` (use `completeAll`, que repete).
 - `ampLive(p, ch)`: toca o bruto pelos pedais em tempo real (engine: `st.amp`, automação
   em `['channels', id, 'amp', 'chain', fxId, 'params', key]` = `ampParamPath`) quando
   `amp.sig !== ampSig(amp)` (cadeia mudou, versão processada velha) ou há automação num

@@ -59,3 +59,15 @@ test('prévia de gravação ("live:") não ganha canal', () => {
   const ops = completeOps(p);
   assert.equal(ops.filter((o) => o.op === 'insert' && o.path[0] === 'channels').length, 0);
 });
+
+import { completeAll } from '../src/core/audiochan.ts';
+test('projeto inundado de versões antigas: canais de prévia sem clipe somem ao abrir', () => {
+  let p = emptyProject();
+  const junk = newAudioChannel(p, 'take1', 'live:take1');
+  p = applyOps(p, junk.ops);
+  p = applyOps(p, [ins(['clips'], { id: 'k', kind: 'audio', track: 0, pos: 0, len: PPQ, patternId: '', offset: 0, sample: '/g.wav' })]);
+  const r = completeAll(p, applyOps);
+  assert.equal(r.project.channels.filter((c) => c.name === 'take1').length, 0, 'canal de prévia saiu');
+  assert.equal(r.project.patterns.filter((x) => x.name === 'take1').length, 0, 'pattern-grupo vazio saiu');
+  assert.equal(r.project.channels.filter((c) => c.type === 'audio').length, 1, 'o clipe real ganhou o canal dele');
+});
