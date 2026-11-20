@@ -56,7 +56,7 @@ git push --follow-tags
 
 - **Rack de canais** com step sequencer (16+ steps, pintar arrastando, mute/solo,
   volume/pan, insert do mixer) e mini piano roll para canais melódicos. Filtro **só este
-  pattern** (mostra os canais do pattern selecionado e os novos, ainda sem notas) e, no
+  pattern** (o olho ao lado do pattern: mostra os canais do pattern selecionado e os novos, ainda sem notas) e, no
   botão direito, **Enviar para pattern** (move as notas do canal para outro pattern).
 - **Áudios no rack**, como no FL Studio: cada áudio do projeto (gravação, arquivo
   arrastado, variante) tem um canal de áudio com volume, pan, mute, efeitos e insert do

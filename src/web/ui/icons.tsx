@@ -4,6 +4,7 @@ import type { JSX } from 'preact';
 const P: Record<string, JSX.Element> = {
   play: <path d="M4 2.5v11l9-5.5z" fill="currentColor" stroke="none" />,
   filter: <path d="M2 3h12l-4.5 5.5V13l-3-1.5v-3z" />,
+  eye: <path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8s-2.4 4.5-6.5 4.5S1.5 8 1.5 8zM8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" />,
   pause: <path d="M4 3h3v10H4zM9 3h3v10H9z" fill="currentColor" stroke="none" />,
   stop: <rect x="3.5" y="3.5" width="9" height="9" fill="currentColor" stroke="none" />,
   record: <circle cx="8" cy="8" r="4.5" fill="currentColor" stroke="none" />,

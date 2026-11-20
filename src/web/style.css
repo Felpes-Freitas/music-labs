@@ -846,3 +846,7 @@ option, optgroup { background-color: var(--pop); color: var(--text); }
 .reamp-st { color: #6fdc8c; }
 .reamp-st.live { color: var(--acc); }
 .amp-presets button { white-space: nowrap; }
+/* olho do rack: só os canais do pattern selecionado */
+.pr-tools .rack-eye { background: none; border: none; width: 24px; height: 22px; padding: 0; display: inline-flex; align-items: center; justify-content: center; color: var(--dim2); }
+.pr-tools .rack-eye:hover { color: var(--text); }
+.pr-tools .rack-eye.on { color: var(--acc); }

@@ -236,10 +236,8 @@ export function ChannelRack() {
                 <option value={pt.id}>{pt.name}</option>
               ))}
             </select>
-          </span>
-          <span class="tgroup">
-            <button class={only ? 'on' : ''} data-hint={only ? 'Mostrando só os canais deste pattern (e os novos, ainda sem notas) · clique para ver todos' : 'Mostrar só os canais deste pattern'} onClick={() => setOnly(!only)}>
-              <Icon name="filter" size={12} /> só este pattern
+            <button class={`rack-eye ${only ? 'on' : ''}`} data-hint={only ? 'Mostrando só os canais deste pattern (e os novos, ainda sem notas) · clique para ver todos' : 'Mostrar só os canais deste pattern'} onClick={() => setOnly(!only)}>
+              <Icon name="eye" size={14} />
             </button>
           </span>
           <span class="tgroup">
