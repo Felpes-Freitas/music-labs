@@ -25,6 +25,27 @@
   Enquanto não existe, o duplo clique no áudio abre o Melodify. (Hoje "sampler" no app é
   um tipo de canal de instrumento que toca um sample pelas notas — outra coisa.)
 
+## Anotado em 20/11/2026
+
+- **Áudios acompanham o BPM (time-stretch sem mudar o tom).** Ao mudar o BPM do projeto,
+  os clipes de áudio devem tocar mais rápido ou mais devagar na mesma proporção, **sem
+  mudar o tom**. Visualmente nada muda: o clipe continua do mesmo tamanho na playlist
+  (mesmos compassos) e só a agulha anda mais rápido ou mais devagar. A experiência é a
+  de um áudio "preso à grade" (como o clipe com stretch ligado no FL Studio).
+  Hoje é o contrário: o clipe toca na velocidade original e o BPM novo só muda o
+  tamanho dele em ticks (`applyTempo` em `core/studio.ts` mantém a duração em segundos;
+  `Engine.mixClip` lê o arquivo em tempo real). Pontos a decidir quando for feito:
+  - como esticar: em tempo real na engine (usa `PitchShifter`/`psola.ts` ou um
+    time-stretch por fase, ex. WSOLA/phase vocoder) ou pré-renderizar o clipe esticado
+    em segundo plano (mesmo esquema do reamp: toca o original enquanto refaz);
+  - guardar a razão no clipe (BPM de origem do áudio, ex. o detectado pelo botão BPM do
+    Melodify) para esticar sempre a partir do arquivo original e não acumular perda;
+  - opção por clipe para ligar/desligar o stretch (um áudio de efeito ou um sample
+    de percussão talvez deva continuar tocando na velocidade original);
+  - o botão BPM do Melodify e o MCP (`detect_bpm`/`set_tempo`) passam a só alinhar à grade
+    e definir o BPM de origem do áudio, em vez de redimensionar os clipes;
+  - automação de BPM: o stretch teria de seguir a curva ao longo do clipe.
+
 ## Pendências maiores
 
 - Hospedar plugins VST/LV2/CLAP (ponte via Carla/yabridge). Em espera: decidir
