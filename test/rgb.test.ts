@@ -129,12 +129,12 @@ test('pinta as teclas da cena e, ao soltar, devolve cores e modo originais', asy
     assert.equal(c[LEDS.indexOf('Key: 1')], 0x3e8ed0);
     assert.equal(c[LEDS.indexOf('Key: ,')], 0xffffff);
     assert.equal(c[LEDS.indexOf('Key: Escape')], 0x080808, 'resto no fundo');
-    // tecla apertada acende (mais clara)
-    rgbScene({ pressed: ['q'] });
+    // tecla apertada NÃO repinta o teclado (no Apex cada atualização fazia a nota ficar presa)
     const before = srv.got.length;
-    await until(() => srv.got.length > before);
-    const lit = ledColors(srv.got.filter((p) => p.id === 1050).pop()!.data)[LEDS.indexOf('Key: Q')];
-    assert.ok(((lit >> 8) & 255) > 0x80, `acesa: ${lit.toString(16)}`);
+    rgbScene({ pressed: ['q'] });
+    rgbScene({ pressed: [] });
+    await wait(150);
+    assert.equal(srv.got.filter((p, i) => i >= before && p.id === 1050).length, 0, 'nenhum envio por tecla');
     // soltar (fechar o app): cores originais e o modo Spectrum, byte a byte
     await rgbRelease();
     await wait(50);

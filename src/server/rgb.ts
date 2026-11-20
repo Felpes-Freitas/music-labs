@@ -314,9 +314,13 @@ export async function rgbConfigure(c: Partial<RgbConfig>, explicit = false) {
   schedule();
 }
 
-/** Nova cena vinda da interface (instrumento selecionado, teclas apertadas). */
+/**
+ * Nova cena vinda da interface (instrumento selecionado). Teclas apertadas não acendem mais:
+ * em teclados como o SteelSeries Apex cada atualização de LEDs reinicia a iluminação e faz o
+ * teclado perder o "soltou a tecla" — a nota ficava presa. (Ignora até de interfaces antigas.)
+ */
 export function rgbScene(s: Partial<RgbScene>) {
-  scene = { ...scene, ...s };
+  scene = { ...scene, ...s, pressed: [] };
   if (cfg.enabled) schedule();
 }
 
@@ -338,6 +342,7 @@ async function ensure() {
     try {
       await c.connect(cfg.host, cfg.port, 'Music Labs');
       const devs = await c.devices();
+      lastSent.clear();
       keyboards = devs
         .filter((d) => d.type === DEVICE_KEYBOARD && d.leds.length)
         .map((d) => {
@@ -440,8 +445,16 @@ async function push() {
   if (!cfg.enabled) return;
   if (!(await ensure())) return;
   const c = client!;
-  for (const kb of keyboards) c.updateLeds(kb.index, sceneColors(kb, scene, cfg.brightness));
+  for (const kb of keyboards) {
+    const colors = sceneColors(kb, scene, cfg.brightness);
+    const sig = colors.join(',');
+    if (lastSent.get(kb.index) === sig) continue; // nada mudou: não mexe no teclado
+    lastSent.set(kb.index, sig);
+    c.updateLeds(kb.index, colors);
+  }
 }
+/** Últimas cores enviadas por teclado (esquecidas ao reconectar ou soltar). */
+const lastSent = new Map<number, string>();
 
 
 /** Ao fechar o app: devolve os teclados e encerra o OpenRGB que o app iniciou. */
@@ -454,6 +467,7 @@ export async function rgbShutdown() {
 
 /** Devolve cada teclado ao modo e às cores de antes e solta a conexão. */
 export async function rgbRelease() {
+  lastSent.clear();
   if (pushTimer) clearTimeout(pushTimer);
   pushTimer = null;
   if (connecting) await connecting.catch(() => {});
