@@ -57,6 +57,8 @@ export interface EngineStatus {
   spectrum: number[] | null;
   /** Contagem antes de começar: tempos que faltam (0 = tocando de verdade). */
   countIn: number;
+  /** Andamento tocando agora (muda com automação de BPM). */
+  bpm?: number;
   /** Quantas vezes o loop recomeçou desde o play (a gravação usa para trocar de track). */
   loops: number;
   /** Número do play (ver Engine.play). */
@@ -191,6 +193,19 @@ export class Engine {
   loops = 0;
   /** Início da próxima coleta de notas quando ele não é a agulha (volta no fim do bloco). */
   private collectFrom: { from: number; tick: number } | null = null;
+  /** Andamento usado no último bloco (com automação de BPM). */
+  curBpm = 120;
+  /** BPM agora: o clipe de automação de BPM que está tocando, se houver. */
+  private bpmAt(p: Project) {
+    if (!this.playing || this.mode !== 'song' || this.preroll > 0) return p.bpm;
+    for (const c of p.clips) {
+      if (c.kind !== 'auto' || c.muted || p.tracks[c.track]?.mute || !c.target || c.target.path.length !== 1 || c.target.path[0] !== 'bpm') continue;
+      if (this.tick < c.pos || this.tick >= c.pos + c.len) continue;
+      const v = autoValue(c, this.tick - c.pos);
+      if (v !== null) return Math.max(20, Math.min(400, v));
+    }
+    return p.bpm;
+  }
   private preroll = 0;
   private prerollPos = 0;
   private click = { left: 0, freq: 0, ph: 0, gain: 0 };
@@ -356,7 +371,10 @@ export class Engine {
     outL.fill(0, 0, n);
     outR.fill(0, 0, n);
     if (!p) return;
-    const tps = (p.bpm * PPQ) / (60 * this.sr); // ticks por amostra
+    // andamento do bloco: automação de BPM (song) ou o do projeto
+    const bpm = this.bpmAt(p);
+    this.curBpm = bpm;
+    const tps = (bpm * PPQ) / (60 * this.sr); // ticks por amostra
     const events: Ev[] = [];
     const beatAtStart = this.tick / PPQ;
     // trechos contínuos de tempo neste bloco (o loop pode quebrar o bloco em dois)
@@ -451,7 +469,7 @@ export class Engine {
     }
     const fxCtx: FxContext = {
       sr: this.sr,
-      bpm: p.bpm,
+      bpm,
       beat: beatAtStart,
       insertBus: (i) => (this.inserts[i] ? [this.inserts[i].L, this.inserts[i].R] : undefined),
     };
@@ -561,7 +579,7 @@ export class Engine {
     const anySolo = p.mixer.some((m, i) => i > 0 && m.solo);
     const ctx: FxContext = {
       sr: this.sr,
-      bpm: p.bpm,
+      bpm,
       beat: beatAtStart,
       insertBus: (i) => (this.inserts[i] ? [this.inserts[i].L, this.inserts[i].R] : undefined),
     };
@@ -690,7 +708,7 @@ export class Engine {
     const spectrum = this.watched && this.scopeFresh ? analyzeSpectrum(this.scope, this.scopeW, this.sr) : null;
     this.scopeFresh = false;
     const countIn = this.playing && this.preroll > 0 ? Math.ceil((this.preroll - this.prerollPos) / PPQ) : 0;
-    return { playing: this.playing, mode: this.mode, patternId: this.patternId, tick: this.tick, meters, gr, activeChannels: active, lit: [...this.lit.keys()], spectrum, countIn, countInTicks: this.playing && this.preroll > 0 ? this.preroll - this.prerollPos : 0, loops: this.loops, playId: this.playId };
+    return { playing: this.playing, mode: this.mode, patternId: this.patternId, tick: this.tick, meters, gr, activeChannels: active, lit: [...this.lit.keys()], spectrum, bpm: this.curBpm, countIn, countInTicks: this.playing && this.preroll > 0 ? this.preroll - this.prerollPos : 0, loops: this.loops, playId: this.playId };
   }
 
   insertStats(): InsertStats[] {

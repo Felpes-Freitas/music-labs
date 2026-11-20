@@ -66,6 +66,8 @@ export interface Clip {
   // clipe de automação
   target?: AutoTarget;
   points?: AutoPoint[];
+  /** Função da Central de Automações que gerou os pontos (recalculados ao redimensionar). */
+  gen?: import('./autogen.js').AutoGen;
 }
 
 /** Parâmetro automatizado: caminho no projeto e faixa de valores. */

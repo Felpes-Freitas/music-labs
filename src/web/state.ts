@@ -17,7 +17,7 @@ import { startMidiRec, finishMidiRec, recNote, midiRecording, midiOnStatus } fro
 import { setPref } from './prefs';
 import { audio } from './audio';
 
-export type WindowId = 'rack' | 'piano' | 'playlist' | 'mixer' | 'browser' | 'channel' | 'amp' | 'tune' | 'stitch';
+export type WindowId = 'rack' | 'piano' | 'playlist' | 'mixer' | 'browser' | 'channel' | 'amp' | 'tune' | 'stitch' | 'autos';
 
 export interface WinState {
   /** Geometria anterior quando a janela está maximizada. */
@@ -52,6 +52,7 @@ function defaultLayout(): Record<WindowId, WinState> {
     amp: { open: false, x: 40, y: Math.max(8, H - 520), w: Math.min(W - 80, 1040), h: Math.min(H - 16, 500), z: 7 },
     tune: { open: false, x: 30, y: 30, w: Math.min(W - 60, 1100), h: Math.min(H - 60, 560), z: 8 },
     stitch: { open: false, x: 50, y: 50, w: Math.min(W - 100, 1100), h: Math.min(H - 100, 520), z: 9 },
+    autos: { open: false, x: 60, y: 40, w: Math.min(W - 120, 980), h: Math.min(H - 80, 520), z: 10 },
   };
 }
 
@@ -84,6 +85,8 @@ export const state = {
   sel: null as null | { start: number; end: number },
   /** Track escolhida no menu da área selecionada: áudio do amp/Afinador/Stitcher vai para ela. */
   selTrack: null as number | null,
+  /** Clipe de automação aberto na Central de Automações. */
+  autoClip: null as string | null,
   /**
    * Pincel da playlist (como no FL): o que um clique num espaço vazio coloca. null = o
    * pattern selecionado; senão um áudio (o último clipe de áudio clicado ou o áudio
@@ -341,7 +344,7 @@ export function focusWindow(id: WindowId, force = false) {
 }
 /** Tab: traz para a frente a próxima janela aberta (Shift+Tab: a anterior). */
 export function cycleWindows(back = false) {
-  const order: WindowId[] = ['playlist', 'rack', 'piano', 'mixer', 'channel', 'amp', 'tune', 'stitch'];
+  const order: WindowId[] = ['playlist', 'rack', 'piano', 'mixer', 'channel', 'amp', 'tune', 'stitch', 'autos'];
   const open = order.filter((id) => state.windows[id].open);
   if (!open.length) return;
   const top = open.reduce((a, b) => (state.windows[b].z > state.windows[a].z ? b : a));

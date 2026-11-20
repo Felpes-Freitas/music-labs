@@ -1,3 +1,4 @@
+import { createAutomation } from '../autos';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import { state, focusWindow, closeWindow, emit, act, type WindowId } from '../state';
@@ -105,7 +106,7 @@ export function Knob(p: KnobProps) {
           x={menu.x}
           y={menu.y}
           onClose={() => setMenu(null)}
-          items={[['Criar clipe de automação', () => act(A.addAutomation, { param: '', target: { path: p.auto!.path, min: p.min, max: p.max, log: p.log, label: p.auto!.label } })]]}
+          items={[['Criar automação…', () => createAutomation({ path: p.auto!.path, min: p.min, max: p.max, log: p.log, label: p.auto!.label })]]}
         />
       )}
       <svg
