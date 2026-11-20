@@ -14,17 +14,37 @@ import { accessSync, constants, existsSync, mkdirSync, readdirSync, rmSync, stat
 import { join } from 'node:path';
 import { STATE_DIR } from './store.js';
 
-const VERSION = '0.9';
+const VERSION = '1.1';
 // MUSICLABS_OPENRGB_URL: só para testes (servidor local); o SHA-256 continua exigido
-const BASE = process.env.MUSICLABS_OPENRGB_URL ?? 'https://codeberg.org/OpenRGB/OpenRGB/releases/download/release_0.9';
-/** Arquivos oficiais da versão 0.9 com o SHA-256 conferido. */
+const BASE = process.env.MUSICLABS_OPENRGB_URL ?? 'https://codeberg.org/OpenRGB/OpenRGB/releases/download/release_1.1';
+/**
+ * Arquivos oficiais da versão 1.1 com o SHA-256 conferido. (A 0.9 não conhecia o protocolo
+ * novo de teclados como o SteelSeries Apex Pro TKL com firmware ≥ 1.19.7 — aceitava as cores
+ * e o teclado não mudava — nem o modo "Onboard" que devolve a iluminação do próprio teclado.)
+ */
 const FILES = {
-  'linux-x64': { url: `${BASE}/OpenRGB_0.9_x86_64_b5f46e3.AppImage`, sha256: 'b553010012d3a34dc0b570e1138d7466f00f088158ccf9f549a52d88d61b1ec0', size: 30076968, kind: 'appimage' },
-  'win32-x64': { url: `${BASE}/OpenRGB_0.9_Windows_64_b5f46e3.zip`, sha256: '4a42df973bf9e0694268993478f03a71dafbf2ddbcb1512835b4bbabdc6dc6de', size: 11849808, kind: 'zip' },
+  'linux-x64': { url: `${BASE}/OpenRGB_1.1_x86_64_8e16de2.AppImage`, sha256: 'd556c2273b0ef863dbee7ffdb438304b382add5d685c93c60758b42de3b0268d', size: 37528768, kind: 'appimage' },
+  'win32-x64': { url: `${BASE}/OpenRGB_1.1_Windows_64_8e16de2.zip`, sha256: '63291726c6fc84eb479ef2ee752e97e1187f6ce9c49fd27eee40ded588a8172a', size: 22019605, kind: 'zip' },
 } as const;
-const RULES = { url: `${BASE}/60-openrgb.rules`, sha256: 'b71bece9b1e979dd08554a24b7003b6d7bb6d77ea554e26135423f84c1afab38' };
+/** Regras udev oficiais (a 1.1 não publica o arquivo; as da 1.0rc3.1 são as mais novas). */
+const RULES = {
+  url: process.env.MUSICLABS_OPENRGB_URL ? `${BASE}/60-openrgb.rules` : 'https://codeberg.org/OpenRGB/OpenRGB/releases/download/release_candidate_1.0rc3.1/60-openrgb.rules',
+  sha256: '0ebb492fd5f510fef964ab5a09a254586db864daedf3e9e012104c3c80644546',
+};
 
 const DIR = join(STATE_DIR, 'openrgb');
+const VERSION_FILE = join(DIR, 'version');
+
+/** Versão instalada pelo app (vazio se não há, ou se é de antes de o app gravar a versão). */
+const installedVersion = () => {
+  try {
+    return readFileSync(VERSION_FILE, 'utf8').trim();
+  } catch {
+    return '';
+  }
+};
+/** Há um OpenRGB do app, mas de uma versão antiga (atualiza sozinho). */
+export const openRgbOutdated = () => !!openRgbExe() && installedVersion() !== VERSION;
 const platformKey = `${process.platform}-${process.arch}` as keyof typeof FILES;
 
 export const openRgbSupported = () => platformKey in FILES;
@@ -61,6 +81,7 @@ export const openRgbState = () => ({
   supported: openRgbSupported(),
   version: VERSION,
   installed: !!openRgbExe(),
+  installedVersion: installedVersion() || (openRgbExe() ? 'antiga' : ''),
   install,
   managed: !!child,
   needsAccess: needsDeviceAccess(),
@@ -89,6 +110,7 @@ const run = (cmd: string, args: string[], cwd?: string) =>
 /** Baixa e instala o OpenRGB (só da lista oficial, com o SHA-256 conferido). */
 export async function installOpenRgb(): Promise<void> {
   if (install.state === 'downloading' || install.state === 'installing') return;
+  stopOpenRgb(); // atualizando: o antigo não pode estar rodando enquanto os arquivos mudam
   const f = FILES[platformKey];
   if (!f) throw new Error('Sem OpenRGB automático para este sistema: instale pelo site openrgb.org');
   try {
@@ -112,6 +134,7 @@ export async function installOpenRgb(): Promise<void> {
       rmSync(zip, { force: true });
     }
     if (!openRgbExe()) throw new Error('instalação incompleta (programa não encontrado depois de extrair)');
+    writeFileSync(VERSION_FILE, VERSION);
     install = { state: 'installed', progress: 1 };
   } catch (e) {
     install = { state: 'error', progress: 0, error: (e as Error).message };

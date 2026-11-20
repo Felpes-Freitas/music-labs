@@ -382,9 +382,16 @@ Z…M/Q…P teclado musical, -/= oitava.
   OpenRGB falso no formato da documentação). **OpenRGB de fábrica** (`src/server/openrgb.ts`):
   na 1ª abertura, se há periférico de marca RGB no USB (`rgbHardwareHint`, vendor ids; fora
   do Linux pergunta sempre) e nenhum OpenRGB rodando, a interface pergunta uma vez (pref
-  `rgb.offered`) e baixa a versão oficial 0.9 (Linux x64 AppImage → extraído em
+  `rgb.offered`) e baixa a versão oficial **1.1** (Linux x64 AppImage → extraído em
   `STATE_DIR/openrgb/squashfs-root/AppRun`; Windows x64 zip) **com SHA-256 fixo no código**
-  (arquivo diferente = recusado). Se o servidor SDK não responde e há o OpenRGB do app, o
+  (arquivo diferente = recusado); grava `openrgb/version` e atualiza sozinho uma instalação
+  antiga (`openRgbOutdated`). A 0.9 **não funcionava** no Apex Pro TKL do usuário: aceitava as
+  cores mas o teclado não mudava (a 0.9 só tem o protocolo antigo 0x3A; firmware ≥ 1.19.7
+  usa init 0x4B + pacotes 0x40, suportado a partir da 1.1, que também tem o modo "Onboard").
+  Ao entrar: SetCustomMode **+ UpdateMode do modo Direct** (`directMode`; SetCustomMode só
+  marca o modo no OpenRGB). Ao soltar: se o teclado estava no Direct e tem modo de hardware
+  (`hardwareMode`: Onboard…), volta para ele (iluminação do próprio teclado); senão cores e
+  modo originais. Se o servidor SDK não responde e há o OpenRGB do app, o
   cliente o inicia (`--server --server-port`, só em localhost) e tenta de novo a cada 1,5–2,5 s
   enquanto ele detecta; `rgbShutdown` restaura o teclado e encerra esse processo (o do
   usuário, se houver, nunca é iniciado/encerrado). Linux sem acesso ao USB: botão instala

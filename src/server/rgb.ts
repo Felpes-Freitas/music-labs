@@ -11,7 +11,7 @@
 // mais novos respondem na versão pedida.
 
 import { Socket, connect } from 'node:net';
-import { needsDeviceAccess, openRgbExe, openRgbState, startOpenRgb, stopOpenRgb } from './openrgb.js';
+import { installOpenRgb, needsDeviceAccess, openRgbExe, openRgbOutdated, openRgbState, startOpenRgb, stopOpenRgb } from './openrgb.js';
 
 const PROTOCOL = 3;
 const PKT = {
@@ -344,7 +344,14 @@ async function ensure() {
         status = { state: 'error', devices: [], error: 'o OpenRGB fechou a conexão' };
         retryIn(5000);
       };
-      for (const k of keyboards) c.setCustomMode(k.index);
+      for (const k of keyboards) {
+        c.setCustomMode(k.index);
+        // SetCustomMode só marca o modo no OpenRGB; quem manda o teclado entrar no controle
+        // direto é o UpdateMode (é o que a janela do OpenRGB faz) — sem isso alguns teclados
+        // (ex.: SteelSeries Apex) aceitam as cores no OpenRGB mas não mudam de verdade
+        const direct = directMode(k);
+        if (direct >= 0) c.updateMode(k.index, direct, k.modes[direct].raw);
+      }
       client = c;
       active = true;
       status = { state: 'on', devices: keyboards.map((k) => k.name) };
@@ -353,7 +360,14 @@ async function ensure() {
       const refused = (e as NodeJS.ErrnoException).code === 'ECONNREFUSED';
       // ninguém servindo: se o app tem o OpenRGB dele, inicia (só no próprio computador)
       const local = cfg.host === '127.0.0.1' || cfg.host === 'localhost';
-      if (refused && local && openRgbExe() && startOpenRgb(cfg.port)) {
+      if (refused && local && openRgbOutdated()) {
+        // o OpenRGB do app é de uma versão antiga: atualiza (conferido) e tenta de novo
+        status = { state: 'connecting', devices: [], error: 'atualizando o OpenRGB…' };
+        installOpenRgb()
+          .then(() => retryIn(300))
+          .catch((err) => (status = { state: 'error', devices: [], error: `não deu para atualizar o OpenRGB: ${(err as Error).message}` }));
+        retryAt = Date.now() + 3600_000; // até a atualização terminar
+      } else if (refused && local && openRgbExe() && startOpenRgb(cfg.port)) {
         if (!justLaunched()) launchedAt = Date.now();
         status = { state: 'connecting', devices: [], error: 'iniciando o OpenRGB…' };
         retryIn(1500);
@@ -365,6 +379,20 @@ async function ensure() {
   })().finally(() => (connecting = null));
   await connecting;
   return !!client?.connected && active;
+}
+
+/** Modo de controle direto do dispositivo (o que o OpenRGB usa para cores por LED). */
+export function directMode(d: { modes: { name: string }[] }) {
+  for (const re of [/^direct$/i, /^custom$/i, /direct/i, /^static$/i]) {
+    const i = d.modes.findIndex((m) => re.test(m.name));
+    if (i >= 0) return i;
+  }
+  return -1;
+}
+
+/** Modo em que o próprio dispositivo cuida da iluminação (perfil salvo nele), se houver. */
+export function hardwareMode(d: { modes: { name: string }[] }) {
+  return d.modes.findIndex((m) => /^(onboard|hardware|profile|default)$/i.test(m.name) || /onboard/i.test(m.name));
 }
 
 const scale = (c: number, k: number) => (Math.round(((c >> 16) & 255) * k) << 16) | (Math.round(((c >> 8) & 255) * k) << 8) | Math.round((c & 255) * k);
@@ -408,10 +436,16 @@ export async function rgbRelease() {
   if (c?.connected && active) {
     for (const kb of keyboards) {
       try {
-        // cores primeiro (modos "estáticos"/diretos), depois o modo original (efeitos)
-        if (kb.colors.length) c.updateLeds(kb.index, kb.colors);
-        const m = kb.modes[kb.activeMode];
-        if (m) c.updateMode(kb.index, kb.activeMode, m.raw);
+        // Se o teclado estava no modo direto (o OpenRGB recém-aberto começa assim, com as cores
+        // que ele tem na memória — muitas vezes apagadas) e tem um modo de hardware, volta para
+        // ele: é a iluminação do próprio teclado. Senão, cores e modo exatamente como eram.
+        const hw = hardwareMode(kb);
+        if (hw >= 0 && kb.activeMode === directMode(kb)) c.updateMode(kb.index, hw, kb.modes[hw].raw);
+        else {
+          if (kb.colors.length) c.updateLeds(kb.index, kb.colors);
+          const m = kb.modes[kb.activeMode];
+          if (m) c.updateMode(kb.index, kb.activeMode, m.raw);
+        }
       } catch {
         /* segue para o próximo */
       }
