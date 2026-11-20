@@ -41,10 +41,15 @@ function walk(root: any, path: PathSeg[]): any {
   return cur;
 }
 
-const clone = <T>(v: T): T => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
+const cloneValue = <T>(v: T): T => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
 
-/** Aplica ops mutando o projeto; devolve o projeto (novo em caso de replace). */
-export function applyOps(project: Project, ops: Op[]): Project {
+/**
+ * Aplica ops mutando o projeto; devolve o projeto (novo em caso de replace).
+ * owned: os valores das ops já são cópias (vieram por postMessage) e podem ser usados
+ * direto, sem clonar de novo (na thread de áudio isso evita travadas com listas grandes).
+ */
+export function applyOps(project: Project, ops: Op[], owned = false): Project {
+  const clone = owned ? <T>(v: T): T => v : cloneValue;
   let p = project;
   for (const o of ops) {
     switch (o.op) {

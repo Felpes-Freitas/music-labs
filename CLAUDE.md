@@ -303,12 +303,21 @@ Z…M/Q…P teclado musical, -/= oitava.
   múltiplos dela ou divisões exatas de uma célula, `gridPeriod` —, livre no resto).
   **Ciclos na grade** (`gen.quantize`, LFO): cada ciclo tem um período da grade e começa
   numa linha dela (acelerar/respirar em passos rítmicos). `renderGen` amostra e `simplify` tira pontos
-  redundantes (reta = 2 pontos; seno mantém o período e ganha ciclos ao crescer). `regen`
+  redundantes (reta = 2 pontos; seno mantém o período e ganha ciclos ao crescer). LFO
+  não amostra+simplifica: anda ciclo a ciclo e põe só os pontos necessários (seno 24 por
+  ciclo, triângulo nos vértices, quadrada/serra nos saltos — `emit`); simplificar sempre
+  com o tempo exato e só depois arredondar ticks (`toTicks`), senão o serrilhado do
+  arredondamento impede a simplificação. `regen`
   ao redimensionar; `trimAutoStart` corta/estende o começo. Editar ponto (na Central ou
   na playlist) marca `gen.custom` (valem os pontos; "Voltar à função" desfaz); fatiar
   também. **BPM automatizável**: alvo `['bpm']` (40–240); `Engine.bpmAt` usa o clipe ativo
   em song mode, status traz `bpm` (o LCD mostra em roxo). Áudios seguem os ticks e
   aceleram junto (como fita), com a conversão de tempo no BPM do projeto.
+- **Mudanças para a engine** (`audio.applyOps`): a primeira vai na hora e as seguintes
+  são juntadas por ~20 ms (lote de `set` igual ao anterior: só o último vale); `post`
+  esvazia o que está pendente antes de qualquer outra mensagem. No worklet,
+  `applyOps(..., owned=true)` não clona de novo (já veio por postMessage) — clonar listas
+  grandes de pontos na thread de áudio travava o som (84 ms → 0,3 ms por edição).
 - **Knobs** (`Knob` em `widgets.tsx`): `auto={{path,label}}` habilita "Criar automação…"
   (botão direito, abre a Central) e a gravação de automação; durante o REC o knob mexido fica
   vermelho com "● AUTO"; knob com automação na música ganha um ponto.
@@ -357,6 +366,9 @@ Z…M/Q…P teclado musical, -/= oitava.
 - FL Studio 2025 instalado no Wine (`~/.wine/drive_c/Program Files/Image-Line/…`); o
   VST2 `FL Studio VSTi (Multi).dll` existe em `Common Files/VST2`.
 - Sem `sudo` para o Claude (pedir ao usuário quando precisar).
+- **Bateria baixa derruba a CPU para 400 MHz** (governor powersave, máx. 3,9 GHz): tudo
+  fica ~10× mais lento e o áudio picota/morre. Antes de caçar problema de desempenho,
+  olhar `/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq` e a bateria.
 - **Pendência de hardware**: o microfone do headset (Fallen Quartz, plugue P2 de 4 polos,
   cabo HyperX) **não é detectado** pelo driver (`Mic Jack: off`; teste de batidinha
   confirmou que só o microfone interno chega). Sugestões dadas ao usuário: testar

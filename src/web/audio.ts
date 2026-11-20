@@ -65,6 +65,8 @@ export class Audio {
   }
 
   post(m: unknown) {
+    // mudanças de projeto que ainda estão juntando vão antes (a ordem das mensagens importa)
+    if (this.pendOps?.length && (m as { type?: string }).type !== 'ops') this.flushOps();
     this.node?.port.postMessage(m);
   }
 
@@ -76,11 +78,37 @@ export class Audio {
   }
 
   /** Envia só as alterações: a thread de áudio aplica as mesmas ops na cópia dela. */
+  /**
+   * Manda as mudanças para a engine. Mexidas seguidas (arrastar um knob, editar uma
+   * automação) chegam a cada movimento do mouse: a primeira vai na hora e as próximas
+   * são juntadas por ~20 ms — de um lote de "set" igual ao anterior só vale o último.
+   */
   applyOps(ops: Op[], p: Project) {
     if (!this.node) return;
-    if (ops.some((o) => o.op === 'replace')) return this.setProject(p);
+    if (ops.some((o) => o.op === 'replace')) {
+      this.pendOps = [];
+      return this.setProject(p);
+    }
+    const last = this.pendOps[this.pendOps.length - 1];
+    const sameSets = (a: Op[], b: Op[]) => a.length === b.length && a.every((o, i) => o.op === 'set' && b[i].op === 'set' && o.path.join('/') === b[i].path.join('/'));
+    if (last && sameSets(last, ops)) this.pendOps[this.pendOps.length - 1] = ops;
+    else this.pendOps.push(ops);
+    if (this.pendTimer) return;
+    this.flushOps();
+    this.pendTimer = setTimeout(() => {
+      this.pendTimer = 0;
+      if (this.pendOps.length) this.flushOps();
+    }, 20) as unknown as number;
+  }
+  private pendOps: Op[][] = [];
+  private pendTimer = 0;
+  private flushOps() {
+    const ops = this.pendOps.flat();
+    this.pendOps = [];
+    if (!ops.length) return;
     this.post({ type: 'ops', ops });
-    this.syncSamples(p);
+    const p = this.getProject();
+    if (p) this.syncSamples(p);
   }
 
   private syncSamples(p: Project) {
