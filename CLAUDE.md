@@ -260,6 +260,8 @@ acrescentar a ação em `core/` e a ferramenta aqui (não contornar com curl/scr
 - Mixer: mixer_insert, **reset_insert** (o mixer tem posições fixas: "remover" = resetar),
   add/update/remove_effect (insert ou canal), **copy_effects**.
 - Áudios do projeto: **audio_pool** (add, rename, remove, place, edits on/off).
+- Andamento: **detect_bpm** (clipe, item da lista ou arquivo; `apply` muda o BPM e alinha
+  o clipe à grade) e **set_tempo** (muda o BPM mantendo a duração dos áudios; = `applyTempo`).
 - Interface: **ui** (`POST /api/ui` → `remoteUi` em state.ts: select, loop, metronome,
   countIn, follow, mode, seekBar, pattern, channel, open/close janelas, automation,
   message), transport, preview_notes. render, analyze_mix.
@@ -432,7 +434,7 @@ Z…M/Q…P teclado musical, -/= oitava.
   reiniciar (`mlabsWindow.relaunch` → `app:relaunch` em main.cjs, que grava o autosave
   antes com `flushState`). Se o servidor não é do app (aberto pelo MCP), só avisa.
 - **Amp** (`Amp.tsx`): entrada e canal no título, visualizador (dB, linha do limiar),
-  pedais reordenáveis (gate, wah, compressor, overdrive, fuzz, amp clean/crunch/lead,
+  pedais reordenáveis (capotraste, gate, wah, compressor, overdrive, fuzz, amp clean/crunch/lead,
   gabinete, EQ, tremolo, chorus, phaser, delay, reverb), presets, gravação inteligente
   (`TakeDetector` em `core/onset.ts`: aprende o ruído, exige som sustentado, limiar de
   volume, e usa uma 2ª captura com cancelamento de eco só para detectar).
@@ -441,7 +443,16 @@ Z…M/Q…P teclado musical, -/= oitava.
   muda altura sem mudar duração); grade do tom (Ctrl: qualquer semitom, Shift: livre);
   tom detectado/escolhível (`core/key.ts`, `KeyPicker.tsx`); **Criar variante** (áudio
   novo) ou aplicar no próprio áudio (original guardado; desativar/reativar edições);
-  Enviar para a playlist (variante vai logo abaixo do original).
+  Enviar para a playlist (variante vai logo abaixo do original). Botão **BPM**: detecta o
+  andamento (`core/tempo.ts` `detectBpm`: fluxo espectral → autocorrelação com harmônicos
+  e preferência por ~120 → trem de pulsos fino em 0,01 BPM e fase) e oferece usar no
+  projeto (`applyTempo` em studio.ts: áudios mantêm a duração em segundos; o clipe que
+  abriu a janela vai para a grade com o primeiro tempo no começo do compasso).
+- **Capotraste** (efeito `capo`, `core/effects.ts`): muda o tom por janelas sobrepostas
+  (dois cabeçotes numa linha de atraso, Hann); semitons, oitava (botões −2…+2 no pedal do
+  amp, `CapoOctave`), fino e janela; latência ≈ meia janela. Entra no começo da cadeia.
+- **Tap tempo** (`TapButton` em Toolbar.tsx, `tapBpm` em core/tempo.ts): reta pelos
+  últimos 12 cliques; pausa de 2 s recomeça; vira um passo de desfazer ao terminar.
 - **Stitcher** (`Stitch.tsx`, `core/stitch.ts`, `core/align.ts`): vários takes da mesma
   parte → resultado que usa, por nota, o take mais perto da **nota pretendida** (tom +
   consenso). Resultado em cima (cores = origem; clique toca; divisas arrastáveis; botão

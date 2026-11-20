@@ -682,3 +682,42 @@ export function setPad(
   pads[i] = slot;
   return { ops: [set(['channels', ch.id, 'params', 'pads'], stringifyPads(pads))], result: { pad: i + 1, note: noteName(PAD_BASE + i), name: slot?.name ?? null } };
 }
+
+// ---------------------------------------------------------------- andamento pelo áudio
+
+/**
+ * Muda o BPM do projeto sem estragar os áudios: cada clipe de áudio continua com a mesma
+ * duração em segundos (o comprimento em ticks acompanha o novo tempo). Com `clip` e
+ * `firstBeat` (segundos no arquivo, da detecção de BPM), esse clipe ainda é movido para o
+ * primeiro tempo cair no começo de um compasso, ou seja, o áudio fica na grade.
+ */
+export function applyTempo(p: Project, a: { bpm: number; clip?: string; firstBeat?: number; align?: boolean }): ActionResult {
+  const bpm = Math.max(20, Math.min(400, Math.round(a.bpm * 100) / 100));
+  const k = bpm / p.bpm;
+  const ops: Op[] = [set(['bpm'], bpm)];
+  const moved: { id: string; pos: number }[] = [];
+  for (const c of p.clips) {
+    if (c.kind !== 'audio') continue;
+    const len = Math.max(1, Math.round(c.len * k));
+    if (len !== c.len) ops.push(set(['clips', c.id, 'len'], len));
+  }
+  if (a.clip && a.firstBeat !== undefined && a.align !== false) {
+    const c = p.clips.find((x) => x.id === a.clip && x.kind === 'audio');
+    if (!c) throw new Error(`Clipe de áudio "${a.clip}" não encontrado`);
+    const tps = (bpm * PPQ) / 60; // ticks por segundo no novo tempo
+    const period = 60 / bpm;
+    const s0 = c.startSec ?? 0;
+    // primeiro tempo dentro do trecho que o clipe toca
+    const t = s0 + ((((a.firstBeat - s0) % period) + period) % period);
+    const off = (t - s0) * tps;
+    const bar = ticksPerBar(p);
+    let pos = Math.round((c.pos + off) / bar) * bar - off;
+    if (pos < 0) pos += Math.ceil(-pos / bar) * bar;
+    pos = Math.round(pos);
+    if (pos !== c.pos) {
+      ops.push(set(['clips', c.id, 'pos'], pos));
+      moved.push({ id: c.id, pos });
+    }
+  }
+  return { ops, result: { bpm, from: p.bpm, audioClipsResized: ops.length - 1 - moved.length, aligned: moved } };
+}

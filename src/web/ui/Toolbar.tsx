@@ -2,6 +2,7 @@ import { createAutomation, BPM_TARGET } from '../autos';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { toggleLoop, toggleMetronome, toggleCountIn } from '../state';
 import { midiRecording } from '../midirec';
+import { tapBpm, TAP_RESET_MS } from '../../core/tempo';
 import { useApp, useHint, state, play, stop, toggleRecord, setMode, selectPattern, act, edit, previewEdit, undo, redo, openWindow, api, toast, onLive, emit, type WindowId } from '../state';
 import { audio } from '../audio';
 import * as A from '../../core/actions';
@@ -290,6 +291,48 @@ function Scope() {
   return <canvas ref={ref} width={130} height={34} class="scope" data-hint="Osciloscópio e pico do master" />;
 }
 
+let taps: number[] = [];
+let tapTimer = 0;
+let tapFrom = 0;
+/** Tap tempo: cada clique marca um tempo; o BPM segue a média dos cliques (um passo de desfazer). */
+function tap() {
+  const now = performance.now();
+  if (taps.length && now - taps[taps.length - 1] > TAP_RESET_MS) taps = [];
+  if (!taps.length) tapFrom = state.project.bpm;
+  taps.push(now);
+  const bpm = tapBpm(taps);
+  clearTimeout(tapTimer);
+  if (bpm === null) return toast('Tap tempo: continue clicando no ritmo');
+  previewEdit([set(['bpm'], bpm)]);
+  tapTimer = window.setTimeout(() => {
+    taps = [];
+    if (state.project.bpm !== tapFrom) {
+      const b = state.project.bpm;
+      previewEdit([set(['bpm'], tapFrom)]);
+      edit([set(['bpm'], b)], 'Tap tempo');
+      toast(`Tempo: ${b} BPM`);
+    }
+  }, TAP_RESET_MS);
+}
+
+function TapButton() {
+  const [lit, setLit] = useState(false);
+  return (
+    <button
+      class={`tr-tap ${lit ? 'on' : ''}`}
+      data-hint="Tap tempo: clique no ritmo da música (4 ou mais vezes) e o BPM segue os cliques"
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        tap();
+        setLit(true);
+        setTimeout(() => setLit(false), 90);
+      }}
+    >
+      TAP
+    </button>
+  );
+}
+
 function BpmControl() {
   const s = state;
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -456,6 +499,7 @@ export function Toolbar() {
           <BpmControl />
           <span class="lcd-cap">BPM</span>
         </div>
+        <TapButton />
         <div class="lcdbox">
           <Position />
           <span class="lcd-cap">B:S:T</span>

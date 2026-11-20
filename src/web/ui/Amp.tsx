@@ -648,7 +648,25 @@ const fmtParam = (d: ParamDef) => (x: number) => {
   if (d.min === 0 && d.max === 1) return (x * 10).toFixed(1); // escala 0–10, como nos amps
   return fmt(x);
 };
-const WET: EffectType[] = ['delay', 'reverb', 'chorus', 'phaser'];
+const WET: EffectType[] = ['delay', 'reverb', 'chorus', 'phaser', 'capo'];
+
+/** Oitava do capotraste em um clique (−1 = guitarra soando como baixo). */
+function CapoOctave({ f, set }: { f: AmpFx; set: (o: number) => void }) {
+  const o = Number(f.params.octave ?? 0);
+  const total = Number(f.params.semis ?? 0) + 12 * o;
+  return (
+    <div class="capo-oct">
+      <div class="seg">
+        {[-2, -1, 0, 1, 2].map((x) => (
+          <button class={o === x ? 'on' : ''} data-hint={x === -1 ? 'Uma oitava abaixo: a guitarra soa como baixo' : x === 0 ? 'Oitava original' : `${x > 0 ? '+' : ''}${x} oitava${Math.abs(x) > 1 ? 's' : ''}`} onClick={() => set(x)}>
+            {x > 0 ? `+${x}` : x}
+          </button>
+        ))}
+      </div>
+      <span>Oitava · total {total > 0 ? '+' : ''}{total} st</span>
+    </div>
+  );
+}
 
 function Chain() {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -662,7 +680,9 @@ function Chain() {
     commit();
   };
   const add = (type: EffectType) => {
-    chain.push(fx(type, {}, WET.includes(type) ? 0.3 : 1));
+    // o capotraste vai no começo: mudar o tom do sinal limpo soa bem melhor que do distorcido
+    if (type === 'capo') chain.unshift(fx(type, {}, 1));
+    else chain.push(fx(type, {}, WET.includes(type) ? 0.3 : 1));
     amp.preset = '';
     commit();
   };
@@ -723,8 +743,10 @@ function Chain() {
               </button>
             </div>
             <div class="pedal-body">
+              {f.type === 'capo' && <CapoOctave f={f} set={(o) => set(i, { params: { ...f.params, octave: o } })} />}
               {def.params.map((d) => {
                 const v = f.params[d.key] ?? d.def;
+                if (f.type === 'capo' && d.key === 'octave') return null;
                 if (d.kind === 'enum')
                   return (
                     <label class="pedal-enum">

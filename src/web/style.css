@@ -595,6 +595,8 @@ body.alt-drag .win, body.alt-drag .win * { cursor: move !important; }
 .pedal-body .knob { width: 58px; }
 .pedal-enum { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 9px; color: var(--dim); width: 100%; }
 .pedal-enum select { width: 150px; height: 22px; font-size: 11px; }
+.capo-oct { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 9px; color: var(--dim); width: 100%; }
+.capo-oct .seg button { min-width: 26px; padding: 2px 6px; font-size: 11px; }
 .pedal-add { width: 110px; min-height: 120px; height: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; border: 1px dashed var(--line); background: transparent; box-shadow: none; color: var(--dim); border-radius: var(--win-rad); }
 .pedal-add:hover:not(:disabled) { color: var(--acc); border-color: var(--acc); background: color-mix(in srgb, var(--acc) 6%, transparent); }
 .amp-smart { display: flex; align-items: center; gap: 6px; padding: 0 8px; border-left: 1px solid var(--line2); border-right: 1px solid var(--line2); min-height: 36px; }
@@ -703,6 +705,8 @@ body.alt-drag .win, body.alt-drag .win * { cursor: move !important; }
 .tr-toggles { display: flex; border: 1px solid var(--line2); border-radius: var(--rad); overflow: hidden; }
 .tr-tog { border: none; border-radius: 0; height: 28px; width: 28px; padding: 0; display: inline-flex; align-items: center; justify-content: center; color: var(--dim); }
 .tr-tog.on { color: var(--acc-ink); }
+.tr-tap { height: 28px; padding: 0 8px; font-size: 10px; font-weight: 700; letter-spacing: 1px; color: var(--dim); }
+.tr-tap.on { color: var(--acc-ink); background: var(--acc); }
 .tr-count { font-size: 9px; font-weight: 800; letter-spacing: -0.5px; }
 .countin { position: fixed; left: 50%; top: 42%; transform: translate(-50%, -50%); z-index: 120000; font-size: 160px; font-weight: 800; color: var(--acc); text-shadow: 0 0 40px var(--acc-glow); pointer-events: none; animation: countin 0.45s ease-out; }
 @keyframes countin { from { transform: translate(-50%, -50%) scale(1.5); opacity: 0; } }
