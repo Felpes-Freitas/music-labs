@@ -388,10 +388,14 @@ Z…M/Q…P teclado musical, -/= oitava.
   antiga (`openRgbOutdated`). A 0.9 **não funcionava** no Apex Pro TKL do usuário: aceitava as
   cores mas o teclado não mudava (a 0.9 só tem o protocolo antigo 0x3A; firmware ≥ 1.19.7
   usa init 0x4B + pacotes 0x40, suportado a partir da 1.1, que também tem o modo "Onboard").
-  Ao entrar: SetCustomMode, **UpdateMode do modo de hardware (Onboard) e depois do Direct**
-  (sair do Onboard faz o OpenRGB reenviar o init 0x4B e abrir a sessão direta; sem isso o
-  Apex Pro TKL — firmware KBD 4.15.7 — só "piscava" as cores e voltava ao perfil próprio) e
-  **keepalive**: reenvia o quadro a cada ~0,5 s enquanto controla o teclado. Ao soltar: se o teclado estava no Direct e tem modo de hardware
+  Ao entrar: SetCustomMode + UpdateMode do modo Direct. **Teclado RGB vem desligado por
+  padrão** (liga em Configurações ou ao aceitar a oferta). **Situação no Apex Pro TKL do
+  usuário (firmware KBD 4.15.7, OpenRGB 1.1): não funciona** — as cores só "piscam" ao trocar
+  de instrumento e o teclado volta ao perfil próprio. Tentativa de passar por Onboard → Direct
+  + reenviar o quadro a cada 0,5 s fez o teclado **piscar sem parar e parar de digitar**
+  (mesma interface USB das teclas): foi desfeita e NÃO deve ser repetida. Próximo passo, se
+  o usuário quiser: testar no próprio OpenRGB (janela) se ele consegue cor fixa nesse
+  teclado; se não conseguir, é limitação do OpenRGB com esse firmware. Ao soltar: se o teclado estava no Direct e tem modo de hardware
   (`hardwareMode`: Onboard…), volta para ele (iluminação do próprio teclado); senão cores e
   modo originais. Se o servidor SDK não responde e há o OpenRGB do app, o
   cliente o inicia (`--server --server-port`, só em localhost) e tenta de novo a cada 1,5–2,5 s

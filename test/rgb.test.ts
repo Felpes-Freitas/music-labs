@@ -176,13 +176,10 @@ test('teclado no modo direto com modo "Onboard": ao soltar, volta à iluminaçã
     await rgbConfigure({ enabled: true, host: '127.0.0.1', port: srv.port, brightness: 1 });
     rgbScene({ keys: { q: 0xff0000 }, base: 0, pressed: [] });
     await until(() => srv.got.some((p) => p.id === 1050));
-    // ao assumir: Onboard e depois Direct (reabre a sessão de controle direto do teclado)
-    const modes = srv.got.filter((p) => p.id === 1101).map((p) => p.data.readInt32LE(4));
-    assert.deepEqual(modes.slice(0, 2), [1, 0]);
-    // mantém viva: reenvia o quadro sozinho
+    // não reenvia o quadro sozinho (o reenvio contínuo travou a digitação num Apex Pro TKL)
     const frames = srv.got.filter((p) => p.id === 1050).length;
     await wait(1200);
-    assert.ok(srv.got.filter((p) => p.id === 1050).length >= frames + 2, 'reenvia o quadro periodicamente');
+    assert.equal(srv.got.filter((p) => p.id === 1050).length, frames);
     const n = srv.got.length;
     await rgbRelease();
     await wait(50);
