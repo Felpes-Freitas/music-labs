@@ -6,6 +6,7 @@ import { basename, dirname, extname, join } from 'node:path';
 import type { Project } from '../core/model.js';
 import { emptyProject, isProjectData, PROJECT_EXT, PROJECT_FORMAT } from '../core/model.js';
 import { History, Op, applyOps } from '../core/ops.js';
+import { completeOps } from '../core/audiochan.js';
 
 export const HOME_DIR = process.env.MUSICLABS_HOME ?? join(homedir(), 'MusicLabs');
 export const PROJECTS_DIR = join(HOME_DIR, 'Projetos');
@@ -64,8 +65,12 @@ export class Store {
   apply(ops: Op[], origin: string, label?: string) {
     if (!ops.length) return;
     const before = JSON.stringify(this.project);
+    let extra: Op[] = [];
     try {
       this.project = applyOps(this.project, ops);
+      // áudio novo → canal de áudio no rack, pattern-grupo, insert; tracks usadas existem
+      extra = completeOps(this.project);
+      if (extra.length) this.project = applyOps(this.project, extra);
     } catch (e) {
       this.project = JSON.parse(before);
       throw e;
@@ -75,7 +80,11 @@ export class Store {
     this.dirty = true;
     const replaced = ops.some((o) => o.op === 'replace');
     if (replaced) this.emitProject();
-    else for (const l of this.listeners) l({ type: 'ops', ops, rev: this.rev, origin, label });
+    else {
+      for (const l of this.listeners) l({ type: 'ops', ops, rev: this.rev, origin, label });
+      // o que o servidor completou vai para todos (inclusive quem fez a edição)
+      if (extra.length) for (const l of this.listeners) l({ type: 'ops', ops: extra, rev: this.rev, origin: 'server' });
+    }
     this.scheduleAutosave();
   }
 
@@ -99,7 +108,9 @@ export class Store {
   }
 
   load(p: Project, path: string | null) {
-    this.project = p;
+    // projetos antigos: áudios sem canal ganham o canal deles (e o pattern-grupo)
+    const extra = completeOps(p);
+    this.project = extra.length ? applyOps(p, extra) : p;
     this.path = path;
     this.dirty = path === null;
     this.history.clear();

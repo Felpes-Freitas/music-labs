@@ -56,7 +56,7 @@ export function instrumentMenu(lib: Lib | null, h: AddHandlers): MenuItem[] {
     {
       label: 'Music Labs',
       hint: 'Instrumentos nativos',
-      sub: (Object.keys(INSTRUMENTS) as InstrumentType[]).map((t) => ({ label: INSTRUMENTS[t].label, hint: INSTRUMENTS[t].description, run: () => h.native(t) })),
+      sub: (Object.keys(INSTRUMENTS) as InstrumentType[]).filter((t) => t !== 'audio').map((t) => ({ label: INSTRUMENTS[t].label, hint: INSTRUMENTS[t].description, run: () => h.native(t) })),
     },
   ];
   // presets agrupados pelo instrumento de base

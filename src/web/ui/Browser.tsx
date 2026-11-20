@@ -232,7 +232,7 @@ export function Browser() {
               </div>
             ))}
             <div class="empty">Instrumentos nativos</div>
-            {(Object.keys(INSTRUMENTS) as InstrumentType[]).map((t) => (
+            {(Object.keys(INSTRUMENTS) as InstrumentType[]).filter((t) => t !== 'audio').map((t) => (
               <div class="node k-inst" style={{ paddingLeft: '16px' }} onDblClick={() => act(A.addChannel, { type: t })} data-hint={`${INSTRUMENTS[t].description} · duplo clique: novo canal`}>
                 <Icon name={t === 'drum' ? 'drum' : t === 'sampler' ? 'wave' : 'synth'} size={13} />
                 <span class="nm">{INSTRUMENTS[t].label}</span>

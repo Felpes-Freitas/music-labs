@@ -4,6 +4,7 @@
 import { useEffect, useReducer } from 'preact/hooks';
 import type { Project, AudioItem } from '../core/model';
 import { emptyProject, findPattern, findChannel, parseNote, PPQ, ticksPerBar, songLength, uid } from '../core/model';
+import { completeOps } from '../core/audiochan';
 import { applyOps, set, ins, type Op } from '../core/ops';
 import type { ActionResult } from '../core/actions';
 import * as A from '../core/actions';
@@ -83,7 +84,7 @@ export const state = {
   windows: defaultLayout(),
   /** Área selecionada na playlist (ticks): o play começa nela e o loop fica nela. */
   sel: null as null | { start: number; end: number },
-  /** Track escolhida no menu da área selecionada: áudio do amp/Afinador/Stitcher vai para ela. */
+  /** Track escolhida no menu da área selecionada: áudio do amp/Melodify/Stitcher vai para ela. */
   selTrack: null as number | null,
   /** Clipe de automação aberto na Central de Automações. */
   autoClip: null as string | null,
@@ -96,7 +97,7 @@ export const state = {
   loopOn: getPref('tr.loop', false),
   metronome: getPref('tr.metronome', false),
   countIn: getPref('tr.countIn', true),
-  /** Contagem das ferramentas (Afinador, Stitcher), que não usam a música: tempos que faltam. */
+  /** Contagem das ferramentas (Melodify, Stitcher), que não usam a música: tempos que faltam. */
   countdown: 0,
 };
 
@@ -334,7 +335,14 @@ setInterval(() => {
 export function edit(ops: Op[], label?: string) {
   if (!ops.length) return;
   try {
-    state.project = applyOps(state.project, ops);
+    let next = applyOps(state.project, ops);
+    // áudio novo vira canal do rack (com pattern-grupo e insert); tracks usadas passam a existir
+    const extra = completeOps(next);
+    if (extra.length) {
+      next = applyOps(next, extra);
+      ops = [...ops, ...extra];
+    }
+    state.project = next;
   } catch (e) {
     toast(`Erro: ${(e as Error).message}`);
     return;

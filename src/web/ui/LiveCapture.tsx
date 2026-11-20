@@ -1,4 +1,4 @@
-// Onda ao vivo da gravação feita dentro de uma ferramenta (Afinador, Stitcher):
+// Onda ao vivo da gravação feita dentro de uma ferramenta (Melodify, Stitcher):
 // cresce da esquerda para a direita conforme o áudio chega.
 
 import { useEffect, useRef } from 'preact/hooks';

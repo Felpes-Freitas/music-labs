@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { useApp, state, edit, toast, previewEdit, onLive, selectPattern, setBrush, openWindow, setMode, act, setHint, setSelection, setLivePeaksHandler } from '../state';
+import { useApp, state, edit, toast, previewEdit, onLive, selectPattern, setBrush, openWindow, setMode, act, setHint, setSelection, setLivePeaksHandler, selectChannel } from '../state';
 import { SelectionMenu } from './SelectionMenu';
 import { audio } from '../audio';
-import { PPQ, patternLength, songLength, ticksPerBar, uid, isPatternClip, type Clip, type AutoTarget } from '../../core/model';
-import { set, ins, rem } from '../../core/ops';
+import { PPQ, patternLength, songLength, ticksPerBar, uid, color, isPatternClip, type Clip, type AutoTarget, type Project, type Track } from '../../core/model';
+import { set, ins, rem, type Op } from '../../core/ops';
 import { autoSnap } from '../../core/snap';
 import { regen, trimAutoStart } from '../../core/autogen';
 import { openAutoCenter } from '../autos';
@@ -14,7 +14,21 @@ import { openTune } from './Tune';
 import { Picker } from './Picker';
 import { addStitchTakes } from './Stitch';
 
-/** Janela de ferramenta (Stitcher/Afinador) embaixo do ponteiro, se houver. */
+/** Track i: as que ainda não existem no projeto são "virtuais" (a playlist mostra tracks
+ * infinitas; o projeto só guarda as usadas, criadas no primeiro uso). */
+function trackInfo(p: Project, i: number): Track {
+  return p.tracks[i] ?? { id: '', name: `Track ${i + 1}`, color: color(i), mute: false };
+}
+/** Muda uma track; se ela (ou as de cima) ainda não existem, cria até ela já com a mudança. */
+function trackOps(p: Project, i: number, patch: Partial<Track>): Op[] {
+  const t = p.tracks[i];
+  if (t) return Object.entries(patch).map(([k, v]) => set(['tracks', t.id, k], v));
+  const ops: Op[] = [];
+  for (let k = p.tracks.length; k <= i; k++) ops.push(ins(['tracks'], { ...trackInfo(p, k), id: uid('t'), ...(k === i ? patch : {}) }));
+  return ops;
+}
+
+/** Janela de ferramenta (Stitcher/Melodify) embaixo do ponteiro, se houver. */
 const toolAt = (x: number, y: number) => (document.elementFromPoint(x, y)?.closest('.win-stitch .tool, .win-tune .tool') as HTMLElement | null) ?? null;
 import { ui, accent } from '../theme';
 import { getPref, setPref } from '../prefs';
@@ -124,7 +138,8 @@ export function Playlist() {
   /** Insere cópias deslocadas (dt ticks, dTrack tracks) e deixa elas selecionadas. */
   const pasteClips = (src: Clip[], dt: number, dTrack: number) => {
     const n = state.project.tracks.length;
-    const copies = src.map((c) => ({ ...c, id: uid('k'), pos: Math.max(0, c.pos + dt), track: Math.max(0, Math.min(n - 1, c.track + dTrack)) }));
+    void n;
+    const copies = src.map((c) => ({ ...c, id: uid('k'), pos: Math.max(0, c.pos + dt), track: Math.max(0, c.track + dTrack) }));
     edit(copies.map((c) => ins(['clips'], c)), 'Colar');
     setPicked(new Set(copies.map((c) => c.id)));
   };
@@ -147,7 +162,7 @@ export function Playlist() {
       ctx.fillRect(0, 0, w, h);
       // linhas de track
       const first = Math.floor(v.scrollY / v.rowH);
-      for (let i = first; i < p.tracks.length; i++) {
+      for (let i = first; ; i++) {
         const y = RULER + i * v.rowH - v.scrollY;
         if (y > h) break;
         ctx.fillStyle = i % 2 ? ui('#20262a') : ui('#232a2e');
@@ -279,10 +294,10 @@ export function Playlist() {
         ctx.globalAlpha = 1;
       }
       // cabeçalho das tracks
-      for (let i = first; i < p.tracks.length; i++) {
+      for (let i = first; ; i++) {
         const y = RULER + i * v.rowH - v.scrollY;
         if (y > h) break;
-        const t = p.tracks[i];
+        const t = trackInfo(p, i);
         ctx.fillStyle = ui('#2b3236');
         ctx.fillRect(0, y, HEADW, v.rowH - 1);
         ctx.fillStyle = t.mute ? ui('#444') : '#7cdc6a';
@@ -462,11 +477,11 @@ export function Playlist() {
     }
     if (x < HEADW) {
       const t = trackAt(y);
-      const tr = p.tracks[t];
-      if (!tr) return;
+      if (t < 0) return;
+      const tr = trackInfo(p, t);
       if (e.button === 2) {
-        askText({ title: 'Renomear track', label: 'Nome', value: tr.name, ok: 'Renomear' }).then((n) => n && edit([set(['tracks', tr.id, 'name'], n)]));
-      } else edit([set(['tracks', tr.id, 'mute'], !tr.mute)]);
+        askText({ title: 'Renomear track', label: 'Nome', value: tr.name, ok: 'Renomear' }).then((n) => n && edit(trackOps(state.project, t, { name: n })));
+      } else edit(trackOps(p, t, { mute: !tr.mute }));
       return;
     }
     const h = hit(x, y);
@@ -476,7 +491,7 @@ export function Playlist() {
       const t = tickAt(x);
       if (t >= s.sel.start && t < s.sel.end) {
         drag.current = null;
-        setMenu({ x: e.clientX, y: e.clientY, track: Math.max(0, Math.min(p.tracks.length - 1, trackAt(y))) });
+        setMenu({ x: e.clientX, y: e.clientY, track: Math.max(0, trackAt(y)) });
         return;
       }
     }
@@ -584,7 +599,7 @@ export function Playlist() {
     if (pickedRef.current.size) setPicked(new Set());
     // espaço vazio: pinta com o pincel (o pattern selecionado ou o último áudio escolhido)
     const track = trackAt(y);
-    if (track < 0 || track >= p.tracks.length) return;
+    if (track < 0) return;
     const br = s.brush;
     const pat = p.patterns.find((x) => x.id === s.patternId);
     if (!br && !pat) return;
@@ -661,7 +676,7 @@ export function Playlist() {
       return;
     }
     if (d.kind === 'move') {
-      // arrastando um áudio por cima do Stitcher/Afinador: destaca a janela (soltar = enviar para lá)
+      // arrastando um áudio por cima do Stitcher/Melodify: destaca a janela (soltar = enviar para lá)
       const tool = d.orig.kind === 'audio' && !d.dup && d.group.length === 1 ? toolAt(e.clientX, e.clientY) : null;
       document.querySelectorAll('.tool.dropping').forEach((el) => el !== tool && el.classList.remove('dropping'));
       tool?.classList.add('dropping');
@@ -670,7 +685,7 @@ export function Playlist() {
       let dt = Math.round((d.orig.pos + (x - d.x0) / v.zx) / sn) * sn - d.orig.pos;
       let dtr = Math.round((y - d.y0) / v.rowH);
       dt = Math.max(dt, -Math.min(...d.group.map((c) => c.pos)));
-      dtr = Math.max(-Math.min(...d.group.map((c) => c.track)), Math.min(p.tracks.length - 1 - Math.max(...d.group.map((c) => c.track)), dtr));
+      dtr = Math.max(-Math.min(...d.group.map((c) => c.track)), dtr);
       previewEdit(d.group.flatMap((c) => clipOps({ ...c, pos: c.pos + dt, track: c.track + dtr })));
     } else if (d.kind === 'resize') {
       // o clipe clicado encaixa na grade; os outros selecionados mudam o mesmo tanto
@@ -696,7 +711,7 @@ export function Playlist() {
     } else if (d.kind === 'seek') seek(x);
     else if (d.kind === 'paint') {
       const tr = trackAt(y);
-      if (tr >= 0 && tr < p.tracks.length) paintAt(d, tr, Math.max(0, tickAt(x)));
+      if (tr >= 0) paintAt(d, tr, Math.max(0, tickAt(x)));
     }
     else if (d.kind === 'sel') {
       if (!d.moved && Math.abs(x - d.x0) < 4) return;
@@ -711,7 +726,7 @@ export function Playlist() {
     drag.current = null;
     if (!d) return;
     document.querySelectorAll('.tool.dropping').forEach((el) => el.classList.remove('dropping'));
-    // soltou um áudio dentro do Stitcher ou do Afinador: o clipe volta ao lugar e vai para a ferramenta
+    // soltou um áudio dentro do Stitcher ou do Melodify: o clipe volta ao lugar e vai para a ferramenta
     if (d.kind === 'move' && !d.dup && d.orig.kind === 'audio' && e) {
       const tool = toolAt(e.clientX, e.clientY);
       if (tool) {
@@ -762,7 +777,11 @@ export function Playlist() {
       v.scrollX = Math.max(0, t - (e.offsetX - HEADW) / v.zx);
     } else if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) v.scrollX = Math.max(0, v.scrollX + (e.deltaX || e.deltaY) / v.zx);
     else if (e.altKey) v.rowH = Math.max(18, Math.min(80, v.rowH + (e.deltaY < 0 ? 2 : -2)));
-    else v.scrollY = Math.max(0, Math.min(p.tracks.length * v.rowH - 60, v.scrollY + e.deltaY));
+    else {
+      // tracks infinitas: rola até bem depois da última usada
+      const used = Math.max(p.tracks.length, ...p.clips.map((c) => c.track + 1));
+      v.scrollY = Math.max(0, Math.min((used + 500) * v.rowH, v.scrollY + e.deltaY));
+    }
     paint();
   };
 
@@ -793,7 +812,6 @@ export function Playlist() {
               setPref('pl.snap', n);
             }} />
             <IconBtn icon="follow" on={s.followPlay} hint="Seguir a reprodução" onClick={() => ((state.followPlay = !state.followPlay), paint())} />
-            <IconBtn icon="plus" label="track" hint="Adicionar track" onClick={() => edit([ins(['tracks'], { id: uid('t'), name: `Track ${p.tracks.length + 1}`, color: '#888', mute: false })])} />
           </span>
         </span>
       }
@@ -809,14 +827,15 @@ export function Playlist() {
           onPointerLeave={() => void (hover.current = null)}
           onDblClick={(e) => {
             // duplo clique abre o que o clipe é: pattern → rack com ele; automação → Central;
-            // áudio → Afinador (até existir o editor de áudio, ver ROADMAP); nome da track → renomear
+            // áudio → canal do áudio (onda, Melodify, Stitcher, mixagem); nome da track → renomear
             const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
             const x = e.clientX - r.left, y = e.clientY - r.top;
             if (y < RULER) return;
             if (x < HEADW) {
-              const tr = state.project.tracks[trackAt(y)];
+              const ti = trackAt(y);
+              const tr = ti >= 0 ? trackInfo(state.project, ti) : null;
               // os dois cliques mutaram e desmutaram: só renomeia
-              if (tr) askText({ title: 'Renomear track', label: 'Nome', value: tr.name, ok: 'Renomear' }).then((n) => n && edit([set(['tracks', tr.id, 'name'], n)]));
+              if (tr) askText({ title: 'Renomear track', label: 'Nome', value: tr.name, ok: 'Renomear' }).then((n) => n && edit(trackOps(state.project, ti, { name: n })));
               return;
             }
             const h = hit(x, y);
@@ -828,7 +847,14 @@ export function Playlist() {
               if (la && la.id === h.c.id && performance.now() - la.at < 800) edit([set(['clips', la.id, 'points'], la.prev)]);
               lastAutoAdd.current = null;
               openAutoCenter(h.c.id);
-            } else if (h.c.kind === 'audio') openTune(h.c.id);
+            } else if (h.c.kind === 'audio') {
+              // o canal do áudio: onda, Melodify/Stitcher, volume, pan, efeitos e insert
+              const chId = state.project.clips.find((c) => c.id === h.c.id)?.channel;
+              if (chId) {
+                selectChannel(chId);
+                openWindow('channel');
+              } else openTune(h.c.id);
+            }
             else {
               selectPattern(h.c.patternId);
               openWindow('rack');

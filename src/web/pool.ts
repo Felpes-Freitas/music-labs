@@ -1,4 +1,4 @@
-// Lista de áudios do projeto (como a de patterns): gravações feitas no Afinador e
+// Lista de áudios do projeto (como a de patterns): gravações feitas no Melodify e
 // no Stitcher, arquivos importados e variantes. O arquivo original de cada áudio
 // nunca é apagado; editar "no próprio áudio" só troca o arquivo atual.
 

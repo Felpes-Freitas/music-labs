@@ -2,7 +2,7 @@
 // Cada ação lê o projeto e devolve Ops; quem chama aplica e sincroniza.
 // O MCP expõe estas ações quase 1:1, e a interface reaproveita várias.
 
-import type { AutoTarget, Channel, Clip, Effect, EffectType, InstrumentType, Note, Params, Pattern, Project } from './model.js';
+import type { AutoTarget, Channel, Clip, Effect, EffectType, InstrumentType, Note, Params, Pattern, Project, Track } from './model.js';
 import { MIXER_SIZE, PPQ, STEP, color, findChannel, findPattern, makeInsert, noteName as noteNameOf, parseNote, patternLength, ticksPerBar, uid } from './model.js';
 import { EFFECTS, INSTRUMENTS, defaults, presetParams, sanitizeParams } from './registry.js';
 import { chordNotes, romanChord, voiceLead } from './theory.js';
@@ -137,7 +137,15 @@ export function updateChannel(
 export function removeChannel(p: Project, a: { channel: string }): ActionResult {
   const ch = channelRef(p, a.channel);
   const ops: Op[] = [rem(['channels', ch.id])];
-  for (const pat of p.patterns) if (pat.notes[ch.id]) ops.push(rem(['patterns', pat.id, 'notes', ch.id]));
+  for (const pat of p.patterns) {
+    if (pat.notes[ch.id]) ops.push(rem(['patterns', pat.id, 'notes', ch.id]));
+    if (pat.channels?.includes(ch.id)) ops.push(set(['patterns', pat.id, 'channels'], pat.channels.filter((x) => x !== ch.id)));
+  }
+  if (ch.type === 'audio') {
+    // canal de áudio: os clipes dele e o áudio da lista saem junto (senão o canal voltaria)
+    for (const c of p.clips) if (c.kind === 'audio' && (c.channel === ch.id || (!c.channel && c.sample === ch.params.sample))) ops.push(rem(['clips', c.id]));
+    for (const it of p.audios ?? []) if (it.channel === ch.id) ops.push(rem(['audios', it.id]));
+  }
   return { ops };
 }
 
@@ -474,8 +482,11 @@ export function removeClips(p: Project, a: { track?: number; fromBar?: number; t
 }
 
 export function updateTrack(p: Project, a: { track: number; name?: string; mute?: boolean; color?: string }): ActionResult {
-  const t = need(p.tracks[a.track - 1], `Track ${a.track}`);
+  if (!(a.track >= 1)) throw new Error(`Track ${a.track} não existe (começam em 1)`);
   const ops: Op[] = [];
+  // tracks são infinitas: a que ainda não existe no projeto é criada agora
+  for (let k = p.tracks.length; k < a.track; k++) ops.push(ins(['tracks'], { id: uid('t'), name: `Track ${k + 1}`, color: color(k), mute: false }));
+  const t = p.tracks[a.track - 1] ?? (ops[ops.length - 1] as { value: Track }).value;
   if (a.name !== undefined) ops.push(set(['tracks', t.id, 'name'], a.name));
   if (a.mute !== undefined) ops.push(set(['tracks', t.id, 'mute'], a.mute));
   if (a.color !== undefined) ops.push(set(['tracks', t.id, 'color'], a.color));

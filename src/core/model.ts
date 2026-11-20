@@ -18,7 +18,7 @@ export interface Note {
   mute?: boolean;
 }
 
-export type InstrumentType = 'synth' | 'prisma' | 'sampler' | 'drum' | 'pluck' | 'fm' | 'pads';
+export type InstrumentType = 'synth' | 'prisma' | 'sampler' | 'drum' | 'pluck' | 'fm' | 'pads' | 'audio';
 
 export interface Channel {
   id: string;
@@ -46,6 +46,8 @@ export interface Pattern {
   /** Comprimento em steps; 0 = automático (arredonda para o compasso). */
   length: number;
   notes: Record<string, Note[]>; // por channel id
+  /** Canais postos neste pattern sem notas (grupo do rack; ex.: o canal de um áudio). */
+  channels?: string[];
 }
 
 export interface Clip {
@@ -60,6 +62,8 @@ export interface Clip {
   kind?: 'pattern' | 'audio' | 'auto';
   // clipe de áudio
   sample?: string;
+  /** Canal de áudio (tipo "audio") por onde o clipe toca: volume, pan, efeitos e insert. */
+  channel?: string;
   startSec?: number; // ponto do arquivo onde o clipe começa
   gain?: number;
   insert?: number; // insert do mixer para onde o áudio vai
@@ -208,6 +212,8 @@ export interface AudioItem {
   variantOf?: string;
   /** Versão editada guardada enquanto as edições estão desativadas (path = original). */
   edited?: string;
+  /** Canal de áudio do rack (volume, pan, efeitos, insert). */
+  channel?: string;
 }
 
 export const MIXER_SIZE = 17; // master + 16 inserts
@@ -252,12 +258,8 @@ export function emptyProject(name = 'Sem título'): Project {
     swing: 0,
     channels: [],
     patterns: [{ id: uid('p'), name: 'Pattern 1', color: color(0), length: 0, notes: {} }],
-    tracks: Array.from({ length: 16 }, (_, i) => ({
-      id: uid('t'),
-      name: `Track ${i + 1}`,
-      color: color(i),
-      mute: false,
-    })),
+    // a playlist mostra tracks infinitas; o projeto só guarda as usadas (criadas no 1º uso)
+    tracks: [],
     clips: [],
     mixer: Array.from({ length: MIXER_SIZE }, (_, i) => makeInsert(i)),
     loop: null,

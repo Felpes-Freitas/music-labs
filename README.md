@@ -55,13 +55,21 @@ git push --follow-tags
 ## O que tem
 
 - **Rack de canais** com step sequencer (16+ steps, pintar arrastando, mute/solo,
-  volume/pan, insert do mixer) e mini piano roll para canais melódicos.
+  volume/pan, insert do mixer) e mini piano roll para canais melódicos. Filtro **só este
+  pattern** (mostra os canais do pattern selecionado e os novos, ainda sem notas) e, no
+  botão direito, **Enviar para pattern** (move as notas do canal para outro pattern).
+- **Áudios no rack**, como no FL Studio: cada áudio do projeto (gravação, arquivo
+  arrastado, variante) tem um canal de áudio com volume, pan, mute, efeitos e insert do
+  mixer (com o nome do áudio). Os clipes desse áudio tocam por esse canal. Um áudio novo
+  ganha também um pattern com o nome dele, que serve de grupo no rack. Duplo clique num
+  áudio da playlist abre o canal: a onda, Melodify, Stitcher e as configurações.
 - **Piano roll**: desenhar, mover, redimensionar, apagar com o botão direito, seleção
   por retângulo (Ctrl+arrastar), duplicar (Ctrl+D), transpor com as setas, faixa de
   velocity, snap (inclusive tercinas), destaque de escala, ghost notes dos outros
   canais, quantizar e humanizar.
 - **Playlist**: pintar patterns, mover, duplicar (Shift+arrastar), redimensionar (o
-  pattern repete dentro do clip), fatiar, região de loop, tracks com mute.
+  pattern repete dentro do clip), fatiar, região de loop, tracks com mute. Tracks
+  infinitas: a playlist sempre mostra mais tracks; o projeto só guarda as usadas.
 - **Clips de áudio**: arraste um áudio do navegador para a playlist; a forma de onda
   aparece no clip, que pode ser movido, cortado e fatiado e vai para o insert escolhido.
 - **Gravação**: o botão vermelho grava do microfone/interface a partir da posição
@@ -86,9 +94,9 @@ git push --follow-tags
     gravação guarda o sinal cru e reaplica os efeitos em alta qualidade (amp, overdrive e
     fuzz sobreamostrados 4x) ao fechar cada take.
 - **Lista de áudios** (ao lado da playlist, junto dos patterns; largura ajustável): as
-  gravações e os áudios do Afinador e do Stitcher ficam aqui. Arraste para a playlist,
-  duplo clique abre no Afinador. O arquivo original de cada áudio nunca é apagado.
-- **Afinador** (F11): tudo acontece dentro dele. Grave (a música não toca e a onda
+  gravações e os áudios do Melodify e do Stitcher ficam aqui. Arraste para a playlist,
+  duplo clique abre no Melodify. O arquivo original de cada áudio nunca é apagado.
+- **Melodify** (F11): tudo acontece dentro dele. Grave (a música não toca e a onda
   aparece ao vivo), abra um arquivo, escolha um áudio da lista ou arraste um clipe da
   playlist. Cada nota aparece como um bloco na altura cantada: arraste para outra altura
   (grade do tom; Ctrl: qualquer semitom; Shift: livre), duplo clique afina, "Corrigir
@@ -96,7 +104,7 @@ git push --follow-tags
   tom é detectado e pode ser trocado. Com **Criar variante** marcado, aplicar cria um
   áudio novo na lista; desmarcado, altera o próprio áudio (o original fica guardado e
   pode ser restaurado). **Enviar para a playlist** coloca o áudio na música (variantes
-  logo abaixo do original). Espaço toca o áudio do Afinador quando ele está em foco.
+  logo abaixo do original). Espaço toca o áudio do Melodify quando ele está em foco.
   O botão **BPM** detecta o andamento do áudio (ex.: uma gravação sua de guitarra) e
   oferece colocar o projeto nesse BPM, com o áudio alinhado à grade.
 - **Tap tempo**: o botão TAP ao lado do BPM. Clique no ritmo da música e o BPM segue
@@ -111,12 +119,12 @@ git push --follow-tags
   melodia" o resultado sai afinado nessas notas. "Salvar na lista" e "Enviar para a
   playlist" guardam o resultado. Controle manual: arraste as divisas do resultado para
   mudar os cortes; botão direito num pedaço para usar outro áudio, dividir, juntar ou
-  **abrir só aquele pedaço no Afinador** — o que for aplicado lá volta para a costura
+  **abrir só aquele pedaço no Melodify** — o que for aplicado lá volta para a costura
   (e pode ser desativado), sem mexer no take original. A sessão do Stitcher (áudios,
   tom, cortes, escolhas e pedaços editados) é salva no projeto e volta ao reabrir; desfazer
   também vale para as mudanças feitas nele.
 - **Nada é destrutivo**: todo áudio da lista guarda o original; as edições podem ser
-  desativadas e reativadas (selo "ed." na lista, botão no Afinador).
+  desativadas e reativadas (selo "ed." na lista, botão no Melodify).
 - **Navegador lateral** recolhível (botão no topo ou Alt+F8).
 - **Configurações** (menu Aparência ou Ctrl+,): temas Grafite, OLED e Adobe, cor de
   destaque com seletor de cor, Alt + arrastar janelas, entrada de gravação e atalhos.
@@ -127,7 +135,7 @@ git push --follow-tags
 - **Área selecionada**: arraste na régua (ou clique num clipe) para selecionar um trecho;
   ele fica destacado de cima a baixo e o play começa nele. Botão direito dentro da área:
   **Preencher com** (repete um pattern, cortando o último), **Inserir instrumento**
-  (Music Labs, presets, instrumentos da biblioteca/FL, Amp, Afinador, Stitcher: cria um
+  (Music Labs, presets, instrumentos da biblioteca/FL, Amp, Melodify, Stitcher: cria um
   pattern novo só com ele ocupando a área) e apagar clipes da área.
 - **Transporte**: **loop** (na área selecionada, ou na música inteira), **metrônomo** e
   **contagem** (3, 2, 1 antes de gravar).
@@ -136,7 +144,7 @@ git push --follow-tags
   automação daquele parâmetro a partir daquele momento (antes disso ele fica como estava).
   O knob fica vermelho com "● AUTO" enquanto grava; knobs que já têm automação ganham um
   ponto. Com o loop, cada volta vira um pattern
-  novo numa outra track. Voz e instrumentos de áudio ficam com o Amp, o Afinador e o
+  novo numa outra track. Voz e instrumentos de áudio ficam com o Amp, o Melodify e o
   Stitcher.
 - **Mixer**: 16 inserts + master, fader, pan, mute/solo, medidores, roteamento entre
   inserts (buses), até 10 efeitos por insert com dry/wet.

@@ -15,6 +15,12 @@ import { GearTab } from './GearTab';
 import { Icon } from './icons';
 import { decodeWav } from '../../core/wav';
 import { ui, accent } from '../theme';
+import { ChannelMix } from './ChannelMix';
+import { openTuneAudio } from './Tune';
+import { addStitchAudios } from './Stitch';
+import { addToPool } from '../pool';
+import { openWindow, selectChannel, state } from '../state';
+import { askConfirm } from './Dialog';
 
 function Waveform(p: { path: string }) {
   const [peaks, setPeaks] = useState<Float32Array | null>(null);
@@ -100,6 +106,7 @@ export function ChannelSettings() {
     audio.watch(open && ch ? ch.id : null);
   }, [open, ch?.id]);
   if (!ch) return null;
+  if (ch.type === 'audio') return <AudioChannelWin />;
   const def = INSTRUMENTS[ch.type];
   // A janela cresce até um tamanho útil (o Prisma pede mais espaço).
   const w = s.windows.channel;
@@ -184,6 +191,60 @@ export function ChannelSettings() {
         </div>
         <ChannelFx ch={ch} />
         {ch.type !== 'pads' && <ChannelPiano ch={ch} />}
+      </div>
+    </Win>
+  );
+}
+
+/**
+ * Canal de áudio (duplo clique num áudio da playlist ou no rack): a onda do arquivo, as
+ * ferramentas que editam o áudio (Melodify, Stitcher) e as configurações de mixagem.
+ */
+function AudioChannelWin() {
+  const s = useApp();
+  const p = s.project;
+  const ch = p.channels.find((c) => c.id === s.channelId)!;
+  const item = (p.audios ?? []).find((a) => a.channel === ch.id);
+  const path = item?.path ?? String(ch.params.sample ?? '');
+  const clips = p.clips.filter((c) => c.kind === 'audio' && c.channel === ch.id);
+  const itemId = () => item?.id ?? addToPool(path, ch.name);
+  return (
+    <Win id="channel" icon="wave" title={<>Áudio <span class="dim">· {ch.name}</span></>} minW={420} minH={300}>
+      <div class="chwin">
+        <div class="chset-head">
+          <input class="ch-title" value={ch.name} onChange={(e) => edit([set(['channels', ch.id, 'name'], (e.target as HTMLInputElement).value)])} />
+          <span class="dim">
+            {clips.length ? `${clips.length} clipe${clips.length > 1 ? 's' : ''} na playlist` : 'fora da playlist'}
+            {item && item.path !== item.original ? ' · com edições' : ''}
+          </span>
+        </div>
+        <div class="chset">
+          <div class="sample-box">
+            <div class="sample-path" title={path}>
+              {path}
+            </div>
+            <Waveform path={path} />
+          </div>
+          <div class="audio-tools">
+            <button onClick={() => openTuneAudio(itemId())} data-hint="Editar as notas do áudio (afinação, tom) e detectar o BPM">
+              <Icon name="tune" size={13} /> Melodify
+            </button>
+            <button onClick={() => (addStitchAudios([itemId()]), openWindow('stitch'))} data-hint="Juntar takes: este áudio vai para o Stitcher">
+              <Icon name="stitch" size={13} /> Stitcher
+            </button>
+            <button
+              onClick={async () => {
+                if (await askConfirm({ title: `Excluir ${ch.name}?`, message: 'O canal, os clipes deste áudio na playlist e o item da lista de áudios serão removidos.', ok: 'Excluir', danger: true })) {
+                  act(A.removeChannel, { channel: ch.id });
+                  selectChannel(state.project.channels[0]?.id ?? '');
+                }
+              }}
+            >
+              Excluir
+            </button>
+          </div>
+        </div>
+        <ChannelMix ch={ch} />
       </div>
     </Win>
   );

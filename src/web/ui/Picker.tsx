@@ -66,7 +66,7 @@ export function Picker() {
           + pattern
         </button>
         <div class="picker-head">Áudios</div>
-        {audios.length === 0 && <div class="picker-empty">Gravações (amp, Afinador, Stitcher) e áudios importados aparecem aqui. Clique num áudio para pintá-lo na playlist.</div>}
+        {audios.length === 0 && <div class="picker-empty">Gravações (amp, Melodify, Stitcher) e áudios importados aparecem aqui. Clique num áudio para pintá-lo na playlist.</div>}
         {withVariants.map((a) => (
           <div
             class={`pa ${a.variantOf ? 'variant' : ''} ${s.brush?.sample === a.path ? 'on' : ''}`}
@@ -81,7 +81,7 @@ export function Picker() {
               e.dataTransfer!.effectAllowed = 'copy';
             }}
             onDblClick={() => openTuneAudio(a.id)}
-            data-hint={`${a.name}${a.path !== a.original ? ' (editado; o original está guardado)' : ''} · clique para pintar na playlist · arraste para a playlist · duplo clique abre no Afinador`}
+            data-hint={`${a.name}${a.path !== a.original ? ' (editado; o original está guardado)' : ''} · clique para pintar na playlist · arraste para a playlist · duplo clique abre no Melodify`}
           >
             <Icon name="wave" size={12} class="pa-ico" />
             <span class="pa-name">{a.name}</span>
@@ -98,7 +98,7 @@ export function Picker() {
               <button data-hint="Enviar para a playlist" onClick={() => sendToPlaylist(a.id)}>
                 <Icon name="playlist" size={11} />
               </button>
-              <button data-hint="Abrir no Afinador" onClick={() => openTuneAudio(a.id)}>
+              <button data-hint="Abrir no Melodify" onClick={() => openTuneAudio(a.id)}>
                 <Icon name="tune" size={11} />
               </button>
               <button

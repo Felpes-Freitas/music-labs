@@ -106,6 +106,7 @@ export const ACTIONS: Record<string, ActionFn> = {
   replaceInstrument: S.replaceInstrument,
   setPad: S.setPad,
   applyTempo: S.applyTempo,
+  moveChannelToPattern: S.moveChannelToPattern,
 };
 
 /** "localSample": nome de um som do kit local (ex. "Kick") vira um sampler com o caminho. */
