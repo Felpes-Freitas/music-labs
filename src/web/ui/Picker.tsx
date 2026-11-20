@@ -1,12 +1,13 @@
 // Lista ao lado da playlist: patterns e a lista de áudios do projeto. A largura
 // muda arrastando a borda direita (fica salva).
 
-import { useRef } from 'preact/hooks';
-import { useApp, selectPattern, setBrush, act, state } from '../state';
+import { useRef, useState } from 'preact/hooks';
+import { useApp, selectPattern, setBrush, act, state, openWindow } from '../state';
 import { loadAudio, ticksPerSec } from '../clipaudio';
 import * as A from '../../core/actions';
 import { askText, askConfirm } from './Dialog';
 import { Icon } from './icons';
+import { ContextMenu } from './widgets';
 import { usePref } from '../prefs';
 import { poolItems, removeFromPool, renameAudio, sendToPlaylist, toggleEdits } from '../pool';
 import { openTuneAudio } from './Tune';
@@ -16,6 +17,39 @@ export function Picker() {
   const p = s.project;
   const [w, setW] = usePref('picker.w', 200);
   const box = useRef<HTMLDivElement>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
+  const openPattern = (id: string) => {
+    selectPattern(id);
+    openWindow('rack');
+  };
+  const patMenu = (id: string): [string, () => void][] => {
+    const pt = p.patterns.find((x) => x.id === id);
+    if (!pt) return [];
+    return [
+      ['Abrir no rack', () => openPattern(id)],
+      [
+        'Renomear…',
+        async () => {
+          const n = await askText({ title: 'Renomear pattern', label: 'Nome', value: pt.name, ok: 'Renomear' });
+          if (n) act(A.updatePattern, { pattern: id, name: n });
+        },
+      ],
+      [
+        'Clonar',
+        () => {
+          const r = act(A.duplicatePattern, { pattern: id });
+          if (r) selectPattern(r.id);
+        },
+      ],
+      [
+        'Excluir',
+        async () => {
+          const n = p.clips.filter((c) => c.patternId === id).length;
+          if (await askConfirm({ title: `Excluir ${pt.name}?`, message: n ? `As notas e os ${n} clipe${n > 1 ? 's' : ''} dele na playlist também saem.` : 'As notas dele também saem.', ok: 'Excluir', danger: true })) act(A.removePattern, { pattern: id });
+        },
+      ],
+    ];
+  };
   const audios = poolItems(p);
   // variantes logo abaixo do áudio de origem
   const ordered = audios.filter((a) => !a.variantOf || !audios.some((x) => x.id === a.variantOf));
@@ -46,10 +80,11 @@ export function Picker() {
             class={`pk ${pt.id === s.patternId && !s.brush ? 'on' : ''}`}
             style={{ borderLeftColor: pt.color }}
             onClick={() => selectPattern(pt.id)}
-            data-hint="Clique escolhe o pattern que o lápis pinta · duplo clique renomeia"
-            onDblClick={async () => {
-              const n = await askText({ title: 'Renomear pattern', label: 'Nome', value: pt.name, ok: 'Renomear' });
-              if (n) act(A.updatePattern, { pattern: pt.id, name: n });
+            data-hint="Clique escolhe o pattern que o lápis pinta · duplo clique abre no rack · botão direito: renomear, clonar, excluir"
+            onDblClick={() => openPattern(pt.id)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setMenu({ x: e.clientX, y: e.clientY, id: pt.id });
             }}
           >
             {pt.name}
@@ -121,6 +156,7 @@ export function Picker() {
         ))}
       </div>
       <div class="picker-grip" onPointerDown={resize as any} data-hint="Arraste para mudar a largura da lista" />
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={patMenu(menu.id)} onClose={() => setMenu(null)} />}
     </div>
   );
 }

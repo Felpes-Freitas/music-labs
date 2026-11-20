@@ -225,7 +225,35 @@ export function ChannelRack() {
       icon="rack"
       title={
         <>
-          Rack de canais <span class="dim">· {pat?.name ?? ''}</span>
+          Rack de canais <span class="dim">·</span>{' '}
+          {pat && (
+            <input
+              class="title-edit nodrag"
+              key={pat.id}
+              value={pat.name}
+              size={Math.max(3, pat.name.length)}
+              spellcheck={false}
+              data-hint="Nome do pattern: clique para renomear"
+              onInput={(e) => {
+                const el = e.target as HTMLInputElement;
+                el.size = Math.max(3, el.value.length);
+              }}
+              onKeyDown={(e) => {
+                const el = e.target as HTMLInputElement;
+                if (e.key === 'Enter') el.blur();
+                if (e.key === 'Escape') {
+                  el.value = pat.name;
+                  el.blur();
+                }
+                e.stopPropagation(); // as teclas não tocam o instrumento enquanto digita
+              }}
+              onChange={(e) => {
+                const v = (e.target as HTMLInputElement).value.trim();
+                if (v && v !== pat.name) act(A.updatePattern, { pattern: pat.id, name: v });
+                else (e.target as HTMLInputElement).value = pat.name;
+              }}
+            />
+          )}
         </>
       }
       tools={
