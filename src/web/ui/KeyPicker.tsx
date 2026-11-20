@@ -1,4 +1,4 @@
-// Seletor de tom (escala) usado pelo Afinador e pelo Stitcher: "Automático"
+// Seletor de tom (escala) usado pelo Melodify e pelo Stitcher: "Automático"
 // mostra o tom detectado; dá para escolher qualquer raiz e escala.
 
 import { NOTE_NAMES_PT, SCALE_LABELS, SCALE_KEYS, keyLabel, type Key } from '../../core/key';

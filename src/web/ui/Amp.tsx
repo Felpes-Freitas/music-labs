@@ -143,7 +143,7 @@ const userPresets = () => {
 
 const listeners = new Set<() => void>();
 /** Grava as preferências, manda a cadeia para o áudio e redesenha. */
-/** Afinador aberto: o retorno toca a guitarra limpa (sem nenhum efeito). */
+/** Melodify aberto: o retorno toca a guitarra limpa (sem nenhum efeito). */
 let tunerOpen = false;
 const liveChain = () => (tunerOpen ? [] : amp.chain);
 

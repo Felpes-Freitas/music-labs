@@ -18,6 +18,7 @@ import { alignOffset } from '../../core/align';
 import { snapToKey, keyLabel, type Key } from '../../core/key';
 import { Win, useCanvas, MenuTree, type MenuItem } from './widgets';
 import { openTuneAudio } from './Tune';
+import { ChannelMix } from './ChannelMix';
 import { Icon } from './icons';
 import { ui } from '../theme';
 import { loadAudio, audioClips, pickAudioFiles, droppedAudio, acceptsAudio } from '../clipaudio';
@@ -29,7 +30,7 @@ import { LiveCapture } from './LiveCapture';
 const COLORS = ['#ff5d5d', '#4fc3e8', '#f2c94c', '#6fdc8c', '#b58cf0', '#ff9e57', '#5fd3c4', '#ff7bc0', '#9ccc3a', '#7ba6ff', '#e8a87c', '#c0c0c0'];
 
 /** Áudios (da lista do projeto) que estão no Stitcher. */
-/** Trecho de um áudio aberto no Afinador: um áudio da lista que substitui o pedaço (o take não muda). */
+/** Trecho de um áudio aberto no Melodify: um áudio da lista que substitui o pedaço (o take não muda). */
 interface PieceRef {
   id: string; // áudio da lista
   start: number; // tempo (s, na costura) da amostra 0 do trecho
@@ -148,7 +149,7 @@ function rebuild() {
   final = null;
   savedId = null;
   if (!plan) return;
-  // pedaços editados no Afinador entram como fontes extras, sem afinação automática
+  // pedaços editados no Melodify entram como fontes extras, sem afinação automática
   const extra: StitchTake[] = [];
   const segs = (plan.segments as Seg[]).map((sg) => {
     const pa = sg.piece && !sg.piece.off ? pieceAudio.get(sg.piece.id) : undefined;
@@ -292,7 +293,7 @@ async function toggleRec() {
   changed();
 }
 
-/** Recorta o pedaço do take, põe na lista de áudios e abre no Afinador (as edições voltam para cá). */
+/** Recorta o pedaço do take, põe na lista de áudios e abre no Melodify (as edições voltam para cá). */
 async function openPiece(si: number) {
   if (!plan) return;
   const sg = plan.segments[si] as Seg;
@@ -336,7 +337,7 @@ async function loadPieces() {
   return dirty;
 }
 
-/** Recarrega os trechos que mudaram no Afinador e remonta a costura. */
+/** Recarrega os trechos que mudaram no Melodify e remonta a costura. */
 async function refreshPieces() {
   if (!plan) return;
   let dirty = false;
@@ -374,6 +375,7 @@ export function StitchWindow() {
   const s = useApp();
   const [, force] = useReducer((x: number) => x + 1, 0);
   const [addMenu, setAddMenu] = useState<null | 'menu' | 'list'>(null);
+  const [gear, setGear] = useState(false);
   useEffect(() => {
     listeners.add(force as () => void);
     return () => void listeners.delete(force as () => void);
@@ -388,7 +390,7 @@ export function StitchWindow() {
   useEffect(() => {
     analyze();
   }, [sig]);
-  // trechos editados no Afinador: quando mudam, a costura se refaz
+  // trechos editados no Melodify: quando mudam, a costura se refaz
   const pieceSig = plan ? (plan.segments as Seg[]).filter((x) => x.piece).map((x) => `${x.piece!.id}:${poolItem(x.piece!.id)?.path ?? '-'}`).join('|') : '';
   useEffect(() => {
     refreshPieces();
@@ -509,8 +511,13 @@ export function StitchWindow() {
           <button class="tool-main" disabled={!final} onClick={send} data-hint="Guarda o resultado na lista e coloca na playlist">
             <Icon name="playlist" size={13} /> Enviar para a playlist
           </button>
+          <button class={`gear-btn ${gear ? 'on' : ''}`} disabled={!ids.length} onClick={() => setGear(!gear)} data-hint="Configurações dos áudios: volume, pan, insert do mixer e efeitos (o mesmo canal do rack)">
+            <Icon name="settings" size={13} />
+          </button>
         </div>
-        {busy ? (
+        {gear && ids.length ? (
+          <GearPanel ids={ids} />
+        ) : busy ? (
           <div class="tool-empty">{busy}</div>
         ) : !plan && !recording ? (
           <div class="tool-empty">
@@ -708,7 +715,7 @@ function FinalCanvas() {
           const a = Math.min(1, pk * 1.6) * (mid - 3);
           ctx.fillRect(x, mid - a, 1, Math.max(1, a * 2));
         }
-        // pedaço editado no Afinador: selo; escolhido à mão: traço em cima
+        // pedaço editado no Melodify: selo; escolhido à mão: traço em cima
         if (sg.piece && x1 - x0 > 16) {
           ctx.fillStyle = sg.piece.off ? 'rgba(255,255,255,0.4)' : '#fff';
           ctx.font = 'bold 10px sans-serif';
@@ -776,7 +783,7 @@ function FinalCanvas() {
           (e.currentTarget as HTMLElement).style.cursor = boundaryAt(x, w) > 0 ? 'ew-resize' : 'pointer';
           const sg = plan.segments[segAt(t)] as Seg | undefined;
           if (!sg) return;
-          setHint(`${sg.target !== null ? noteName(sg.target) + ' · ' : ''}${sg.take >= 0 ? `vem de ${nameOf(sg.take)}` : 'silêncio'}${sg.piece ? ' · editado no Afinador' : ''} · clique toca daqui · arraste as divisas para mudar os cortes · botão direito: opções`);
+          setHint(`${sg.target !== null ? noteName(sg.target) + ' · ' : ''}${sg.take >= 0 ? `vem de ${nameOf(sg.take)}` : 'silêncio'}${sg.piece ? ' · editado no Melodify' : ''} · clique toca daqui · arraste as divisas para mudar os cortes · botão direito: opções`);
         }}
         onPointerUp={() => {
           if (!drag.current) return;
@@ -784,7 +791,7 @@ function FinalCanvas() {
           rebuild();
           changed();
         }}
-        data-hint="Resultado: cada cor é o áudio de onde veio o pedaço. Clique para tocar dali; arraste as divisas para mudar os cortes; botão direito num pedaço para trocar o áudio, dividir ou abrir no Afinador."
+        data-hint="Resultado: cada cor é o áudio de onde veio o pedaço. Clique para tocar dali; arraste as divisas para mudar os cortes; botão direito num pedaço para trocar o áudio, dividir ou abrir no Melodify."
       />
       {menu && plan && <PieceMenu {...menu} onClose={() => setMenu(null)} />}
     </>
@@ -842,14 +849,14 @@ function PieceMenu(p: { x: number; y: number; si: number; t: number; onClose: ()
       : []),
     { sep: true, label: '' },
     {
-      label: sg.piece ? 'Abrir este pedaço no Afinador de novo' : 'Abrir este pedaço no Afinador',
-      hint: 'Abre só este trecho no Afinador; o que você aplicar lá volta para cá (o áudio original não muda)',
+      label: sg.piece ? 'Abrir este pedaço no Melodify de novo' : 'Abrir este pedaço no Melodify',
+      hint: 'Abre só este trecho no Melodify; o que você aplicar lá volta para cá (o áudio original não muda)',
       run: () => openPiece(p.si),
     },
     ...(sg.piece
       ? [
           {
-            label: sg.piece.off ? 'Reativar a edição do Afinador neste pedaço' : 'Desativar a edição do Afinador neste pedaço',
+            label: sg.piece.off ? 'Reativar a edição do Melodify neste pedaço' : 'Desativar a edição do Melodify neste pedaço',
             run: () => {
               sg.piece!.off = !sg.piece!.off;
               done();
@@ -1037,5 +1044,28 @@ function TakeCanvas(p: { k: number }) {
       style={{ cursor: 'pointer' }}
       data-hint="Clique num trecho para usar este áudio nele"
     />
+  );
+}
+
+/** Aba de configurações do Stitcher: o canal (volume, pan, efeitos, insert) de cada áudio. */
+function GearPanel({ ids }: { ids: string[] }) {
+  const s = useApp();
+  const [pick, setPick] = useState(ids[0]);
+  const id = ids.includes(pick) ? pick : ids[0];
+  const it = poolItem(id);
+  const ch = it?.channel ? s.project.channels.find((c) => c.id === it.channel) : undefined;
+  return (
+    <div class="tool-gear">
+      <div class="tool-gear-pick">
+        <span>Áudio</span>
+        <select value={id} onChange={(e) => setPick((e.target as HTMLSelectElement).value)}>
+          {ids.map((x) => (
+            <option value={x}>{poolItem(x)?.name ?? x}</option>
+          ))}
+        </select>
+        <span class="dim">o resultado salvo vira um áudio novo, com o canal dele no rack</span>
+      </div>
+      {ch ? <ChannelMix ch={ch} /> : <div class="tool-empty small">Este áudio ainda não tem canal no rack.</div>}
+    </div>
   );
 }

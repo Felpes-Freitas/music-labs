@@ -15,7 +15,7 @@ interface, mensagens de commit e documentação também em português.
 - **Nada de copiar o FL Studio**: experiência parecida, visual e nomes próprios. O nome
   não pode conter "FL". Engenharia reversa só para interoperabilidade (importar `.flp`,
   ler samples da instalação do usuário no Wine). Nomes de marcas de terceiros também não:
-  o editor tipo "Melodyne" se chama **Afinador**; o comping é o **Stitcher** (nome dado
+  o editor tipo "Melodyne" se chama **Melodify** (antes "Afinador"; a janela continua com o id `tune`); o comping é o **Stitcher** (nome dado
   pelo usuário).
 - **Interface nativa do app, nunca diálogos do navegador**: nada de `alert`/`confirm`/
   `prompt`. Use `askText`, `askConfirm`, `showInfo` (`src/web/ui/Dialog.tsx`), menus
@@ -144,6 +144,26 @@ scripts/     ferramentas de diagnóstico e testes de UI (os _*.mts são temporá
   edited? (versão editada guardada quando as edições estão desativadas) }`.
 - `StitchSession`: ids, key, tune, segments (t0, t1, take, target, manual?, piece?).
 
+### Áudios como canais (`src/core/audiochan.ts`)
+
+- Canal `type: 'audio'` (`params.sample`; `AudioChannelInstrument` não toca notas). Os
+  clipes de áudio têm `channel` e tocam por ele na engine (`audioClipsIn` + `mixClip`, antes
+  dos efeitos/volume/pan/insert do canal). Clipe sem canal (só antes da migração) vai
+  direto para `clip.insert`.
+- `completeOps(p)` devolve o que falta depois de qualquer edição: canal de áudio para item
+  da lista (`AudioItem.channel`) ou clipe sem canal (mesmo arquivo = mesmo canal; insert
+  livre com o nome do áudio; `clip.insert` antigo vira o insert do canal), o pattern-grupo
+  (`Pattern.channels = [canal]`) e as tracks até a maior usada. Roda em `edit()` (web),
+  `Store.apply` (manda o que completou a todos com origin "server") e `Store.load`.
+- `removeChannel` de um canal de áudio leva junto os clipes e o item da lista.
+- Rack: filtro "só este pattern" (`channelInPattern` = tem notas ou está em
+  `pattern.channels`; canais sem pattern nenhum aparecem sempre); `moveChannelToPattern`
+  (studio.ts; MCP `send_to_pattern`).
+- Tracks infinitas: projeto novo sem tracks; a playlist desenha linhas virtuais
+  (`trackInfo`/`trackOps` em Playlist.tsx criam até a track usada); `updateTrack` cria.
+- `ChannelMix.tsx` (volume, pan, mute, insert, efeitos) aparece no canal de áudio
+  (`AudioChannelWin` em ChannelSettings.tsx), na engrenagem do Melodify e do Stitcher.
+
 ### Engine (`src/core/engine.ts`)
 - Roda no AudioWorklet (`src/web/worklet.ts`) e no Node (render offline). Blocos de 128.
 - Modo pattern/song; `collect()` gera eventos de notas; clipes de áudio são mixados no
@@ -165,7 +185,7 @@ scripts/     ferramentas de diagnóstico e testes de UI (os _*.mts são temporá
   (gravação inteligente com `TakeDetector`), mapeia amostras → ticks por pares
   (frames, tick) — funciona com loop. Usada hoje só pelo **amp**.
 - **Captura avulsa** (`startCapture`/`stopCapture`/`liveCapture`): sem tocar a música,
-  sem ir à playlist — usada pelo Afinador e pelo Stitcher.
+  sem ir à playlist — usada pelo Melodify e pelo Stitcher.
 - **Amp**: contexto de áudio **separado** (`mon`, latencyHint 0) com o nó `ml-amp` para o
   retorno de baixa latência; a gravação guarda o sinal **cru** e os efeitos são
   reaplicados em alta qualidade (`renderChain`, sobreamostragem 4x em amp/overdrive/fuzz).
@@ -260,6 +280,7 @@ acrescentar a ação em `core/` e a ferramenta aqui (não contornar com curl/scr
 - Mixer: mixer_insert, **reset_insert** (o mixer tem posições fixas: "remover" = resetar),
   add/update/remove_effect (insert ou canal), **copy_effects**.
 - Áudios do projeto: **audio_pool** (add, rename, remove, place, edits on/off).
+- Patterns: **send_to_pattern** (move as notas do canal; sem `to`, pattern novo).
 - Andamento: **detect_bpm** (clipe, item da lista ou arquivo; `apply` muda o BPM e alinha
   o clipe à grade) e **set_tempo** (muda o BPM mantendo a duração dos áudios; = `applyTempo`).
 - Interface: **ui** (`POST /api/ui` → `remoteUi` em state.ts: select, loop, metronome,
@@ -275,8 +296,8 @@ acrescentar a ação em `core/` e a ferramenta aqui (não contornar com curl/scr
 ## 4. Interface (src/web/ui)
 
 Janelas (`Win` em `widgets.tsx`; ids em `WindowId` de `state.ts`): playlist, rack, piano,
-mixer, channel, browser (lateral, recolhível), **amp** (F10), **tune** = Afinador (F11),
-**stitch** = Stitcher (F12). Atalhos: Espaço tocar/parar (com Afinador/Stitcher em foco,
+mixer, channel, browser (lateral, recolhível), **amp** (F10), **tune** = Melodify (F11),
+**stitch** = Stitcher (F12). Atalhos: Espaço tocar/parar (com Melodify/Stitcher em foco,
 toca o áudio deles), L pattern/song, F5–F9, Tab, Ctrl+Z/Y/S, Ctrl+, configurações,
 Z…M/Q…P teclado musical, -/= oitava.
 
@@ -300,7 +321,7 @@ Z…M/Q…P teclado musical, -/= oitava.
   a janela da frente, e o piano roll ignora o teclado nesse caso).
   **Duplo clique** (evento `dblclick` do canvas; o `detail` do pointerdown não traz a
   contagem no Chrome): pattern → seleciona e abre o rack; automação → Central; áudio →
-  Afinador (até existir o editor de áudio do ROADMAP); nome da track → renomear.
+  o canal do áudio (AudioChannelWin: onda, Melodify, Stitcher, volume/pan/efeitos/insert); nome da track → renomear.
   Bordas: direita e **esquerda** redimensionam (esquerda anda o começo e mantém o conteúdo:
   `startSec` no áudio, `offset` no pattern). **Snap** (`core/snap.ts`, ímã "auto/tempo/
   compasso", pref `pl.snap`): auto segue o zoom como no FL (compasso … 1/16 de tempo,
@@ -311,10 +332,10 @@ Z…M/Q…P teclado musical, -/= oitava.
   (para os dois lados, pulando o que já existe); vira um passo só de desfazer. Botão direito **num clipe** sempre apaga (mesmo dentro da
   área); **num lugar vazio da área** abre `SelectionMenu.tsx` (Preencher com pattern
   repetido/cortado, Inserir instrumento — Music Labs, presets, biblioteca/FL, ferramentas —,
-  apagar), agindo na track clicada. Amp/Afinador/Stitcher abertos por ali guardam
+  apagar), agindo na track clicada. Amp/Melodify/Stitcher abertos por ali guardam
   `state.selTrack`: a gravação do amp e o "Enviar para a playlist" caem nessa track (ou na
   livre logo abaixo) no começo da área; `selTrack` some quando a área muda. Com área
-  selecionada, arrastar apagando (botão direito ou borracha) só apaga dentro dela. Arrastar um clipe de áudio para o Stitcher/Afinador envia para lá.
+  selecionada, arrastar apagando (botão direito ou borracha) só apaga dentro dela. Arrastar um clipe de áudio para o Stitcher/Melodify envia para lá.
 - **Lista ao lado da playlist** (`Picker.tsx`): Patterns + **Áudios** (lista do projeto; gravações do amp/microfone entram como "Guitarra N"/"Gravação N" via `addRecordingToPool`),
   largura ajustável arrastando a borda.
 - **Transporte** (`Toolbar.tsx`): PAT/SONG, play, stop, **REC geral** (grava notas ao vivo
@@ -438,7 +459,7 @@ Z…M/Q…P teclado musical, -/= oitava.
   gabinete, EQ, tremolo, chorus, phaser, delay, reverb), presets, gravação inteligente
   (`TakeDetector` em `core/onset.ts`: aprende o ruído, exige som sustentado, limiar de
   volume, e usa uma 2ª captura com cancelamento de eco só para detectar).
-- **Afinador** (`Tune.tsx`): grava dentro da janela (onda ao vivo), abre arquivos ou áudios
+- **Melodify** (`Tune.tsx`): grava dentro da janela (onda ao vivo), abre arquivos ou áudios
   da lista; notas como blocos (`core/pitchtrack.ts` YIN + segmentação; `core/psola.ts`
   muda altura sem mudar duração); grade do tom (Ctrl: qualquer semitom, Shift: livre);
   tom detectado/escolhível (`core/key.ts`, `KeyPicker.tsx`); **Criar variante** (áudio
@@ -456,7 +477,7 @@ Z…M/Q…P teclado musical, -/= oitava.
 - **Stitcher** (`Stitch.tsx`, `core/stitch.ts`, `core/align.ts`): vários takes da mesma
   parte → resultado que usa, por nota, o take mais perto da **nota pretendida** (tom +
   consenso). Resultado em cima (cores = origem; clique toca; divisas arrastáveis; botão
-  direito: usar outro áudio, dividir, juntar, **abrir o pedaço no Afinador** — volta
+  direito: usar outro áudio, dividir, juntar, **abrir o pedaço no Melodify** — volta
   aplicado, sem reafinar), melodia editável, lista de áudios com cores, gravação ao vivo
   na lista, Adicionar (computador / projeto). **Sessão salva no projeto** (`project.stitch`)
   e restaurada ao abrir; desfazer também vale.

@@ -576,7 +576,7 @@ export class Audio {
     o.stop(t + 0.04);
   }
 
-  // ---------------------------------------------------------------- captura avulsa (Afinador, Stitcher)
+  // ---------------------------------------------------------------- captura avulsa (Melodify, Stitcher)
   // Grava só a entrada, sem tocar a música e sem ligação com a playlist.
 
   private cap: { stream: MediaStream; src: MediaStreamAudioSourceNode; node: AudioWorkletNode; chunks: Float32Array[][]; frames: number; peaks: number[]; acc: number; accN: number; pick: RecChannels; armed: boolean } | null = null;

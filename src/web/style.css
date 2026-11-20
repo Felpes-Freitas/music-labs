@@ -229,6 +229,11 @@ input[type='checkbox'] { height: auto; accent-color: var(--acc); }
 .step.on { background: linear-gradient(color-mix(in srgb, var(--acc) 45%, #fff), color-mix(in srgb, var(--acc) 88%, #fff)); box-shadow: 0 0 5px var(--acc-glow), inset 0 1px 0 rgba(255,255,255,.5); }
 .step.play { outline: 1px solid #9fe0ff; }
 .miniroll { height: 24px; position: relative; background: var(--well); border: 1px solid var(--edge); border-radius: 3px; cursor: pointer; flex-shrink: 0; overflow: hidden; }
+.audio-strip { height: 24px; position: relative; display: flex; align-items: center; gap: 8px; padding: 0 8px; flex-shrink: 0; border-radius: 3px; border: 1px solid var(--edge); background: color-mix(in srgb, var(--c) 18%, var(--well)); color: var(--dim); font-size: 11px; cursor: default; overflow: hidden; }
+.audio-strip-wave { flex: 1; height: 14px; opacity: 0.55; background: repeating-linear-gradient(90deg, var(--c) 0 2px, transparent 2px 4px); -webkit-mask: linear-gradient(transparent 0, #000 30%, #000 70%, transparent 100%); mask: linear-gradient(transparent 0, #000 30%, #000 70%, transparent 100%); }
+.audio-strip-label { flex-shrink: 0; }
+.rack-empty { padding: 14px 10px; }
+.pr-tools button { white-space: nowrap; }
 .mini-note { position: absolute; height: 2px; border-radius: 1px; }
 .rack-foot { position: relative; padding: 6px 4px; display: flex; gap: 6px; align-items: center; }
 .add-menu { position: absolute; left: 4px; bottom: 34px; display: flex; gap: 14px; background: var(--pop); border: 1px solid var(--line2); padding: 8px; border-radius: var(--win-rad); z-index: 5; box-shadow: 0 8px 24px var(--shadow); }
@@ -608,7 +613,7 @@ body.alt-drag .win, body.alt-drag .win * { cursor: move !important; }
 .amp-status-box { display: flex; flex-direction: column; line-height: 1.25; }
 .amp-noise { font-size: 9.5px; color: var(--dim2); font-family: 'JetBrains Mono', monospace; }
 
-/* ---------------------------------------------------------------- Afinador e Stitcher */
+/* ---------------------------------------------------------------- Melodify e Stitcher */
 .tool { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--rack); }
 .tool-bar { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: var(--winbar); border-bottom: 1px solid var(--line2); flex-wrap: wrap; }
 .tool-bar button { height: 28px; display: inline-flex; align-items: center; gap: 6px; padding: 0 11px; }
@@ -825,3 +830,13 @@ option, optgroup { background-color: var(--pop); color: var(--text); }
 .rgb-state.missing, .rgb-state.error { color: var(--muted, #9aa); }
 .rgb-host { width: 160px; }
 .rgb-port { width: 100px; }
+/* configurações de mixagem de um canal (canal de áudio, Melodify, Stitcher) */
+.chmix { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; }
+.chmix-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.chmix-ins { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--dim); }
+.chmix-ins select { min-width: 170px; }
+.chmix-mute.on { color: var(--acc-ink); background: var(--acc); }
+.tool-gear { flex: 1; overflow: auto; padding: 6px 4px; }
+.tool-gear-pick { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 11px; color: var(--dim); }
+.audio-tools { display: flex; gap: 8px; padding: 8px 0; }
+.audio-tools button { display: inline-flex; align-items: center; gap: 6px; }

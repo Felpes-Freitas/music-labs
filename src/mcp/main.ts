@@ -177,7 +177,7 @@ tool(
   async ({ points, ...f }) => clipsDetail(await project(), f, points),
 );
 
-tool('list_audios', 'Lista de áudios do projeto (gravações do amp/Afinador/Stitcher, importados e variantes) com arquivo, original e se tem edições.', {}, async () =>
+tool('list_audios', 'Lista de áudios do projeto (gravações do amp/Melodify/Stitcher, importados e variantes) com arquivo, original e se tem edições.', {}, async () =>
   ((await project()).audios ?? []).map((a: any) => ({ id: a.id, name: a.name, path: a.path, original: a.original !== a.path ? a.original : undefined, variantOf: a.variantOf, editsOn: a.path !== a.original, editsSaved: !!a.edited })),
 );
 
@@ -631,7 +631,7 @@ tool('remove_effect', 'Remove um efeito de um insert ou de um canal.', { ...targ
 
 tool(
   'batch',
-  'Executa várias ações de uma vez, atomicamente (um passo de undo). Nomes: addChannel, updateChannel, removeChannel, duplicateChannel, replaceInstrument, setPad, addPattern, updatePattern, removePattern, duplicatePattern, addNotes, setSteps, fillSteps, addChords, clearNotes, transformNotes, copyNotes, placePattern, removeClips, editClips, copySection, insertBars, deleteBars, updateTrack, updateInsert, resetInsert, addEffect, updateEffect, removeEffect, addChannelEffect, updateChannelEffect, removeChannelEffect, copyEffects, addAudioClip, automate (= add_automation), editAutomation, addAudio, renameAudio, removeAudio, toggleAudioEdits, setProjectProps, applyTempo (= set_tempo). Os args são iguais aos das ferramentas correspondentes (addNotes usa {pattern, channel, notes:[{note,start,length,velocity}]}). Canais/patterns criados no mesmo lote podem ser referenciados pelo nome.',
+  'Executa várias ações de uma vez, atomicamente (um passo de undo). Nomes: addChannel, updateChannel, removeChannel, duplicateChannel, replaceInstrument, setPad, addPattern, updatePattern, removePattern, duplicatePattern, addNotes, setSteps, fillSteps, addChords, clearNotes, transformNotes, copyNotes, placePattern, removeClips, editClips, copySection, insertBars, deleteBars, updateTrack, updateInsert, resetInsert, addEffect, updateEffect, removeEffect, addChannelEffect, updateChannelEffect, removeChannelEffect, copyEffects, addAudioClip, automate (= add_automation), editAutomation, addAudio, renameAudio, removeAudio, toggleAudioEdits, setProjectProps, applyTempo (= set_tempo), moveChannelToPattern (= send_to_pattern). Os args são iguais aos das ferramentas correspondentes (addNotes usa {pattern, channel, notes:[{note,start,length,velocity}]}). Canais/patterns criados no mesmo lote podem ser referenciados pelo nome.',
   { actions: z.array(z.object({ name: z.string(), args: z.record(z.string(), z.any()) })), label: z.string().optional() },
   async ({ actions, label }) => (await api('POST', '/api/actions', { actions, origin: 'mcp', label: label ?? `${actions.length} edições` })).results,
 );
@@ -640,7 +640,7 @@ tool(
 
 tool(
   'audio_pool',
-  'Lista de áudios do projeto (a que fica ao lado dos patterns): add (arquivo → lista), rename, remove (só tira da lista), place (coloca na playlist em bar/track; sem bars usa o tamanho do arquivo), edits (liga/desliga as edições do Afinador: on true/false; o original nunca se perde).',
+  'Lista de áudios do projeto (a que fica ao lado dos patterns): add (arquivo → lista), rename, remove (só tira da lista), place (coloca na playlist em bar/track; sem bars usa o tamanho do arquivo), edits (liga/desliga as edições do Melodify: on true/false; o original nunca se perde).',
   {
     action: z.enum(['add', 'rename', 'remove', 'place', 'edits']),
     audio: z.string().optional().describe('id, nome ou caminho (rename/remove/place/edits)'),
@@ -667,7 +667,7 @@ tool(
 const windowId = z.enum(['rack', 'piano', 'playlist', 'mixer', 'channel', 'amp', 'tune', 'stitch', 'autos']);
 tool(
   'ui',
-  'Controla a interface aberta (como o usuário faria): select [compassoInicial, compassoFinal] marca a área (play e loop usam ela; null tira), loop/metronome/countIn liga ou desliga, follow (a tela segue a agulha), mode pattern/song, seekBar (agulha), pattern/channel (seleciona; o piano roll mostra), open/close janelas (rack, piano, playlist, mixer, channel, amp, tune = Afinador, stitch = Stitcher, autos = Central de Automações), automation (abre um clipe de automação na Central), message (aviso na tela). O estado atual aparece em get_project.ui.',
+  'Controla a interface aberta (como o usuário faria): select [compassoInicial, compassoFinal] marca a área (play e loop usam ela; null tira), loop/metronome/countIn liga ou desliga, follow (a tela segue a agulha), mode pattern/song, seekBar (agulha), pattern/channel (seleciona; o piano roll mostra), open/close janelas (rack, piano, playlist, mixer, channel, amp, tune = Melodify, stitch = Stitcher, autos = Central de Automações), automation (abre um clipe de automação na Central), message (aviso na tela). O estado atual aparece em get_project.ui.',
   {
     select: z.tuple([z.number(), z.number()]).nullable().optional(),
     loop: z.boolean().optional(),
@@ -727,6 +727,13 @@ tool(
     max: z.number().optional().describe('BPM máximo procurado (padrão 200)'),
   },
   (a) => api('POST', '/api/tempo', a),
+);
+
+tool(
+  'send_to_pattern',
+  'Manda um canal para outro pattern: as notas dele saem do pattern "from" e vão para "to" (somadas às de lá), e o canal passa a aparecer no rack quando o filtro "só deste pattern" está ligado. Sem "to", cria um pattern novo (newName ou o nome do canal).',
+  { channel: z.string(), from: z.string(), to: z.string().optional(), newName: z.string().optional() },
+  (a) => api('POST', '/api/actions', { actions: [{ name: 'moveChannelToPattern', args: a }], label: 'Canal para outro pattern' }),
 );
 
 tool(

@@ -21,8 +21,8 @@
   trecho (início/fim, fades), **mudar o tom** da gravação (semitons/cents, mantendo ou
   não o andamento), volume/normalizar, inverter, e uns **efeitos básicos** (EQ, filtro,
   reverb, delay, saturação) aplicados de forma não destrutiva: o original fica guardado
-  e as edições podem ser desligadas (mesmo esquema da lista de áudios / Afinador).
-  Enquanto não existe, o duplo clique no áudio abre o Afinador. (Hoje "sampler" no app é
+  e as edições podem ser desligadas (mesmo esquema da lista de áudios / Melodify).
+  Enquanto não existe, o duplo clique no áudio abre o Melodify. (Hoje "sampler" no app é
   um tipo de canal de instrumento que toca um sample pelas notas — outra coisa.)
 
 ## Pendências maiores

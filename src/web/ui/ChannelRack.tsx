@@ -12,6 +12,11 @@ import { instrumentMenu, loadLib, libNow, type Lib } from '../addmenu';
 import { addSampleChannel, samplerParams } from './Browser';
 import { Icon } from './icons';
 import { askConfirm, askText } from './Dialog';
+import { channelInPattern } from '../../core/audiochan';
+import { usePref } from '../prefs';
+import { openTuneAudio } from './Tune';
+import { addStitchAudios } from './Stitch';
+import { addToPool } from '../pool';
 
 const CELL = 21;
 
@@ -35,6 +40,10 @@ export function ChannelRack() {
   }, [adding, menu]);
   const lastStep = useRef(-1);
   const flashes = useRef(new Map<string, HTMLElement>());
+  const [only, setOnly] = usePref('rack.onlyPattern', false);
+  // canal "solto" (sem notas e sem grupo em nenhum pattern, ex.: recém-criado) aparece em todos
+  const loose = (id: string) => !p.patterns.some((pt) => channelInPattern(pt, id));
+  const visible = only && pat ? p.channels.filter((c) => channelInPattern(pat, c.id) || loose(c.id)) : p.channels;
 
   useEffect(
     () =>
@@ -101,6 +110,48 @@ export function ChannelRack() {
       const r = act(S.replaceInstrument, { channel: c.id, ...args });
       if (r) toast(`${c.name} → ${args.name}: as notas continuam${r.root ? ` (raiz ${r.root})` : ''}`);
     };
+    const send: MenuItem = {
+      label: 'Enviar para pattern',
+      hint: 'Move as notas deste canal para outro pattern (e o canal passa a aparecer nele com o filtro)',
+      sub: [
+        ...p.patterns
+          .filter((x) => x.id !== s.patternId)
+          .map((x) => ({ label: x.name, run: () => s.patternId && act(S.moveChannelToPattern, { channel: c.id, from: s.patternId, to: x.id }) && toast(`${c.name} → ${x.name}`) })),
+        { sep: true, label: '' },
+        {
+          label: 'Pattern novo…',
+          run: async () => {
+            const n = await askText({ title: 'Pattern novo', label: 'Nome', value: c.name, ok: 'Criar' });
+            if (!n || !s.patternId) return;
+            const r = act(S.moveChannelToPattern, { channel: c.id, from: s.patternId, newName: n });
+            if (r) toast(`${c.name} → ${r.name}`);
+          },
+        },
+      ],
+    };
+    if (c.type === 'audio') {
+      const item = () => (p.audios ?? []).find((a) => a.channel === c.id)?.id ?? addToPool(String(c.params.sample), c.name);
+      return [
+        { label: 'Configurações (volume, efeitos…)', run: () => openWindow('channel') },
+        { label: 'Abrir no Melodify', hint: 'Editar as notas do áudio (afinação)', run: () => openTuneAudio(item()) },
+        { label: 'Abrir no Stitcher', hint: 'Juntar takes deste áudio', run: () => (addStitchAudios([item()]), openWindow('stitch')) },
+        {
+          label: 'Renomear',
+          run: async () => {
+            const n = await askText({ title: 'Renomear áudio', label: 'Nome', value: c.name, ok: 'Renomear' });
+            if (n) edit([set(['channels', c.id, 'name'], n)]);
+          },
+        },
+        { sep: true, label: '' },
+        send,
+        { sep: true, label: '' },
+        {
+          label: 'Excluir',
+          run: async () =>
+            (await askConfirm({ title: `Excluir ${c.name}?`, message: 'O canal, os clipes deste áudio na playlist e o item da lista de áudios serão removidos.', ok: 'Excluir', danger: true })) && act(A.removeChannel, { channel: c.id }),
+        },
+      ];
+    }
     return [
       { label: 'Piano roll', run: () => openWindow('piano') },
       { label: 'Configurações', run: () => openWindow('channel') },
@@ -146,6 +197,7 @@ export function ChannelRack() {
           },
         }),
       },
+      send,
       { label: 'Clonar', hint: 'Canal igual (instrumento, efeitos e notas) logo abaixo', run: () => act(S.duplicateChannel, { channel: c.id, name: `${c.name} 2`, copyNotes: true }) },
       { sep: true, label: '' },
       { label: 'Limpar notas neste pattern', run: () => s.patternId && act(A.clearNotes, { pattern: s.patternId, channel: c.id }) },
@@ -184,6 +236,11 @@ export function ChannelRack() {
             </select>
           </span>
           <span class="tgroup">
+            <button class={only ? 'on' : ''} data-hint={only ? 'Mostrando só os canais deste pattern (e os novos, ainda sem notas) · clique para ver todos' : 'Mostrar só os canais deste pattern'} onClick={() => setOnly(!only)}>
+              <Icon name="filter" size={12} /> só este pattern
+            </button>
+          </span>
+          <span class="tgroup">
             <span class="hint">{steps} steps</span>
             <button data-hint="Aumentar o pattern em 16 steps (1 compasso)" onClick={() => pat && edit([set(['patterns', pat.id, 'length'], steps + 16)])}>
               +16
@@ -200,7 +257,8 @@ export function ChannelRack() {
     >
       <div class="rack" onContextMenu={(e) => e.preventDefault()}>
         <div class="rack-rows">
-          {p.channels.map((ch) => {
+          {only && !visible.length && <div class="hint rack-empty">Nenhum canal neste pattern · desligue o filtro "só deste pattern" para ver todos</div>}
+          {visible.map((ch) => {
             const notes = pat?.notes[ch.id] ?? [];
             const stepLike = isStepLike(notes);
             return (
@@ -246,7 +304,9 @@ export function ChannelRack() {
                 >
                   {ch.name}
                 </button>
-                {stepLike ? (
+                {ch.type === 'audio' ? (
+                  <AudioStrip ch={ch} width={steps * CELL + Math.floor(steps / 4) * 3} onOpen={() => (selectChannel(ch.id), openWindow('channel'))} />
+                ) : stepLike ? (
                   <div class="steps" style={{ width: `${steps * CELL + Math.floor(steps / 4) * 3}px` }}>
                     {Array.from({ length: steps }, (_, i) => {
                       const on = notes.some((n) => n.pos === i * STEP);
@@ -316,3 +376,17 @@ function MiniRoll(p: { notes: Note[]; steps: number; color: string; onOpen: () =
   );
 }
 
+
+/** Linha de um canal de áudio no rack: a onda do arquivo e quantos clipes ele tem. */
+function AudioStrip(p: { ch: Channel; width: number; onOpen: () => void }) {
+  const s = state;
+  const n = s.project.clips.filter((c) => c.kind === 'audio' && c.channel === p.ch.id).length;
+  return (
+    <div class="audio-strip" style={{ width: `${p.width}px`, '--c': p.ch.color } as any} onDblClick={p.onOpen} data-hint="Canal de áudio: o som vem dos clipes na playlist · duplo clique: volume, efeitos e o áudio">
+      <span class="audio-strip-wave" />
+      <span class="audio-strip-label">
+        ♪ {n ? `${n} clipe${n > 1 ? 's' : ''} na playlist` : 'fora da playlist'}
+      </span>
+    </div>
+  );
+}

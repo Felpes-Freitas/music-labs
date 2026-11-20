@@ -899,8 +899,17 @@ class PadsInstrument extends Instrument {
   }
 }
 
+/** Canal de áudio: o som vem dos clipes da playlist (a engine mistura); notas não tocam nada. */
+class AudioChannelInstrument extends Instrument {
+  protected makeVoice(): Voice | null {
+    return null;
+  }
+}
+
 export function createInstrument(sr: number, type: InstrumentType, params: Params, samples: SampleLookup): Instrument {
   switch (type) {
+    case 'audio':
+      return new AudioChannelInstrument(sr, type, params, samples);
     case 'pads':
       return new PadsInstrument(sr, type, params, samples);
     case 'prisma':

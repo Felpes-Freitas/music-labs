@@ -203,6 +203,11 @@ export const INSTRUMENTS: Record<InstrumentType, { label: string; description: s
     description: 'Grade de 16 pads (4×4): cada pad toca um som próprio (sample, instrumento multi-sample, nativo ou preset). Pad 1 (embaixo à esquerda) = C2, um semitom por pad. No teclado do computador: 1234 / QWER / ASDF / ZXCV.',
     params: [{ key: 'pads', label: 'Pads', kind: 'text', def: DEFAULT_PADS }],
   },
+  audio: {
+    label: 'Áudio',
+    description: 'Canal de um áudio do projeto (gravação, arquivo importado, variante): os clipes desse áudio na playlist tocam por aqui, com o volume, o pan, os efeitos e o insert do canal.',
+    params: [{ key: 'sample', label: 'Arquivo', kind: 'text', def: '' }],
+  },
 };
 
 export const EFFECTS: Record<EffectType, { label: string; description: string; params: ParamDef[] }> = {

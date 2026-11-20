@@ -99,7 +99,7 @@ function menus(): Record<string, Item[] | (() => void)> {
       { label: 'Refazer', key: 'Ctrl+Y', run: redo },
     ],
     Adicionar: [
-      ...(Object.keys(INSTRUMENTS) as InstrumentType[]).map((t) => ({ label: INSTRUMENTS[t].label, run: () => addChannel({ type: t }) })),
+      ...(Object.keys(INSTRUMENTS) as InstrumentType[]).filter((t) => t !== 'audio').map((t) => ({ label: INSTRUMENTS[t].label, run: () => addChannel({ type: t }) })),
       { sep: true, label: '' },
       { label: 'Presets', sub: Object.keys(PRESETS).map((k) => ({ label: k, run: () => addChannel({ preset: k }) })) },
     ],
@@ -116,7 +116,7 @@ function menus(): Record<string, Item[] | (() => void)> {
       { label: 'Navegador', key: 'Alt+F8', on: s.windows.browser.open, run: () => openWindow('browser', true) },
       { label: 'Mixer', key: 'F9', on: s.windows.mixer.open, run: () => openWindow('mixer', true) },
       { label: 'Amp de guitarra', key: 'F10', on: s.windows.amp.open, run: () => openWindow('amp', true) },
-      { label: 'Afinador', key: 'F11', on: s.windows.tune.open, run: () => openWindow('tune', true) },
+      { label: 'Melodify', key: 'F11', on: s.windows.tune.open, run: () => openWindow('tune', true) },
       { label: 'Stitcher', key: 'F12', on: s.windows.stitch.open, run: () => openWindow('stitch', true) },
     ],
     Aparência: () => openSettings('aparencia'),
@@ -448,7 +448,7 @@ export function TitleBar() {
         {winBtn('piano', 'piano', 'Piano roll', 'F7')}
         {winBtn('mixer', 'mixer', 'Mixer', 'F9')}
         {winBtn('amp', 'guitar', 'Amp de guitarra', 'F10')}
-        {winBtn('tune', 'tune', 'Afinador (editar notas de uma gravação)', 'F11')}
+        {winBtn('tune', 'tune', 'Melodify (editar notas de uma gravação)', 'F11')}
         {winBtn('stitch', 'stitch', 'Stitcher (juntar os melhores takes)', 'F12')}
         {winBtn('browser', 'browser', 'Navegador', 'Alt+F8')}
       </div>
@@ -481,7 +481,7 @@ export function Toolbar() {
         <IconBtn
           icon="record"
           class={`tbig rec ${audio.recording || midiRecording() ? 'on' : ''}`}
-          hint={audio.recording || midiRecording() ? 'Parar a gravação' : 'Gravar notas (teclado do computador, teclado MIDI) e automações (knobs mexidos) a partir da seleção ou da posição atual. Voz e instrumentos de áudio: Amp, Afinador e Stitcher'}
+          hint={audio.recording || midiRecording() ? 'Parar a gravação' : 'Gravar notas (teclado do computador, teclado MIDI) e automações (knobs mexidos) a partir da seleção ou da posição atual. Voz e instrumentos de áudio: Amp, Melodify e Stitcher'}
           onClick={() => toggleRecord()}
         />
         <div class="tr-toggles">

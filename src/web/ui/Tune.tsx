@@ -1,4 +1,4 @@
-// Afinador: editor de notas de um áudio (voz, instrumento solo). Tudo acontece
+// Melodify: editor de notas de um áudio (voz, instrumento solo). Tudo acontece
 // aqui dentro: grave ou escolha um áudio da lista do projeto, veja cada nota como
 // um bloco na altura cantada, arraste para outra nota e aplique — criando uma
 // variante na lista ou alterando o próprio áudio (o original fica guardado).
@@ -21,6 +21,7 @@ import { KeyPicker } from './KeyPicker';
 import { poolItems, poolItem, addToPool, commitEdit, hasEdits, editsOn, toggleEdits, sendToPlaylist, startToolRecording, finishToolRecording, importToPool } from '../pool';
 import { getPref, setPref } from '../prefs';
 import { LiveCapture } from './LiveCapture';
+import { ChannelMix } from './ChannelMix';
 
 interface Doc {
   id: string; // áudio da lista
@@ -51,7 +52,7 @@ let preview: { stop: () => void; pos: () => number } | null = null;
 const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((l) => l());
 
-/** Abre um áudio da lista no Afinador. */
+/** Abre um áudio da lista no Melodify. */
 export async function openTuneAudio(id: string, opts: { inPlace?: boolean; clip?: string } = {}) {
   openWindow('tune');
   tuneClip = opts.clip ?? null;
@@ -79,14 +80,14 @@ export async function openTuneAudio(id: string, opts: { inPlace?: boolean; clip?
     doc = { id, path: it.path, sr: a.sr, ch: a.ch, track, notes, target: notes.map((n) => n.pitch), straight: 0, rendered: null, detectedKey: detectKey(weights), key: null };
     if (!notes.length) toast('Não encontrei notas com altura definida nesse áudio (precisa ser uma voz ou instrumento solo)');
   } catch (e) {
-    toast(`Afinador: ${(e as Error).message}`);
+    toast(`Melodify: ${(e as Error).message}`);
   }
   loading = '';
   fitNext = true;
   changed();
 }
 
-/** Abre no Afinador o arquivo de um clipe da playlist (entra na lista de áudios). */
+/** Abre no Melodify o arquivo de um clipe da playlist (entra na lista de áudios). */
 export function openTune(clipId: string) {
   const c = state.project.clips.find((x) => x.id === clipId);
   if (c?.sample) openTuneAudio(addToPool(c.sample), { clip: clipId });
@@ -171,7 +172,7 @@ const edited = (d: Doc) => {
   changed();
 };
 
-/** Tocar/parar o áudio do Afinador (o Espaço chama isto quando a janela está em foco). */
+/** Tocar/parar o áudio do Melodify (o Espaço chama isto quando a janela está em foco). */
 export function toggleTunePreview() {
   if (preview) return stopPreview(), changed();
   if (!doc) return;
@@ -188,7 +189,7 @@ async function toggleRec() {
     recording = false;
     changed();
     try {
-      const id = await finishToolRecording('Afinador');
+      const id = await finishToolRecording('Melodify');
       if (id) openTuneAudio(id);
       else toast('Gravação curta demais');
     } catch (e) {
@@ -216,6 +217,9 @@ export function TuneWindow() {
   }, []);
   const items = poolItems(s.project);
   const cur = doc ? poolItem(doc.id) : undefined;
+  // canal de áudio do rack deste áudio (aba de configurações)
+  const curCh = cur?.channel ? s.project.channels.find((c) => c.id === cur.channel) : undefined;
+  const [gear, setGear] = useState(false);
   // o áudio foi trocado por fora (restaurado, editado em outro lugar): recarrega
   useEffect(() => {
     if (doc && cur && cur.path !== doc.path) openTuneAudio(doc.id);
@@ -239,7 +243,7 @@ export function TuneWindow() {
       const ids = await importToPool(files);
       openTuneAudio(ids[0]);
     } catch (err) {
-      toast(`Afinador: ${(err as Error).message}`);
+      toast(`Melodify: ${(err as Error).message}`);
     }
   };
 
@@ -260,7 +264,7 @@ export function TuneWindow() {
   );
 
   return (
-    <Win id="tune" title="Afinador" icon="tune" tools={tools} minW={640} minH={340}>
+    <Win id="tune" title="Melodify" icon="tune" tools={tools} minW={640} minH={340}>
       <div
         class={`tool ${recording ? 'recording' : ''}`}
         onDragOver={(e) => acceptsAudio(e) && (e.preventDefault(), (e.currentTarget as HTMLElement).classList.add('dropping'))}
@@ -274,7 +278,7 @@ export function TuneWindow() {
             const paths = await droppedAudio(e);
             if (paths.length) openTuneAudio(addToPool(paths[0]));
           } catch (err) {
-            toast(`Afinador: ${(err as Error).message}`);
+            toast(`Melodify: ${(err as Error).message}`);
           }
         }}
       >
@@ -374,9 +378,16 @@ export function TuneWindow() {
             <Icon name="playlist" size={13} /> Enviar para a playlist
           </button>
           <span class="tool-info">{cur ? `${cur.name}${cur.variantOf ? ' · variante' : ''}${cur.path !== cur.original ? ' · editado' : ''}` : ''}</span>
+          <button class={`gear-btn ${gear ? 'on' : ''}`} disabled={!curCh} onClick={() => setGear(!gear)} data-hint="Configurações do áudio: volume, pan, insert do mixer e efeitos (o mesmo canal do rack)">
+            <Icon name="settings" size={13} />
+          </button>
         </div>
-        {recording ? (
-          <LiveCapture label="Gravando no Afinador" />
+        {gear && curCh ? (
+          <div class="tool-gear">
+            <ChannelMix ch={curCh} />
+          </div>
+        ) : recording ? (
+          <LiveCapture label="Gravando no Melodify" />
         ) : loading ? (
           <div class="tool-empty">{loading}</div>
         ) : !doc ? (

@@ -75,7 +75,7 @@ function onKeyDown(e: KeyboardEvent) {
   }
   if (e.key === ' ') {
     e.preventDefault();
-    // com o Afinador ou o Stitcher em foco, o Espaço toca o áudio deles (não a música)
+    // com o Melodify ou o Stitcher em foco, o Espaço toca o áudio deles (não a música)
     const top = (Object.entries(state.windows) as [string, { open: boolean; z: number }][]).filter(([, w]) => w.open).sort((x, y) => y[1].z - x[1].z)[0]?.[0];
     if (top === 'tune') return toggleTunePreview();
     if (top === 'stitch') return toggleStitchPreview();

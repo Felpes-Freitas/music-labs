@@ -2,7 +2,7 @@
 // mixer com inserts, efeitos, roteamento e sidechain. Roda igual no
 // AudioWorklet do navegador e no Node (render offline e análise via MCP).
 
-import type { Channel, Insert, Project } from './model.js';
+import type { Channel, Clip, Insert, Project } from './model.js';
 import { PPQ, STEP, autoValue, isPatternClip, patternLength, songLength } from './model.js';
 import { Instrument, SampleBank, SampleData, SampleSet, createInstrument } from './instruments.js';
 import { Fx, FxContext, createEffect } from './effects.js';
@@ -167,6 +167,38 @@ export class Engine {
     this.order = processingOrder(p.mixer);
     if (this.patternId && !p.patterns.some((x) => x.id === this.patternId)) this.patternId = p.patterns[0]?.id ?? null;
     if (!this.patternId) this.patternId = p.patterns[0]?.id ?? null;
+  }
+
+  /** Clipes de áudio do canal que tocam em algum trecho do bloco. */
+  private audioClipsIn(p: Project, chId: string, segs: { f0: number; f1: number; t0: number }[], tps: number) {
+    const out: Clip[] = [];
+    for (const c of p.clips) {
+      if (c.kind !== 'audio' || c.channel !== chId || c.muted || !c.sample || p.tracks[c.track]?.mute) continue;
+      if (segs.some((sg) => sg.t0 < c.pos + c.len && sg.t0 + (sg.f1 - sg.f0) * tps > c.pos)) out.push(c);
+    }
+    return out;
+  }
+  /** Soma um clipe de áudio nos buffers (com o ganho do clipe), trecho a trecho do bloco. */
+  private mixClip(p: Project, c: Clip, L: Float32Array, R: Float32Array, segs: { f0: number; f1: number; t0: number }[], tps: number) {
+    if (c.muted || p.tracks[c.track]?.mute || !c.sample) return;
+    const data = this.samples.get(c.sample);
+    if (!data) return;
+    const ch0 = data.ch[0], ch1 = data.ch[1] ?? ch0;
+    const len = ch0.length;
+    const g = c.gain ?? 1;
+    const secPerTick = 60 / (p.bpm * PPQ);
+    for (const sg of segs) {
+      for (let f = sg.f0; f < sg.f1; f++) {
+        const tk = sg.t0 + (f - sg.f0) * tps;
+        if (tk < c.pos || tk >= c.pos + c.len) continue;
+        const pos = ((tk - c.pos) * secPerTick + (c.startSec ?? 0)) * data.sr;
+        const i = pos | 0;
+        if (i < 0 || i >= len - 1) continue;
+        const fr = pos - i;
+        L[f] += (ch0[i] + (ch0[i + 1] - ch0[i]) * fr) * g;
+        R[f] += (ch1[i] + (ch1[i + 1] - ch1[i]) * fr) * g;
+      }
+    }
   }
 
   /** Número do play atual: a gravação só acredita no status do play que ela mesma iniciou. */
@@ -482,9 +514,12 @@ export class Engine {
       const stretch = ch.type === 'sampler' && (ch.pitchMode ?? 'stretch') === 'stretch' && Math.abs(fine) > 0.5;
       // Sem notas e sem voz soando: só continua se houver cauda de efeito por terminar.
       this.applyChannelAuto(ch, st);
-      if (!evs && !st.inst.busy && (!(fxOn || stretch) || st.quiet > this.sr * 4)) continue;
+      // canal de áudio: o som são os clipes dele na playlist que caem neste bloco
+      const clipsIn = ch.type === 'audio' && this.playing && this.mode === 'song' ? this.audioClipsIn(p, ch.id, segs, tps) : null;
+      if (!evs && !clipsIn?.length && !st.inst.busy && (!(fxOn || stretch) || st.quiet > this.sr * 4)) continue;
       st.L.fill(0, 0, n);
       st.R.fill(0, 0, n);
+      if (clipsIn) for (const c of clipsIn) this.mixClip(p, c, st.L, st.R, segs, tps);
       let pos = 0;
       if (evs) {
         evs.sort((x, y) => x.frame - y.frame);
@@ -550,29 +585,12 @@ export class Engine {
         else this.lit.set(k, left - n);
       }
 
-    // Clipes de áudio da playlist
+    // Clipes de áudio sem canal (projetos antigos, antes da migração): direto no insert
     if (this.playing && this.mode === 'song')
       for (const c of p.clips) {
-        if (c.kind !== 'audio' || c.muted || p.tracks[c.track]?.mute || !c.sample) continue;
-        const data = this.samples.get(c.sample);
-        if (!data) continue;
+        if (c.kind !== 'audio' || (c.channel && p.channels.some((x) => x.id === c.channel))) continue;
         const bus = this.inserts[c.insert ?? 0] ?? this.inserts[0];
-        const ch0 = data.ch[0], ch1 = data.ch[1] ?? ch0;
-        const len = ch0.length;
-        const g = c.gain ?? 1;
-        const secPerTick = 60 / (p.bpm * PPQ);
-        for (const sg of segs) {
-          for (let f = sg.f0; f < sg.f1; f++) {
-            const tk = sg.t0 + (f - sg.f0) * tps;
-            if (tk < c.pos || tk >= c.pos + c.len) continue;
-            const pos = ((tk - c.pos) * secPerTick + (c.startSec ?? 0)) * data.sr;
-            const i = pos | 0;
-            if (i < 0 || i >= len - 1) continue;
-            const fr = pos - i;
-            bus.L[f] += (ch0[i] + (ch0[i + 1] - ch0[i]) * fr) * g;
-            bus.R[f] += (ch1[i] + (ch1[i + 1] - ch1[i]) * fr) * g;
-          }
-        }
+        this.mixClip(p, c, bus.L, bus.R, segs, tps);
       }
 
     // Mixer

@@ -31,7 +31,7 @@ export function SelectionMenu(p: { x: number; y: number; track: number; sel: { s
   }, []);
   const proj = state.project;
   const { start, end } = p.sel;
-  const track = Math.min(p.track, proj.tracks.length - 1);
+  const track = Math.max(0, p.track); // tracks infinitas: a clicada passa a existir se for usada
 
   /** Depois de criar o canal: pattern novo só com ele, ocupando a área. */
   const placeNew = (channelId: string, name: string) => {
@@ -84,7 +84,7 @@ export function SelectionMenu(p: { x: number; y: number; track: number; sel: { s
         }),
         { sep: true, label: '' },
         { label: 'Amp de guitarra', hint: 'O áudio vai para esta track, no começo da área', run: () => openTool('amp', 'Amp de guitarra') },
-        { label: 'Afinador', hint: 'O áudio vai para esta track, no começo da área', run: () => openTool('tune', 'Afinador') },
+        { label: 'Melodify', hint: 'O áudio vai para esta track, no começo da área', run: () => openTool('tune', 'Melodify') },
         { label: 'Stitcher', hint: 'O áudio vai para esta track, no começo da área', run: () => openTool('stitch', 'Stitcher') },
       ],
     },

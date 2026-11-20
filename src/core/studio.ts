@@ -501,7 +501,7 @@ export function removeAudio(p: Project, a: { audio: string }): ActionResult {
 }
 
 /**
- * Liga/desliga as edições de um áudio (Afinador): desligar volta ao original guardando a
+ * Liga/desliga as edições de um áudio (Melodify): desligar volta ao original guardando a
  * versão editada; ligar volta à editada. Os clipes da playlist acompanham.
  */
 export function toggleAudioEdits(p: Project, a: { audio: string; on?: boolean }): ActionResult {
@@ -720,4 +720,34 @@ export function applyTempo(p: Project, a: { bpm: number; clip?: string; firstBea
     }
   }
   return { ops, result: { bpm, from: p.bpm, audioClipsResized: ops.length - 1 - moved.length, aligned: moved } };
+}
+
+// ---------------------------------------------------------------- canal entre patterns
+
+/**
+ * Manda um canal para outro pattern: as notas dele saem do pattern de origem e vão para o
+ * destino (somadas às que já houver lá), e o canal passa a ser do grupo do destino.
+ * Sem `to`, cria um pattern novo (nome `newName` ou o do canal).
+ */
+export function moveChannelToPattern(p: Project, a: { channel: string; from: string; to?: string; newName?: string }): ActionResult {
+  const ch = channelRef(p, a.channel);
+  const from = patternRef(p, a.from);
+  const ops: Op[] = [];
+  let to: Pattern;
+  if (a.to) to = patternRef(p, a.to);
+  else {
+    to = { id: uid('p'), name: a.newName ?? ch.name, color: color(p.patterns.length), length: from.length, notes: {}, channels: [] };
+    ops.push(ins(['patterns'], to));
+  }
+  if (to.id === from.id) return { ops: [], result: { pattern: to.id } };
+  const moving = from.notes[ch.id] ?? [];
+  if (moving.length) {
+    const target = [...(to.notes[ch.id] ?? []), ...moving.map((n) => ({ ...n, id: uid('n') }))];
+    ops.push(rem(['patterns', from.id, 'notes', ch.id]));
+    ops.push(set(['patterns', to.id, 'notes', ch.id], target));
+  }
+  if (from.channels?.includes(ch.id)) ops.push(set(['patterns', from.id, 'channels'], from.channels.filter((x) => x !== ch.id)));
+  const toCh = to.channels ?? [];
+  if (!toCh.includes(ch.id)) ops.push(set(['patterns', to.id, 'channels'], [...toCh, ch.id]));
+  return { ops, result: { pattern: to.id, name: to.name, notes: moving.length } };
 }

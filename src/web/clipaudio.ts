@@ -1,4 +1,4 @@
-// Utilidades das ferramentas de áudio (Afinador, Stitcher): ler o áudio de um
+// Utilidades das ferramentas de áudio (Melodify, Stitcher): ler o áudio de um
 // clipe e salvar um resultado como clipe novo na playlist.
 
 import { decodeWav, encodeWav } from '../core/wav';
