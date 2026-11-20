@@ -508,9 +508,11 @@ Z…M/Q…P teclado musical, -/= oitava.
 
 - `data-hint` (ou `setHint` de canvas) alimenta a barra de dicas (`HintBar`) ou, com
   Aparência → **Dicas em balão** (`prefs.tooltips` em theme.ts), o `HintTooltip`
-  (Toolbar.tsx, montado em main.tsx): balão acima do mouse depois de 450 ms parado,
-  some ao clicar/rolar. No modo balão a barra fica: master/swing/visualizador à esquerda,
-  transporte no centro, pattern/desfazer/salvar à direita (`.toolbar.tips .tb-side`).
+  (Toolbar.tsx, montado em main.tsx): balão acima do mouse depois de 750 ms parado,
+  some ao clicar/rolar. Sobre a playlist (`.pl-canvas`, onde o mouse fica quase sempre) a
+  dica fica parada no canto inferior direito (`.hint-corner`), sem seguir o mouse. No modo
+  balão a barra fica: transporte + master/swing/visualizador no centro (mesma ordem),
+  pattern/desfazer/salvar à direita (`.toolbar.tips .tb-side`).
 - Arquivo → Abrir (Ctrl+O) e Salvar como usam o explorador de arquivos do sistema no app
   desktop (`mlabsWindow.openDialog/saveDialog` → `dialog:open/save` em main.cjs); no
   navegador, `<input type=file>` → `POST /api/import` (cópia em Importados) → `/api/open`.
