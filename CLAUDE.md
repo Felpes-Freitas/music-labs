@@ -511,6 +511,9 @@ Z…M/Q…P teclado musical, -/= oitava.
   (Toolbar.tsx, montado em main.tsx): balão acima do mouse depois de 450 ms parado,
   some ao clicar/rolar. No modo balão a barra fica: master/swing/visualizador à esquerda,
   transporte no centro, pattern/desfazer/salvar à direita (`.toolbar.tips .tb-side`).
+- Arquivo → Abrir (Ctrl+O) e Salvar como usam o explorador de arquivos do sistema no app
+  desktop (`mlabsWindow.openDialog/saveDialog` → `dialog:open/save` em main.cjs); no
+  navegador, `<input type=file>` → `POST /api/import` (cópia em Importados) → `/api/open`.
 - Navegador recolhido é lembrado (`browser.open` nas prefs, gravado em `emit()`).
 
 ### Convenções de código da interface

@@ -1,6 +1,6 @@
 // Music Labs como app desktop: janela sem borda nativa (a barra de título é
 // desenhada pela interface), servidor local iniciado com o Node do Electron.
-const { app, BrowserWindow, ipcMain, shell, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, dialog } = require('electron');
 const path = require('node:path');
 const http = require('node:http');
 
@@ -144,6 +144,17 @@ ipcMain.handle('app:relaunch', () => {
       app.exit(0);
     });
   return true;
+});
+// Explorador de arquivos do sistema: abrir projeto (.mlstudio / .flp) e "Salvar como".
+ipcMain.handle('dialog:open', async (e, o = {}) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  const r = await dialog.showOpenDialog(w, { title: o.title, defaultPath: o.defaultPath, filters: o.filters, properties: ['openFile'] });
+  return r.canceled ? null : r.filePaths[0] ?? null;
+});
+ipcMain.handle('dialog:save', async (e, o = {}) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  const r = await dialog.showSaveDialog(w, { title: o.title, defaultPath: o.defaultPath, filters: o.filters, properties: ['showOverwriteConfirmation', 'createDirectory'] });
+  return r.canceled ? null : r.filePath ?? null;
 });
 ipcMain.handle('win:isMax', (e) => BrowserWindow.fromWebContents(e.sender)?.isMaximized() ?? false);
 

@@ -11,4 +11,7 @@ contextBridge.exposeInMainWorld('mlabsWindow', {
   /** Arquivo de projeto passado ao abrir o app (duplo clique no gerenciador de arquivos). */
   pendingFile: () => ipcRenderer.invoke('app:pendingFile'),
   onOpenFile: (cb) => ipcRenderer.on('app:openFile', (_e, path) => cb(path)),
+  /** Explorador de arquivos do sistema: devolve o caminho escolhido (ou null). */
+  openDialog: (o) => ipcRenderer.invoke('dialog:open', o),
+  saveDialog: (o) => ipcRenderer.invoke('dialog:save', o),
 });
