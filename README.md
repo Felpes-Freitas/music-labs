@@ -111,6 +111,8 @@ git push --follow-tags
   logo abaixo do original). Espaço toca o áudio do Melodify quando ele está em foco.
   O botão **BPM** detecta o andamento do áudio (ex.: uma gravação sua de guitarra) e
   oferece colocar o projeto nesse BPM, com o áudio alinhado à grade.
+- **Dicas**: a barra do topo explica o que está sob o mouse; em Configurações → Aparência
+  dá para trocar por balões perto do mouse (aí os controles do topo ficam centralizados).
 - **Tap tempo**: o botão TAP ao lado do BPM. Clique no ritmo da música e o BPM segue
   os cliques.
 - **Stitcher** (F12): em cima, a onda do resultado, com cada pedaço na cor do áudio de

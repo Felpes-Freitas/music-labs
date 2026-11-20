@@ -8,7 +8,7 @@ import './style.css';
 import './reamp';
 import { useApp, emit, state, togglePlay, setMode, undo, redo, openWindow, cycleWindows, fitWindows, api, toast, onLive } from './state';
 import { audio } from './audio';
-import { TitleBar, Toolbar } from './ui/Toolbar';
+import { TitleBar, Toolbar, HintTooltip } from './ui/Toolbar';
 import { ChannelRack } from './ui/ChannelRack';
 import { PianoRoll } from './ui/PianoRoll';
 import { Playlist } from './ui/Playlist';
@@ -260,6 +260,7 @@ function App() {
     <div class="app">
       <TitleBar />
       <Toolbar />
+      <HintTooltip />
       <div class="main">
         <Browser />
         <div

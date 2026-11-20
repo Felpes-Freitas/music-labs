@@ -2,7 +2,7 @@
 
 import { useEffect, useReducer, useRef, useState } from 'preact/hooks';
 import { Icon } from './icons';
-import { ACCENTS, themes, prefs as looks, setTheme, setAccent, setAltDrag, accentColor, onTheme, inkFor, type ThemeId } from '../theme';
+import { ACCENTS, themes, prefs as looks, setTheme, setAccent, setAltDrag, setTooltips, accentColor, onTheme, inkFor, type ThemeId } from '../theme';
 import { getPref, setPref } from '../prefs';
 import { audio, type RecChannels } from '../audio';
 import { api, emit, toast } from '../state';
@@ -136,6 +136,16 @@ function Appearance() {
           <span>
             <b>Alt + arrastar move janelas</b>
             <small>Segurando Alt, qualquer ponto da janela serve para arrastá-la; com o botão direito, redimensiona.</small>
+          </span>
+        </label>
+      </section>
+      <section class="set-group">
+        <h3>Dicas</h3>
+        <label class="set-check">
+          <input type="checkbox" checked={looks.tooltips} onChange={() => (setTooltips(!looks.tooltips), emit())} />
+          <span>
+            <b>Dicas em balão, perto do mouse</b>
+            <small>Tira a barra de dicas do topo: a explicação de cada botão aparece num balão logo acima do mouse, e os controles do topo ficam centralizados.</small>
           </span>
         </label>
       </section>
