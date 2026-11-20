@@ -464,7 +464,7 @@ export function Playlist() {
       const t = trackAt(y);
       const tr = p.tracks[t];
       if (!tr) return;
-      if (e.button === 2 || e.detail === 2) {
+      if (e.button === 2) {
         askText({ title: 'Renomear track', label: 'Nome', value: tr.name, ok: 'Renomear' }).then((n) => n && edit([set(['tracks', tr.id, 'name'], n)]));
       } else edit([set(['tracks', tr.id, 'mute'], !tr.mute)]);
       return;
@@ -479,16 +479,6 @@ export function Playlist() {
         setMenu({ x: e.clientX, y: e.clientY, track: Math.max(0, Math.min(p.tracks.length - 1, trackAt(y))) });
         return;
       }
-    }
-    // automação: duplo clique ou Shift + botão direito abre na Central de Automações
-    if (h && h.c.kind === 'auto' && !h.edge && (e.detail === 2 || (e.button === 2 && e.shiftKey))) {
-      // o primeiro clique do duplo clique pôs um ponto: tira
-      const la = lastAutoAdd.current;
-      if (e.detail === 2 && la && la.id === h.c.id && performance.now() - la.at < 600) edit([set(['clips', la.id, 'points'], la.prev)]);
-      lastAutoAdd.current = null;
-      drag.current = null;
-      openAutoCenter(h.c.id);
-      return;
     }
     // edição de pontos no corpo de um clipe de automação
     if (h && h.c.kind === 'auto' && !h.edge && tool === 'draw') {
@@ -561,14 +551,6 @@ export function Playlist() {
       else if (h.c.kind === 'audio' && h.c.sample) {
         const it = (p.audios ?? []).find((a) => a.path === h.c.sample);
         setBrush({ sample: h.c.sample, startSec: h.c.startSec ?? 0, len: h.c.len, gain: h.c.gain, insert: h.c.insert, name: it?.name ?? h.c.sample.split(/[\\/]/).pop()! });
-      }
-      if (e.detail === 2 && h.c.kind === 'audio') {
-        openTune(h.c.id);
-        return;
-      }
-      if (e.detail === 2 && isPatternClip(h.c)) {
-        openWindow('rack');
-        return;
       }
       // seleção: Ctrl alterna, Shift soma, clique simples seleciona só ele (ou mantém o grupo para arrastar)
       const cur = pickedRef.current;
@@ -826,14 +808,31 @@ export function Playlist() {
           onPointerMove={onMove as any}
           onPointerLeave={() => void (hover.current = null)}
           onDblClick={(e) => {
-            // duplo clique num clipe de automação: abre na Central (o 1º clique pode ter posto um ponto: tira)
+            // duplo clique abre o que o clipe é: pattern → rack com ele; automação → Central;
+            // áudio → Afinador (até existir o editor de áudio, ver ROADMAP); nome da track → renomear
             const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-            const h = hit(e.clientX - r.left, e.clientY - r.top);
-            if (!h || h.c.kind !== 'auto') return;
-            const la = lastAutoAdd.current;
-            if (la && la.id === h.c.id && performance.now() - la.at < 800) edit([set(['clips', la.id, 'points'], la.prev)]);
-            lastAutoAdd.current = null;
-            openAutoCenter(h.c.id);
+            const x = e.clientX - r.left, y = e.clientY - r.top;
+            if (y < RULER) return;
+            if (x < HEADW) {
+              const tr = state.project.tracks[trackAt(y)];
+              // os dois cliques mutaram e desmutaram: só renomeia
+              if (tr) askText({ title: 'Renomear track', label: 'Nome', value: tr.name, ok: 'Renomear' }).then((n) => n && edit([set(['tracks', tr.id, 'name'], n)]));
+              return;
+            }
+            const h = hit(x, y);
+            if (!h) return;
+            drag.current = null;
+            if (h.c.kind === 'auto') {
+              // o 1º clique pode ter posto um ponto: tira
+              const la = lastAutoAdd.current;
+              if (la && la.id === h.c.id && performance.now() - la.at < 800) edit([set(['clips', la.id, 'points'], la.prev)]);
+              lastAutoAdd.current = null;
+              openAutoCenter(h.c.id);
+            } else if (h.c.kind === 'audio') openTune(h.c.id);
+            else {
+              selectPattern(h.c.patternId);
+              openWindow('rack');
+            }
           }}
           onPointerUp={onUp as any}
           onWheel={onWheel as any}

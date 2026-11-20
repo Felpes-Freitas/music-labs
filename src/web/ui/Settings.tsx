@@ -333,7 +333,8 @@ const KEYS: [string, string][] = [
   ['- / =', 'Oitava abaixo / acima'],
   ['Botão do meio no knob', 'Volta ao valor padrão'],
   ['Botão direito no knob ou no BPM', 'Criar automação (abre a Central de Automações)'],
-  ['Duplo clique (ou Shift + botão direito) num clipe de automação', 'Abrir na Central de Automações'],
+  ['Duplo clique num clipe da playlist', 'Abre: pattern → rack; automação → Central de Automações; áudio → Afinador'],
+  ['Duplo clique no nome de uma track', 'Renomear'],
   ['Alt + arrastar', 'Mover janela (se ativado em Aparência)'],
 ];
 
