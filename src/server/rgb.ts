@@ -350,10 +350,16 @@ async function ensure() {
         // direto é o UpdateMode (é o que a janela do OpenRGB faz) — sem isso alguns teclados
         // (ex.: SteelSeries Apex) aceitam as cores no OpenRGB mas não mudam de verdade
         const direct = directMode(k);
+        // passa pelo modo de hardware antes: ao sair dele, o OpenRGB manda de novo o comando que
+        // abre a sessão de controle direto (ex.: 0x4B nos SteelSeries Apex com firmware novo);
+        // sem isso o teclado mostra as cores num lampejo e volta ao perfil próprio
+        const hw = hardwareMode(k);
+        if (hw >= 0 && direct >= 0) c.updateMode(k.index, hw, k.modes[hw].raw);
         if (direct >= 0) c.updateMode(k.index, direct, k.modes[direct].raw);
       }
       client = c;
       active = true;
+      startKeepalive();
       status = { state: 'on', devices: keyboards.map((k) => k.name) };
     } catch (e) {
       c.close();
@@ -411,11 +417,31 @@ export function sceneColors(kb: { leds: string[]; byKey?: Map<string, number[]> 
   return colors;
 }
 
+let lastPush = 0;
 async function push() {
   if (!cfg.enabled) return;
   if (!(await ensure())) return;
   const c = client!;
   for (const kb of keyboards) c.updateLeds(kb.index, sceneColors(kb, scene, cfg.brightness));
+  lastPush = Date.now();
+}
+
+/**
+ * Enquanto o app controla o teclado, reenvia o quadro atual a cada ~0,5 s (como os apps de
+ * iluminação fazem): vários teclados voltam ao perfil próprio se o computador para de mandar.
+ */
+let keepalive: NodeJS.Timeout | null = null;
+function startKeepalive() {
+  if (keepalive) return;
+  keepalive = setInterval(() => {
+    if (!active || !client?.connected || !cfg.enabled) return;
+    if (Date.now() - lastPush >= 450) void push();
+  }, 500);
+  keepalive.unref?.();
+}
+function stopKeepalive() {
+  if (keepalive) clearInterval(keepalive);
+  keepalive = null;
 }
 
 /** Ao fechar o app: devolve os teclados e encerra o OpenRGB que o app iniciou. */
@@ -428,6 +454,7 @@ export async function rgbShutdown() {
 
 /** Devolve cada teclado ao modo e às cores de antes e solta a conexão. */
 export async function rgbRelease() {
+  stopKeepalive();
   if (pushTimer) clearTimeout(pushTimer);
   pushTimer = null;
   if (connecting) await connecting.catch(() => {});

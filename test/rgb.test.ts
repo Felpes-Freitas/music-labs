@@ -115,7 +115,8 @@ test('pinta as teclas da cena e, ao soltar, devolve cores e modo originais', asy
     assert.deepEqual(rgbStatus().devices, ['Apex de teste'], 'só teclados');
     const custom = srv.got.find((p) => p.id === 1100);
     assert.equal(custom?.dev, 1, 'modo direto no teclado (não no mouse)');
-    // e o UpdateMode do modo "Direct" (é ele que faz o teclado entrar no controle direto)
+    // e o UpdateMode do modo "Direct" (é ele que faz o teclado entrar no controle direto;
+    // este dispositivo de teste não tem modo de hardware, então vai direto)
     const um0 = srv.got.find((p) => p.id === 1101);
     assert.equal(um0?.data.readInt32LE(4), 0, 'UpdateMode com o modo Direct (índice 0)');
     assert.ok(um0!.data.subarray(8).equals(MODES[0]));
@@ -175,6 +176,13 @@ test('teclado no modo direto com modo "Onboard": ao soltar, volta à iluminaçã
     await rgbConfigure({ enabled: true, host: '127.0.0.1', port: srv.port, brightness: 1 });
     rgbScene({ keys: { q: 0xff0000 }, base: 0, pressed: [] });
     await until(() => srv.got.some((p) => p.id === 1050));
+    // ao assumir: Onboard e depois Direct (reabre a sessão de controle direto do teclado)
+    const modes = srv.got.filter((p) => p.id === 1101).map((p) => p.data.readInt32LE(4));
+    assert.deepEqual(modes.slice(0, 2), [1, 0]);
+    // mantém viva: reenvia o quadro sozinho
+    const frames = srv.got.filter((p) => p.id === 1050).length;
+    await wait(1200);
+    assert.ok(srv.got.filter((p) => p.id === 1050).length >= frames + 2, 'reenvia o quadro periodicamente');
     const n = srv.got.length;
     await rgbRelease();
     await wait(50);
