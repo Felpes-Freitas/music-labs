@@ -266,10 +266,12 @@ interface Prefs {
   theme: ThemeId;
   accent: string | null; // null = destaque padrão do tema
   altDrag: boolean;
+  /** Dicas em tooltip perto do mouse (sem a barra de dicas no topo). */
+  tooltips: boolean;
 }
 function load(): Prefs {
   const p = getPref<Partial<Prefs>>('aparencia', {});
-  return { theme: THEMES.some((t) => t.id === p.theme) ? p.theme! : 'grafite', accent: typeof p.accent === 'string' ? p.accent : null, altDrag: p.altDrag !== false };
+  return { theme: THEMES.some((t) => t.id === p.theme) ? p.theme! : 'grafite', accent: typeof p.accent === 'string' ? p.accent : null, altDrag: p.altDrag !== false, tooltips: p.tooltips === true };
 }
 export const prefs: Prefs = load();
 const save = () => setPref('aparencia', { ...prefs });
@@ -298,6 +300,10 @@ export function setAccent(color: string | null) {
 }
 export function setAltDrag(on: boolean) {
   prefs.altDrag = on;
+  save();
+}
+export function setTooltips(on: boolean) {
+  prefs.tooltips = on;
   save();
 }
 

@@ -850,3 +850,7 @@ option, optgroup { background-color: var(--pop); color: var(--text); }
 .pr-tools .rack-eye { background: none; border: none; width: 24px; height: 22px; padding: 0; display: inline-flex; align-items: center; justify-content: center; color: var(--dim2); }
 .pr-tools .rack-eye:hover { color: var(--text); }
 .pr-tools .rack-eye.on { color: var(--acc); }
+/* dicas em balão (Aparência → Dicas): sem a barra de dicas, o transporte fica no centro */
+.toolbar.tips .tb-side { flex: 1 1 0; display: flex; align-items: center; min-width: 0; }
+.toolbar.tips .tb-side.right { justify-content: flex-end; }
+.hint-tip { position: fixed; z-index: 100000; pointer-events: none; max-width: 340px; padding: 5px 9px; border-radius: 6px; background: var(--pop); color: var(--text); border: 1px solid var(--line2); box-shadow: 0 6px 18px var(--shadow); font-size: 11px; line-height: 1.35; white-space: normal; }

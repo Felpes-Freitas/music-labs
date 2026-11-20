@@ -504,6 +504,15 @@ Z…M/Q…P teclado musical, -/= oitava.
   toggleEdits, sendToPlaylist, startToolRecording/finishToolRecording (corta silêncio),
   importToPool. `clipaudio.ts`: loadAudio (cache), uploadFiles, makeRoomBelow, placeAudios.
 
+### Dicas e barra de cima
+
+- `data-hint` (ou `setHint` de canvas) alimenta a barra de dicas (`HintBar`) ou, com
+  Aparência → **Dicas em balão** (`prefs.tooltips` em theme.ts), o `HintTooltip`
+  (Toolbar.tsx, montado em main.tsx): balão acima do mouse depois de 450 ms parado,
+  some ao clicar/rolar. No modo balão a barra fica: master/swing/visualizador à esquerda,
+  transporte no centro, pattern/desfazer/salvar à direita (`.toolbar.tips .tb-side`).
+- Navegador recolhido é lembrado (`browser.open` nas prefs, gravado em `emit()`).
+
 ### Convenções de código da interface
 - **Preact 11 não põe "px" automático** em estilos numéricos: use strings (`'12px'`).
 - `useCanvas(draw, deps, overlay)`: canvas em duas camadas (conteúdo em cache + overlay

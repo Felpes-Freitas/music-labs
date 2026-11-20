@@ -13,7 +13,7 @@ import { Knob, IconBtn, dbFmt, ContextMenu } from './widgets';
 import { Icon } from './icons';
 import { askConfirm, askText } from './Dialog';
 import { openSettings } from './Settings';
-import { ui, accent } from '../theme';
+import { ui, accent, prefs as looks } from '../theme';
 
 // ---------------------------------------------------------------- ações de arquivo
 
@@ -208,6 +208,56 @@ function MenuBar() {
 function HintBar() {
   const h = useHint();
   return <div class="hintbar">{h || ' '}</div>;
+}
+
+const mouse = { x: 0, y: 0 };
+/** Dica em balão logo acima do mouse (Configurações → Aparência → Dicas em balão). */
+export function HintTooltip() {
+  useApp();
+  const h = useHint();
+  const ref = useRef<HTMLDivElement>(null);
+  const [show, setShow] = useState(false);
+  const place = () => {
+    const el = ref.current;
+    if (!el) return;
+    const w = el.offsetWidth, hh = el.offsetHeight;
+    let top = mouse.y - hh - 14;
+    if (top < 4) top = mouse.y + 22; // sem espaço em cima: embaixo do mouse
+    el.style.left = `${Math.max(4, Math.min(window.innerWidth - w - 4, mouse.x - w / 2))}px`;
+    el.style.top = `${top}px`;
+  };
+  useEffect(() => {
+    const mv = (e: PointerEvent) => {
+      mouse.x = e.clientX;
+      mouse.y = e.clientY;
+      place();
+    };
+    const down = () => setShow(false);
+    window.addEventListener('pointermove', mv);
+    window.addEventListener('pointerdown', down);
+    window.addEventListener('wheel', down);
+    return () => {
+      window.removeEventListener('pointermove', mv);
+      window.removeEventListener('pointerdown', down);
+      window.removeEventListener('wheel', down);
+    };
+  }, []);
+  // aparece depois de um instante parado sobre a mesma coisa
+  useEffect(() => {
+    setShow(false);
+    if (!h || !looks.tooltips) return;
+    const t = setTimeout(() => setShow(true), 450);
+    return () => clearTimeout(t);
+  }, [h]);
+  useEffect(() => {
+    if (show) place();
+  }, [show, h]);
+  if (!looks.tooltips || !show || !h) return null;
+  return (
+    <div ref={ref} class="hint-tip">
+      {h}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------- transporte
@@ -464,9 +514,56 @@ export function Toolbar() {
   const s = useApp();
   const p = s.project;
   const playing = audio.status.playing;
+  const tips = looks.tooltips;
+  const mix = (
+    <div class="tb-panel">
+      <Knob
+        size={26}
+        value={p.mixer[0]?.volume ?? 0.8}
+        min={0}
+        max={1.25}
+        def={0.8}
+        label="Master"
+        auto={{ path: ['mixer', 0, 'volume'], label: 'Master · volume' }}
+        format={dbFmt}
+        onInput={(v) => previewEdit([set(['mixer', 0, 'volume'], v)])}
+        onCommit={(v) => edit([set(['mixer', 0, 'volume'], v)])}
+        title="Volume do master"
+      />
+      <Knob
+        size={26}
+        value={p.swing}
+        min={0}
+        max={1}
+        def={0}
+        label="Swing"
+        format={(v) => `${Math.round(v * 100)}%`}
+        onInput={(v) => previewEdit([set(['swing'], v)])}
+        onCommit={(v) => edit([set(['swing'], v)])}
+        title="Swing global (atrasa os steps pares)"
+      />
+      <Scope />
+    </div>
+  );
+  const pats = (
+    <div class="tb-panel">
+      <div class="patsel" data-hint="Pattern atual (o rack e o piano roll editam este pattern)">
+        <select value={s.patternId ?? ''} onChange={(e) => selectPattern((e.target as HTMLSelectElement).value)}>
+          {p.patterns.map((pt) => (
+            <option value={pt.id}>{pt.name}</option>
+          ))}
+        </select>
+        <IconBtn icon="plus" hint="Novo pattern (F4)" onClick={() => { const r = act(A.addPattern, {}); if (r) selectPattern(r.id); }} />
+        <IconBtn icon="clone" hint="Clonar pattern" onClick={() => { const r = s.patternId && act(A.duplicatePattern, { pattern: s.patternId }); if (r) selectPattern(r.id); }} />
+      </div>
+      <IconBtn icon="undo" hint="Desfazer (Ctrl+Z)" onClick={undo} />
+      <IconBtn icon="redo" hint="Refazer (Ctrl+Y)" onClick={redo} />
+      <IconBtn icon="save" hint={`Salvar (Ctrl+S)${s.dirty ? ' · há alterações não salvas' : ''}`} class={s.dirty ? 'dirty' : ''} onClick={() => saveProject()} />
+    </div>
+  );
   return (
-    <div class="toolbar">
-      <HintBar />
+    <div class={`toolbar ${tips ? 'tips' : ''}`}>
+      {tips ? <div class="tb-side">{mix}</div> : <HintBar />}
       <div class="tb-panel transport">
         <div class="modepill" data-hint="Modo: pattern toca só o pattern atual; song toca a playlist (L)">
           <button class={s.mode === 'pattern' ? 'on pat' : ''} onClick={() => setMode('pattern')}>
@@ -505,48 +602,8 @@ export function Toolbar() {
           <span class="lcd-cap">B:S:T</span>
         </div>
       </div>
-      <div class="tb-panel">
-        <Knob
-          size={26}
-          value={p.mixer[0]?.volume ?? 0.8}
-          min={0}
-          max={1.25}
-          def={0.8}
-          label="Master"
-          auto={{ path: ['mixer', 0, 'volume'], label: 'Master · volume' }}
-          format={dbFmt}
-          onInput={(v) => previewEdit([set(['mixer', 0, 'volume'], v)])}
-          onCommit={(v) => edit([set(['mixer', 0, 'volume'], v)])}
-          title="Volume do master"
-        />
-        <Knob
-          size={26}
-          value={p.swing}
-          min={0}
-          max={1}
-          def={0}
-          label="Swing"
-          format={(v) => `${Math.round(v * 100)}%`}
-          onInput={(v) => previewEdit([set(['swing'], v)])}
-          onCommit={(v) => edit([set(['swing'], v)])}
-          title="Swing global (atrasa os steps pares)"
-        />
-        <Scope />
-      </div>
-      <div class="tb-panel">
-        <div class="patsel" data-hint="Pattern atual (o rack e o piano roll editam este pattern)">
-          <select value={s.patternId ?? ''} onChange={(e) => selectPattern((e.target as HTMLSelectElement).value)}>
-            {p.patterns.map((pt) => (
-              <option value={pt.id}>{pt.name}</option>
-            ))}
-          </select>
-          <IconBtn icon="plus" hint="Novo pattern (F4)" onClick={() => { const r = act(A.addPattern, {}); if (r) selectPattern(r.id); }} />
-          <IconBtn icon="clone" hint="Clonar pattern" onClick={() => { const r = s.patternId && act(A.duplicatePattern, { pattern: s.patternId }); if (r) selectPattern(r.id); }} />
-        </div>
-        <IconBtn icon="undo" hint="Desfazer (Ctrl+Z)" onClick={undo} />
-        <IconBtn icon="redo" hint="Refazer (Ctrl+Y)" onClick={redo} />
-        <IconBtn icon="save" hint={`Salvar (Ctrl+S)${s.dirty ? ' · há alterações não salvas' : ''}`} class={s.dirty ? 'dirty' : ''} onClick={() => saveProject()} />
-      </div>
+      {!tips && mix}
+      {tips ? <div class="tb-side right">{pats}</div> : pats}
     </div>
   );
 }

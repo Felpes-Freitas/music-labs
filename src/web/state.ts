@@ -44,7 +44,8 @@ function defaultLayout(): Record<WindowId, WinState> {
   const H = Math.max(480, window.innerHeight - 80); // barra de título + ferramentas
   const rackH = Math.min(340, Math.round(H * 0.42));
   return {
-    browser: { open: true, x: 0, y: 0, w: 240, h: 0, z: 1 },
+    // recolhido ou não, como estava quando o app fechou
+    browser: { open: getPref('browser.open', true), x: 0, y: 0, w: 240, h: 0, z: 1 },
     rack: { open: true, x: 8, y: 8, w: Math.min(720, W * 0.55), h: rackH, z: 3 },
     // A playlist começa maximizada e no fundo; as outras janelas flutuam sobre ela.
     playlist: { open: true, x: 0, y: 0, w: W, h: H, z: 0, max: { x: 8, y: rackH + 16, w: W - 16, h: H - rackH - 24 } } as WinState,
@@ -106,7 +107,13 @@ const listeners = new Set<() => void>();
 const liveListeners = new Set<(s: EngineStatus) => void>();
 let scheduled = false;
 
+let browserOpen: boolean | null = null;
 export function emit() {
+  // lembra se o navegador estava recolhido
+  if (state.windows.browser.open !== browserOpen) {
+    if (browserOpen !== null) setPref('browser.open', state.windows.browser.open);
+    browserOpen = state.windows.browser.open;
+  }
   if (scheduled) return;
   scheduled = true;
   queueMicrotask(() => {
