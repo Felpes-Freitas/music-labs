@@ -344,7 +344,13 @@ const KEYS: [string, string][] = [
 /** Teclado RGB pelo OpenRGB: ligar, endereço, brilho e estado da conexão. */
 function RgbSection() {
   const [p, setP] = useState(rgbPrefs());
-  const [st, setSt] = useState<{ state: string; devices: string[]; error?: string } | null>(null);
+  const [st, setSt] = useState<{
+    state: string;
+    devices: string[];
+    error?: string;
+    openrgb?: { supported: boolean; version: string; installed: boolean; install: { state: string; progress: number; error?: string }; managed: boolean; needsAccess: boolean; hint: string[] };
+  } | null>(null);
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     let alive = true;
     const poll = () => api('GET', '/api/rgb').then((r) => alive && setSt(r)).catch(() => {});
@@ -394,16 +400,71 @@ function RgbSection() {
           <input class="rgb-host" value={p.host} onChange={(e) => change({ host: (e.target as HTMLInputElement).value.trim() || '127.0.0.1' })} />
           <input class="rgb-port" type="number" value={p.port} min={1} max={65535} onChange={(e) => change({ port: Number((e.target as HTMLInputElement).value) || 6742 })} />
         </div>
+        {st?.openrgb && <OpenRgbView o={st.openrgb} busy={busy} setBusy={setBusy} connected={st.state === 'on'} />}
         <p class="set-note">
           Com um teclado RGB, as teclas acompanham o instrumento selecionado: o "piano" do teclado (Z…M e Q…P) fica com as teclas brancas em branco e as pretas na cor de destaque; num Soundpad, 1234 / QWER /
           ASDF / ZXCV ficam com as cores dos pads. A tecla tocada acende. Ao fechar o Music Labs (ou desligar aqui), o teclado volta à iluminação que tinha.
         </p>
         <p class="set-note">
-          Funciona com os teclados que o <b>OpenRGB</b> controla (SteelSeries, Corsair, Razer, Logitech, HyperX, Redragon e muitos outros — openrgb.org). Instale o OpenRGB, dê acesso aos dispositivos
-          (no Linux, as regras udev que vêm com ele) e ligue o <b>servidor SDK</b>: na aba "SDK Server" do OpenRGB, ou rodando <code>openrgb --server</code> (dá para pôr no início da sessão com{' '}
-          <code>openrgb --server --startminimized</code>). O Music Labs se conecta sozinho quando o servidor aparecer.
+          Funciona com os teclados que o <b>OpenRGB</b> controla (SteelSeries, Corsair, Razer, Logitech, HyperX, Redragon e muitos outros — openrgb.org). O Music Labs baixa o OpenRGB oficial (programa
+          livre, conferido pelo SHA-256) e o roda sozinho, sem janela, só enquanto o app está aberto. Se você já usa o OpenRGB com o servidor SDK ligado (aba "SDK Server" ou{' '}
+          <code>openrgb --server</code>), o Music Labs usa o seu e não baixa nada.
         </p>
       </section>
+    </>
+  );
+}
+
+/** OpenRGB de fábrica: baixar/instalar, estado e acesso aos dispositivos (Linux). */
+function OpenRgbView({ o, busy, setBusy, connected }: { o: { supported: boolean; version: string; installed: boolean; install: { state: string; progress: number; error?: string }; managed: boolean; needsAccess: boolean; hint: string[] }; busy: boolean; setBusy: (b: boolean) => void; connected: boolean }) {
+  const dl = o.install.state === 'downloading' || o.install.state === 'installing';
+  return (
+    <>
+      <div class="set-row">
+        <span class="set-lbl">OpenRGB</span>
+        {o.installed ? (
+          <span>
+            {o.version} instalado pelo Music Labs{o.managed ? ' · rodando' : ''} <span class="dim">(abre e fecha junto com o app)</span>
+          </span>
+        ) : dl ? (
+          <span>
+            {o.install.state === 'downloading' ? `Baixando… ${Math.round(o.install.progress * 100)}%` : 'Instalando…'}
+            <progress class="rgb-prog" value={o.install.progress} max={1} />
+          </span>
+        ) : connected ? (
+          <span class="dim">usando o OpenRGB que já está rodando</span>
+        ) : o.supported ? (
+          <button disabled={busy} onClick={() => (setBusy(true), api('POST', '/api/rgb/install').finally(() => setBusy(false)))}>
+            Baixar e ativar o OpenRGB (≈30 MB)
+          </button>
+        ) : (
+          <span class="dim">neste sistema, instale pelo site openrgb.org e ligue o servidor SDK</span>
+        )}
+      </div>
+      {o.install.state === 'error' && <p class="set-note">Não deu para instalar: {o.install.error}</p>}
+      {o.needsAccess && (
+        <div class="set-row">
+          <span class="set-lbl">Acesso</span>
+          <button
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await api('POST', '/api/rgb/access');
+                toast('Acesso aos dispositivos liberado');
+              } catch (e) {
+                toast(`Não deu: ${(e as Error).message}`);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Dar acesso aos dispositivos (pede a senha)
+          </button>
+          <span class="dim">instala as regras udev oficiais do OpenRGB</span>
+        </div>
+      )}
+      {!!o.hint.length && !connected && <p class="set-note">Encontrado no USB: {o.hint.join(', ')}.</p>}
     </>
   );
 }

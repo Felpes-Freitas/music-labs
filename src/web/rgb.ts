@@ -3,7 +3,8 @@
 // de destaque; Soundpad: 1234/QWER/ASDF/ZXCV nas cores dos pads. A tecla tocada acende.
 // O servidor fala com o OpenRGB e devolve o teclado ao normal quando o app fecha.
 
-import { state, onState, onConnect, sendServer } from './state';
+import { state, onState, onConnect, sendServer, api, toast } from './state';
+import { askConfirm } from './ui/Dialog';
 import { getPref, setPref } from './prefs';
 import { accentColor } from './theme';
 import { PAD_COUNT, padColor, padKey } from '../core/pads';
@@ -80,6 +81,35 @@ onConnect(() => {
   lastScene = '';
   sendConfig();
   sendScene();
+  setTimeout(offerOpenRgb, 5000);
 });
+
+/**
+ * Primeira vez: se há um periférico de marca RGB plugado (ou, fora do Linux, onde não dá
+ * para saber) e nenhum OpenRGB rodando, pergunta uma vez se pode baixar o OpenRGB.
+ */
+async function offerOpenRgb() {
+  if (getPref<boolean>('rgb.offered', false) || !rgbPrefs().enabled) return;
+  if (state.loading) return void setTimeout(offerOpenRgb, 3000); // espera a tela de carregamento
+  let st: { state: string; openrgb?: { platform: string; supported: boolean; installed: boolean; hint: string[] } };
+  try {
+    st = await api('GET', '/api/rgb');
+  } catch {
+    return;
+  }
+  const o = st.openrgb;
+  if (!o?.supported || o.installed || st.state === 'on') return;
+  if (o.platform === 'linux' && !o.hint.length) return; // nada RGB plugado: não incomoda
+  setPref('rgb.offered', true);
+  const found = o.hint.length ? `Encontrei ${o.hint.join(', ')}. ` : '';
+  const yes = await askConfirm({
+    title: 'Teclado RGB',
+    message: `${found}O Music Labs pode acender as teclas do seu teclado RGB conforme o instrumento (o piano do teclado, as cores dos pads) e devolvê-lo ao normal quando você fechar o app. Para isso ele baixa o OpenRGB (programa livre, ≈30 MB, versão oficial conferida), que roda só enquanto o Music Labs está aberto. Dá para mudar depois em Configurações → Iluminação RGB.`,
+    ok: 'Baixar e ativar',
+  });
+  if (!yes) return;
+  await api('POST', '/api/rgb/install').catch(() => {});
+  toast('Baixando o OpenRGB… o teclado acende quando terminar');
+}
 // canal selecionado, pads, cor de destaque: repinta quando muda algo (só envia se a cena mudou)
 onState(() => sendScene());

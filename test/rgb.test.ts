@@ -2,10 +2,16 @@
 // confere o que o Music Labs manda — modo direto, cores das teclas e, ao soltar, as cores e
 // o modo originais exatamente como eram.
 
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+// pasta de dados temporária: um OpenRGB instalado pelo app nesta máquina não é iniciado pelos testes
+process.env.MUSICLABS_STATE_DIR = mkdtempSync(join(tmpdir(), 'mlt-rgb-'));
+process.env.MUSICLABS_HOME = process.env.MUSICLABS_STATE_DIR;
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Socket } from 'node:net';
-import { parseDevice, rgbConfigure, rgbRelease, rgbScene, rgbStatus, sceneColors } from '../src/server/rgb.ts';
+const { parseDevice, rgbConfigure, rgbRelease, rgbScene, rgbStatus, sceneColors } = await import('../src/server/rgb.ts');
 
 const str = (s: string) => {
   const b = Buffer.from(s + '\0', 'utf8');

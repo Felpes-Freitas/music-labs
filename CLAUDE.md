@@ -378,11 +378,20 @@ Z…M/Q…P teclado musical, -/= oitava.
   `#080808`; teclas apertadas clareiam). **Restaurar sempre** (`rgbRelease`: cores
   originais e depois UPDATEMODE com o modo original): ao desligar, quando a última janela
   desconecta, em SIGINT/SIGTERM e no Electron (`before-quit` espera `shutdown()`; o
-  relançamento por servidor desatualizado também). Sem OpenRGB: estado "não encontrado" e
-  nova tentativa a cada 10 s. Testes: `test/rgb.test.ts` (servidor OpenRGB falso no formato
-  da documentação). Nunca testado com o OpenRGB real nesta máquina (o sistema de permissões
-  bloqueou baixar/rodar o AppImage); o teclado do usuário é um Apex Pro TKL e
-  `/dev/hidraw*` já é acessível sem sudo.
+  relançamento por servidor desatualizado também). Testes: `test/rgb.test.ts` (servidor
+  OpenRGB falso no formato da documentação). **OpenRGB de fábrica** (`src/server/openrgb.ts`):
+  na 1ª abertura, se há periférico de marca RGB no USB (`rgbHardwareHint`, vendor ids; fora
+  do Linux pergunta sempre) e nenhum OpenRGB rodando, a interface pergunta uma vez (pref
+  `rgb.offered`) e baixa a versão oficial 0.9 (Linux x64 AppImage → extraído em
+  `STATE_DIR/openrgb/squashfs-root/AppRun`; Windows x64 zip) **com SHA-256 fixo no código**
+  (arquivo diferente = recusado). Se o servidor SDK não responde e há o OpenRGB do app, o
+  cliente o inicia (`--server --server-port`, só em localhost) e tenta de novo a cada 1,5–2,5 s
+  enquanto ele detecta; `rgbShutdown` restaura o teclado e encerra esse processo (o do
+  usuário, se houver, nunca é iniciado/encerrado). Linux sem acesso ao USB: botão instala
+  as regras udev oficiais (SHA-256 conferido) via `pkexec`. `MUSICLABS_OPENRGB_URL` troca a
+  origem (só testes; `test/openrgb.test.ts`). Nunca rodei o OpenRGB real nesta máquina (o
+  sistema de permissões bloqueia baixar/executar o binário aqui); o teclado do usuário é um
+  Apex Pro TKL e `/dev/hidraw*` já é acessível sem sudo.
 - **Menus encadeados** (`MenuTree`): submenu que não cabe à direita abre à esquerda do
   pai (`altX`), sem cobrir os níveis anteriores.
 - **Janelas** (`Win`): redimensionam pelas 4 bordas e 4 cantos (`.win-edge`, dir n/s/e/w…);
