@@ -8,6 +8,7 @@ import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
 import * as A from '../core/actions.js';
+import * as S from '../core/studio.js';
 import { applyOps, type Op } from '../core/ops.js';
 import { EFFECTS, INSTRUMENTS, PRESETS } from '../core/registry.js';
 import { SCALES } from '../core/theory.js';
@@ -83,6 +84,21 @@ export const ACTIONS: Record<string, ActionFn> = {
   updateChannelEffect: A.updateChannelEffect,
   removeChannelEffect: A.removeChannelEffect,
   setProjectProps: A.setProjectProps,
+  // estúdio (core/studio.ts)
+  duplicateChannel: S.duplicateChannel,
+  copyNotes: S.copyNotes,
+  editClips: S.editClips,
+  insertBars: S.insertBars,
+  deleteBars: S.deleteBars,
+  copySection: S.copySection,
+  automate: S.automate,
+  editAutomation: S.editAutomation,
+  resetInsert: S.resetInsert,
+  copyEffects: S.copyEffects,
+  addAudio: S.addAudio,
+  renameAudio: S.renameAudio,
+  removeAudio: S.removeAudio,
+  toggleAudioEdits: S.toggleAudioEdits,
 };
 
 /** "localSample": nome de um som do kit local (ex. "Kick") vira um sampler com o caminho. */
@@ -467,6 +483,12 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       case 'POST /api/transport': {
         const b = await body(req);
         broadcast({ type: 'transport', ...b });
+        return json(res, 200, { ok: true, uiConnected: sockets.size > 0 });
+      }
+      case 'POST /api/ui': {
+        // comandos para a interface aberta (área selecionada, loop, janelas...)
+        const b = await body(req);
+        broadcast({ type: 'ui', ...b });
         return json(res, 200, { ok: true, uiConnected: sockets.size > 0 });
       }
       case 'POST /api/preview': {

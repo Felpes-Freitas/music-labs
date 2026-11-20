@@ -236,12 +236,36 @@ scripts/     ferramentas de diagnóstico e testes de UI (os _*.mts são temporá
 - `render.ts`: render offline com a mesma engine. `flp.ts` (core): import de `.flp`.
 
 ### MCP (`src/mcp/main.ts`)
-Ferramentas: get_project, get_notes, list_sounds, search_samples, music_theory,
-new/set/open/save_project, list_projects, undo, redo, add/update/remove_channel,
-add_pattern, edit_pattern, set_steps, add_notes, add_chords, clear_notes,
-transform_notes, arrange, add_audio_clip, add_automation, mixer_insert, add/update/
-remove_effect, update_track, batch, transport, preview_notes, render, analyze_mix.
-Registrado no Claude Code como `musiclabs` (`node build/mcp.mjs`).
+Registrado no Claude Code como `musiclabs` (`node build/mcp.mjs`). **Regra: tudo o que o
+usuário faz na interface tem que ser possível pelo MCP, sem escrever código** — se faltar,
+acrescentar a ação em `core/` e a ferramenta aqui (não contornar com curl/scripts).
+- Leitura: get_project (inclui tracks, áudios e `ui` = o que o usuário vê: área, loop,
+  metrônomo, contagem, janelas, pattern/canal selecionados, automação aberta, BPM do
+  momento), get_channel (todos os parâmetros e efeitos), get_mixer, get_clips (playlist
+  detalhada; automação com a função em unidades do parâmetro), get_notes, list_audios,
+  list_sounds (kind "automation" = funções da Central), search_samples, music_theory.
+- Projeto: new/set/open/save_project, list_projects, undo, redo.
+- Canais: add/update/remove_channel, **duplicate_channel** (parâmetros + efeitos + notas,
+  insert same/auto/master/n).
+- Notas: add_pattern, edit_pattern (nome, tamanho, cor, duplicar, remover), set_steps,
+  add_notes, add_chords, clear_notes, **copy_notes** (entre patterns/canais; cria o
+  destino), transform_notes (+ filtros de trecho/faixa, setVelocity/setLength, shiftBeats,
+  reverse, legato, strum, chop, addOctave).
+- Playlist: arrange, **edit_clips** (mover, tamanho, cortar começo, mudo, ganho/insert de
+  áudio, duplicar, apagar — por ids ou filtro), **copy_section**, **insert_bars**,
+  **delete_bars**, add_audio_clip, update_track (nome, mudo, cor).
+- Automação: add_automation (ação `automate`: `fn` com as funções da Central em unidades
+  do parâmetro, `points`, ou param "bpm"), **edit_automation**.
+- Mixer: mixer_insert, **reset_insert** (o mixer tem posições fixas: "remover" = resetar),
+  add/update/remove_effect (insert ou canal), **copy_effects**.
+- Áudios do projeto: **audio_pool** (add, rename, remove, place, edits on/off).
+- Interface: **ui** (`POST /api/ui` → `remoteUi` em state.ts: select, loop, metronome,
+  countIn, follow, mode, seekBar, pattern, channel, open/close janelas, automation,
+  message), transport, preview_notes. render, analyze_mix.
+- Ações novas ficam em `src/core/studio.ts` e estão no `ACTIONS` do servidor (valem no
+  `batch`). Testes: `test/studio.test.ts` (inclui o pedido "intro 2x + verso" só com ações).
+- Depois de mudar o MCP: `npm run build` e reconectar o MCP (`/mcp` no Claude Code) e
+  reiniciar o servidor/app (as ações rodam no servidor).
 
 ---
 
