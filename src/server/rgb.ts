@@ -11,6 +11,9 @@
 // mais novos respondem na versão pedida.
 
 import { Socket, connect } from 'node:net';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { STATE_DIR } from './store.js';
 import { installOpenRgb, needsDeviceAccess, openRgbExe, openRgbOutdated, openRgbState, startOpenRgb, stopOpenRgb } from './openrgb.js';
 
 const PROTOCOL = 3;
@@ -253,7 +256,16 @@ export interface RgbConfig {
 /** Nome do LED do OpenRGB para uma tecla ("q" → "key: q", "," → "key: ,"). */
 export const ledKey = (name: string) => name.toLowerCase().replace(/^key:\s*/, '');
 
-let cfg: RgbConfig = { enabled: false, host: '127.0.0.1', port: 6742, brightness: 1 };
+/** Ligado/desligado é decidido aqui e guardado em disco: só muda por escolha explícita do usuário. */
+const PREF_FILE = join(STATE_DIR, 'rgb.json');
+const savedEnabled = (() => {
+  try {
+    return JSON.parse(readFileSync(PREF_FILE, 'utf8')).enabled === true;
+  } catch {
+    return false;
+  }
+})();
+let cfg: RgbConfig = { enabled: savedEnabled, host: '127.0.0.1', port: 6742, brightness: 1 };
 let client: OpenRgbClient | null = null;
 let keyboards: (RgbDevice & { byKey: Map<string, number[]> })[] = [];
 let scene: RgbScene = { keys: {}, base: 0, pressed: [] };
@@ -279,10 +291,21 @@ function retryIn(ms: number) {
 let launchedAt = 0; // quando o app iniciou o OpenRGB dele (tentativas rápidas enquanto ele detecta)
 const justLaunched = () => Date.now() - launchedAt < 30000;
 
-/** Liga/ajusta (chamado pela interface). Desligar devolve os teclados ao que eram. */
-export async function rgbConfigure(c: Partial<RgbConfig>) {
+/**
+ * Ajusta (chamado pela interface). `enabled` só vale quando explicit (o usuário clicou em
+ * Ligado/Desligado ou aceitou a oferta) e fica guardado; a interface que só reconecta não
+ * liga nada. Desligar devolve os teclados ao que eram.
+ */
+export async function rgbConfigure(c: Partial<RgbConfig>, explicit = false) {
   const prev = cfg;
-  cfg = { ...cfg, ...c };
+  const { enabled, ...rest } = c;
+  cfg = { ...cfg, ...rest, ...(explicit && enabled !== undefined ? { enabled } : {}) };
+  if (explicit && enabled !== undefined)
+    try {
+      writeFileSync(PREF_FILE, JSON.stringify({ enabled }));
+    } catch {
+      /* sem disco: vale só nesta sessão */
+    }
   if (!cfg.enabled) return rgbShutdown();
   if (prev.host !== cfg.host || prev.port !== cfg.port) {
     await rgbRelease();
