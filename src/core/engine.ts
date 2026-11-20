@@ -61,6 +61,8 @@ export interface EngineStatus {
   loops: number;
   /** Número do play (ver Engine.play). */
   playId?: number;
+  /** Ticks que faltam da contagem (exato; countIn é em tempos, arredondado para cima). */
+  countInTicks?: number;
 }
 
 export interface InsertStats {
@@ -674,7 +676,7 @@ export class Engine {
     const spectrum = this.watched && this.scopeFresh ? analyzeSpectrum(this.scope, this.scopeW, this.sr) : null;
     this.scopeFresh = false;
     const countIn = this.playing && this.preroll > 0 ? Math.ceil((this.preroll - this.prerollPos) / PPQ) : 0;
-    return { playing: this.playing, mode: this.mode, patternId: this.patternId, tick: this.tick, meters, gr, activeChannels: active, lit: [...this.lit.keys()], spectrum, countIn, loops: this.loops, playId: this.playId };
+    return { playing: this.playing, mode: this.mode, patternId: this.patternId, tick: this.tick, meters, gr, activeChannels: active, lit: [...this.lit.keys()], spectrum, countIn, countInTicks: this.playing && this.preroll > 0 ? this.preroll - this.prerollPos : 0, loops: this.loops, playId: this.playId };
   }
 
   insertStats(): InsertStats[] {
