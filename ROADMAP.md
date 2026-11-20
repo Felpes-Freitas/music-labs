@@ -25,15 +25,6 @@
   Enquanto não existe, o duplo clique no áudio abre o Afinador. (Hoje "sampler" no app é
   um tipo de canal de instrumento que toca um sample pelas notas — outra coisa.)
 
-- **Teclado RGB acompanhando o app (SteelSeries Apex Pro TKL do usuário, USB 1038:1614).**
-  Instrumento normal: teclas brancas/pretas do "piano" do teclado (Z…M / Q…P) acesas;
-  Soundpad: 1234/QWER/ASDF/ZXCV com as cores dos pads; tecla acende ao tocar. Caminho no
-  Linux: OpenRGB (suporta o Apex Pro TKL por tecla) rodando como servidor SDK (porta 6742)
-  + cliente no servidor do Music Labs (protocolo TCP simples ou o pacote `openrgb-sdk`),
-  mapeando nome do LED ("Key: Q") → índice; restaurar a iluminação ao fechar. Precisa
-  instalar o OpenRGB e as regras udev (sudo uma vez). O SteelSeries GG/GameSense não
-  existe para Linux. Análise passada ao usuário em 20/11/2026.
-
 ## Pendências maiores
 
 - Hospedar plugins VST/LV2/CLAP (ponte via Carla/yabridge). Em espera: decidir

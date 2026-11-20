@@ -151,6 +151,15 @@ git push --follow-tags
   com busca, pré-escuta e arrastar para o rack.
 - Teclado do computador como piano (Z…M / Q…P, `-` e `=` mudam a oitava), teclado MIDI
   (Web MIDI), undo/redo ilimitado, autosave, exportação WAV 16/24/32-bit.
+- **Soundpad**: 16 pads (4×4) coloridos, cada um com o som que você quiser (sample,
+  instrumento multi-sample, nativo ou preset); no teclado do computador, 1234 / QWER /
+  ASDF / ZXCV na mesma disposição da tela. Kits prontos (sintetizados, funcionam sem samples).
+- **Teclado RGB** (opcional, via [OpenRGB](https://openrgb.org)): as teclas acompanham o
+  instrumento selecionado — o "piano" do teclado em branco e preto, ou as cores dos pads do
+  Soundpad — e a tecla tocada acende. Funciona com os teclados que o OpenRGB controla
+  (SteelSeries, Corsair, Razer, Logitech, HyperX…); ligue o servidor SDK do OpenRGB
+  (`openrgb --server`) e veja Configurações → Iluminação RGB. Ao fechar o Music Labs, o
+  teclado volta à iluminação que tinha.
 
 Atalhos: Espaço tocar/parar · L pattern/song · F5 playlist · F6 rack · F7 piano roll ·
 F8 navegador · F9 mixer · Ctrl+S salvar · Ctrl+Z/Y desfazer/refazer.

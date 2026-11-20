@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
 import * as A from '../core/actions.js';
 import * as S from '../core/studio.js';
+import { rgbConfigure, rgbRelease, rgbScene, rgbStatus } from './rgb.js';
 import { applyOps, type Op } from '../core/ops.js';
 import { EFFECTS, INSTRUMENTS, PRESETS } from '../core/registry.js';
 import { SCALES } from '../core/theory.js';
@@ -419,6 +420,8 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         return json(res, 200, browseRoots());
       case 'GET /api/browse':
         return json(res, 200, browse(q('dir')));
+      case 'GET /api/rgb':
+        return json(res, 200, rgbStatus());
       case 'GET /api/sampletree':
         return json(res, 200, sampleTree());
       case 'GET /api/library':
@@ -570,6 +573,12 @@ export function flushState() {
   store.flushAutosave();
 }
 
+/** Antes de o app fechar: grava o projeto e devolve o teclado RGB ao normal. */
+export async function shutdown() {
+  store.flushAutosave();
+  await Promise.race([rgbRelease().catch(() => {}), new Promise((r) => setTimeout(r, 1000))]);
+}
+
 export function startServer(port = PORT) {
   initLibrary(STATE_DIR, announceLibrary);
   const server = createServer(handle);
@@ -592,6 +601,11 @@ export function startServer(port = PORT) {
         else if (m.type === 'undo') store.undo();
         else if (m.type === 'redo') store.redo();
         else if (m.type === 'status') uiStatus = { ...m.status, connected: true };
+        else if (m.type === 'rgb') {
+          // teclado RGB (OpenRGB): configuração e cena pedidas pela interface
+          if (m.config) void rgbConfigure(m.config);
+          if (m.scene) rgbScene(m.scene);
+        }
         else if (m.type === 'action') runActions(m.actions, id);
       } catch (e) {
         // Rejeitado: devolve o estado verdadeiro para o cliente se realinhar.
@@ -601,6 +615,8 @@ export function startServer(port = PORT) {
     });
     ws.on('close', () => {
       sockets.delete(ws);
+      // nenhuma janela aberta: o teclado volta ao normal (o servidor pode seguir pelo MCP)
+      if (!sockets.size) void rgbRelease();
       if (!sockets.size) uiStatus = { ...uiStatus, connected: false, playing: false };
     });
   });
@@ -634,7 +650,9 @@ async function setPwQuantum(q: number) {
 }
 // ao fechar, devolve o PipeWire ao normal (o resto do sistema não fica em baixa latência)
 for (const sig of ['SIGINT', 'SIGTERM'] as const)
-  process.once(sig, () => {
+  process.once(sig, async () => {
+    // devolve o teclado RGB ao normal antes de sair (no máximo ~1 s)
+    await Promise.race([rgbRelease().catch(() => {}), new Promise((r) => setTimeout(r, 1000))]);
     if (!forcedQuantum) process.exit(0);
     execFile('pw-metadata', ['-n', 'settings', '0', 'clock.force-quantum', '0'], () => process.exit(0));
   });

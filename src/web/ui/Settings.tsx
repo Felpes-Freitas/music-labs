@@ -6,11 +6,13 @@ import { ACCENTS, themes, prefs as looks, setTheme, setAccent, setAltDrag, accen
 import { getPref, setPref } from '../prefs';
 import { audio, type RecChannels } from '../audio';
 import { api, emit, toast } from '../state';
+import { rgbPrefs, setRgbPrefs, type RgbPrefs } from '../rgb';
 
-type Section = 'aparencia' | 'audio' | 'bibliotecas' | 'atalhos';
+type Section = 'aparencia' | 'audio' | 'rgb' | 'bibliotecas' | 'atalhos';
 const SECTIONS: { id: Section; label: string; icon: string }[] = [
   { id: 'aparencia', label: 'Aparência', icon: 'sparkle' },
   { id: 'audio', label: 'Áudio e gravação', icon: 'wave' },
+  { id: 'rgb', label: 'Iluminação RGB', icon: 'sparkle' },
   { id: 'bibliotecas', label: 'Bibliotecas', icon: 'folder' },
   { id: 'atalhos', label: 'Atalhos', icon: 'piano' },
 ];
@@ -70,6 +72,7 @@ export function SettingsHost() {
           <div class="set-body">
             {sec === 'aparencia' && <Appearance />}
             {sec === 'audio' && <AudioSection />}
+            {sec === 'rgb' && <RgbSection />}
             {sec === 'bibliotecas' && <Libraries />}
             {sec === 'atalhos' && <Shortcuts />}
           </div>
@@ -337,6 +340,73 @@ const KEYS: [string, string][] = [
   ['Duplo clique no nome de uma track', 'Renomear'],
   ['Alt + arrastar', 'Mover janela (se ativado em Aparência)'],
 ];
+
+/** Teclado RGB pelo OpenRGB: ligar, endereço, brilho e estado da conexão. */
+function RgbSection() {
+  const [p, setP] = useState(rgbPrefs());
+  const [st, setSt] = useState<{ state: string; devices: string[]; error?: string } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const poll = () => api('GET', '/api/rgb').then((r) => alive && setSt(r)).catch(() => {});
+    poll();
+    const t = setInterval(poll, 1500);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
+  const change = (patch: Partial<RgbPrefs>) => {
+    const next = { ...p, ...patch };
+    setP(next);
+    setRgbPrefs(patch);
+  };
+  const label: Record<string, string> = { on: 'Conectado', connecting: 'Conectando…', missing: 'Não encontrado', error: 'Erro', off: 'Desligado' };
+  return (
+    <>
+      <section class="set-group">
+        <h3>Teclado RGB</h3>
+        <div class="set-row">
+          <span class="set-lbl">Usar</span>
+          <div class="seg">
+            <button class={p.enabled ? 'on' : ''} onClick={() => change({ enabled: true })}>
+              Ligado
+            </button>
+            <button class={!p.enabled ? 'on' : ''} onClick={() => change({ enabled: false })}>
+              Desligado
+            </button>
+          </div>
+        </div>
+        <div class="set-row">
+          <span class="set-lbl">Estado</span>
+          <span class={`rgb-state ${st?.state ?? ''}`}>
+            {p.enabled ? label[st?.state ?? 'off'] ?? st?.state : 'Desligado'}
+            {p.enabled && st?.state === 'on' && st.devices.length ? `: ${st.devices.join(', ')}` : ''}
+            {p.enabled && st?.error ? ` — ${st.error}` : ''}
+          </span>
+        </div>
+        <div class="set-row">
+          <span class="set-lbl">Brilho</span>
+          <input type="range" min={0.1} max={1} step={0.05} value={p.brightness} onChange={(e) => change({ brightness: Number((e.target as HTMLInputElement).value) })} />
+          <span>{Math.round(p.brightness * 100)}%</span>
+        </div>
+        <div class="set-row">
+          <span class="set-lbl">Servidor</span>
+          <input class="rgb-host" value={p.host} onChange={(e) => change({ host: (e.target as HTMLInputElement).value.trim() || '127.0.0.1' })} />
+          <input class="rgb-port" type="number" value={p.port} min={1} max={65535} onChange={(e) => change({ port: Number((e.target as HTMLInputElement).value) || 6742 })} />
+        </div>
+        <p class="set-note">
+          Com um teclado RGB, as teclas acompanham o instrumento selecionado: o "piano" do teclado (Z…M e Q…P) fica com as teclas brancas em branco e as pretas na cor de destaque; num Soundpad, 1234 / QWER /
+          ASDF / ZXCV ficam com as cores dos pads. A tecla tocada acende. Ao fechar o Music Labs (ou desligar aqui), o teclado volta à iluminação que tinha.
+        </p>
+        <p class="set-note">
+          Funciona com os teclados que o <b>OpenRGB</b> controla (SteelSeries, Corsair, Razer, Logitech, HyperX, Redragon e muitos outros — openrgb.org). Instale o OpenRGB, dê acesso aos dispositivos
+          (no Linux, as regras udev que vêm com ele) e ligue o <b>servidor SDK</b>: na aba "SDK Server" do OpenRGB, ou rodando <code>openrgb --server</code> (dá para pôr no início da sessão com{' '}
+          <code>openrgb --server --startminimized</code>). O Music Labs se conecta sozinho quando o servidor aparecer.
+        </p>
+      </section>
+    </>
+  );
+}
 
 function Shortcuts() {
   return (
