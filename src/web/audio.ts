@@ -689,9 +689,16 @@ export class Audio {
   private playSeq = 0;
   /** Último play pedido (status de plays anteriores ainda podem chegar). */
   playId = 0;
+  /** Quando o último play foi pedido (performance.now), de onde e com quantos tempos de contagem. */
+  playAt = 0;
+  playFrom = 0;
+  playCountIn = 0;
   play(mode: 'pattern' | 'song', patternId: string | null, tick?: number, countIn = 0) {
     const id = ++this.playSeq + Math.floor(Math.random() * 1e6) * 1000;
     this.playId = id;
+    this.playAt = performance.now();
+    this.playFrom = tick ?? 0;
+    this.playCountIn = countIn;
     const r = this.rec;
     if (r && r.playId === null) {
       // a música (ou a contagem) começa agora: o relógio da gravação passa a valer daqui.

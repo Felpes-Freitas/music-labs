@@ -213,7 +213,13 @@ scripts/     ferramentas de diagnóstico e testes de UI (os _*.mts são temporá
   Os pedaços são clipes do mesmo arquivo com `startSec` diferentes, cada um numa track
   livre. Toco < 150 ms no começo (pré-ataque) e sobra < 60 ms no fim (variação de tempo)
   são descartados. `liveTakes` guarda os ids dos pedaços de cada take.
-  Notas: `midiOnStatus` transforma cada volta em pattern assim que o loop recomeça.
+  Notas (`midirec.ts`): entram no **pattern selecionado** ao apertar REC (`intoPattern`),
+  no clipe dele que está no começo do trecho (respeita offset e repetições) ou num clipe
+  novo dele ali; o pattern cresce se a gravação passar do fim. Sem pattern, cria um e as
+  próximas passadas vão para ele. Em loop, cada volta se soma ao mesmo pattern quando o
+  loop recomeça (`midiOnStatus`). `now()` estima a posição pelo relógio enquanto a engine
+  não responde ao play novo (`audio.playAt/playFrom/playCountIn`) e, na contagem, nota até
+  meio tempo antes do "1" vale como o "1" (`countInTicks` no status).
 - **Contagem de 4 tempos** (opção `countIn`, ícone "321") vale para o REC geral, o amp (engine `countIn` +
   `countInSec` no startRecording) e as ferramentas (`countInIfOn` + `startCapture({arm})`).
 
