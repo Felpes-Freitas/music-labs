@@ -772,10 +772,14 @@ export class Audio {
   /** Pré-escuta de arquivo do navegador (fora da engine). */
   private previewSrc: AudioBufferSourceNode | null = null;
   async previewFile(path: string) {
+    return this.previewUrl(`/api/sample?path=${encodeURIComponent(path)}`);
+  }
+  /** Pré-escuta de um áudio do servidor (ex.: uma amostra de instrumento, /api/zone). */
+  async previewUrl(url: string) {
     await this.start();
     const ctx = this.ctx!;
     this.previewSrc?.stop();
-    const r = await fetch(`/api/sample?path=${encodeURIComponent(path)}`);
+    const r = await fetch(url);
     const buf = await ctx.decodeAudioData(await r.arrayBuffer());
     const src = ctx.createBufferSource();
     src.buffer = buf;

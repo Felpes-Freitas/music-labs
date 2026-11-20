@@ -375,6 +375,8 @@ export interface MenuItem {
   sep?: boolean;
   hint?: string;
   swatch?: string;
+  /** Ouvir antes de escolher: botão ▶ no fim do item e botão direito no item. */
+  preview?: () => void;
 }
 
 /** Menu de contexto com submenus (abrem ao passar o mouse). */
@@ -412,7 +414,11 @@ function MenuLevel(p: { x: number; y: number; items: MenuItem[]; onClose: () => 
           ) : (
             <button
               class={`${it.sub ? 'has-sub' : ''} ${open?.i === i ? 'open' : ''}`}
-              data-hint={it.hint}
+              data-hint={it.preview ? `${it.hint ? it.hint + ' · ' : ''}▶ ou botão direito: ouvir` : it.hint}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                it.preview?.();
+              }}
               onPointerEnter={(e) => {
                 if (!it.sub) return setOpen(null);
                 const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -426,6 +432,19 @@ function MenuLevel(p: { x: number; y: number; items: MenuItem[]; onClose: () => 
             >
               {it.swatch && <span class="menu-swatch" style={{ background: it.swatch }} />}
               <span class="mt-label">{it.label}</span>
+              {it.preview && (
+                <span
+                  class="mt-play"
+                  role="button"
+                  onClick={(e) => {
+                    // só ouve; não escolhe nem fecha o menu
+                    e.stopPropagation();
+                    it.preview!();
+                  }}
+                >
+                  <Icon name="play" size={9} />
+                </span>
+              )}
               {it.sub && <Icon name="chevron" size={10} />}
             </button>
           ),

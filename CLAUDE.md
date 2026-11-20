@@ -361,9 +361,15 @@ Z…M/Q…P teclado musical, -/= oitava.
   usado no "+ Canal" do rack e no "Inserir instrumento" da área da playlist — Music Labs
   (nativos), Presets (por instrumento de base) e um item por programa da biblioteca (FL
   Studio, Ableton...) com famílias (pasta do instrumento: Keyboard, Bass...; nomes genéricos
-  como "Instruments" usam a pasta de cima, `familyOf` em sampleset.ts) e Bateria (kit local).
-  `/api/registry` → `localInstruments` traz `daw` e `group`. O item aberto do menu fica na
-  cor de destaque.
+  como "Instruments" usam a pasta de cima, `familyOf` em sampleset.ts). Cada programa:
+  **Instrumentos** (famílias), **Samples** (todos os sons soltos na árvore de pastas do
+  programa — `/api/sampletree`, `sampleTree()` em library.ts: sem loops e sem os arquivos
+  dos instrumentos multi-sample; pastas com uma pasta só dentro viram "A › B") e **Kit
+  rápido** (kit local). Listas longas rolam (menutree max 80vh). **Prévia**: `MenuItem.preview`
+  → botão redondo ▶ no fim do item e botão direito no item (não escolhe nem fecha);
+  instrumento toca a amostra mais perto do Dó central (`/api/source` + `/api/zone`,
+  `audio.previewUrl`). `/api/registry` → `localInstruments` traz `daw` e `group`. O item
+  aberto do menu fica na cor de destaque.
 - **Amp** (`Amp.tsx`): entrada e canal no título, visualizador (dB, linha do limiar),
   pedais reordenáveis (gate, wah, compressor, overdrive, fuzz, amp clean/crunch/lead,
   gabinete, EQ, tremolo, chorus, phaser, delay, reverb), presets, gravação inteligente
