@@ -189,6 +189,8 @@ export class Engine {
   /** Gravando sem área selecionada: não volta nem para no fim da música. */
   endless = false;
   loops = 0;
+  /** Início da próxima coleta de notas quando ele não é a agulha (volta no fim do bloco). */
+  private collectFrom: { from: number; tick: number } | null = null;
   private preroll = 0;
   private prerollPos = 0;
   private click = { left: 0, freq: 0, ph: 0, gain: 0 };
@@ -381,22 +383,30 @@ export class Engine {
       if (this.tick >= le || this.tick < ls) this.tick = ls;
       let t0 = this.tick;
       let f0 = 0;
+      // de onde coletar notas: depois de uma volta, o começo exato do loop (a agulha passa
+      // dele por uma fração de tick e a nota que está bem no começo ficava de fora)
+      // (só vale se a agulha não foi mexida de fora: play, seek, stop)
+      let c0 = this.collectFrom && this.collectFrom.tick === t0 && this.collectFrom.from >= ls ? this.collectFrom.from : t0;
+      this.collectFrom = null;
       while (f0 < n) {
         const remain = n - f0;
         const t1 = t0 + remain * tps;
         if (t1 <= le) {
-          this.collect(t0, t1, (tk) => f0 + Math.floor((tk - t0) / tps), events);
+          const ff = f0, tt = t0;
+          this.collect(c0, t1, (tk) => ff + Math.max(0, Math.floor((tk - tt) / tps)), events);
           segs.push({ f0, f1: n, t0 });
           t0 = t1;
+          c0 = t1;
           f0 = n;
         } else {
           const framesToEnd = Math.max(1, Math.ceil((le - t0) / tps));
           const ft = f0;
           const tt = t0;
-          this.collect(t0, le, (tk) => ft + Math.floor((tk - tt) / tps), events);
+          this.collect(c0, le, (tk) => ft + Math.max(0, Math.floor((tk - tt) / tps)), events);
           segs.push({ f0: ft, f1: Math.min(n, ft + framesToEnd), t0: tt });
           f0 += framesToEnd;
           t0 = ls + (t0 + framesToEnd * tps - le);
+          c0 = ls;
           this.loops++;
           if (this.mode === 'song' && !p.loop && !this.loopOn) {
             // Fim da música: para no fim, como num player.
@@ -407,7 +417,11 @@ export class Engine {
           }
         }
       }
-      if (this.playing) this.tick = t0;
+      if (this.playing) {
+        this.tick = t0;
+        // a volta caiu no fim do bloco: o próximo coleta desde o começo do loop
+        if (c0 < t0) this.collectFrom = { from: c0, tick: t0 };
+      }
     }
 
     // Automação (song mode): valores do bloco, por caminho do parâmetro
