@@ -1,7 +1,7 @@
 import { PAD_COUNT, padKey, padNote } from '../core/pads';
 import { padHit } from './ui/PadsPanel';
 import { rgbKey, rgbKeysReleased } from './rgb';
-import { KEYMAP } from './pianokeys';
+import { musicKey, noteOfKey } from './pianokeys';
 import { AutoCenterWindow } from './ui/AutoCenter';
 import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
@@ -93,30 +93,35 @@ function onKeyDown(e: KeyboardEvent) {
   if (e.key === 'PageDown') return (e.preventDefault(), (octave = Math.max(-3, octave - 1)), toast(`Oitava do teclado: ${octave >= 0 ? '+' : ''}${octave}`));
   if (e.key === 'PageUp') return (e.preventDefault(), (octave = Math.min(3, octave + 1)), toast(`Oitava do teclado: ${octave >= 0 ? '+' : ''}${octave}`));
   // Soundpad selecionado: o teclado vira a grade 4×4 (1234 / QWER / ASDF / ZXCV)
+  // teclado musical e Soundpad: pela posição física da tecla (Configurações → Atalhos)
+  const mk = musicKey(e);
   const sel = state.channelId ? state.project.channels.find((c) => c.id === state.channelId) : undefined;
-  if (sel?.type === 'pads' && k in PAD_BY_KEY) {
+  if (sel?.type === 'pads' && mk in PAD_BY_KEY) {
     if (!e.repeat) {
-      const i = PAD_BY_KEY[k];
-      held.set(k, { ch: sel.id, key: padNote(i) });
+      const i = PAD_BY_KEY[mk];
+      held.set(mk, { ch: sel.id, key: padNote(i) });
       padHit(sel.id, i);
-      rgbKey(k, true);
+      rgbKey(mk, true);
       audio.liveOn(sel.id, padNote(i), 0.85);
     }
     return;
   }
-  if (k in KEYMAP && !e.repeat && state.channelId) {
-    const key = KEYMAP[k] + octave * 12;
-    held.set(k, { ch: state.channelId, key });
+  const note = noteOfKey(mk);
+  if (note !== undefined && !e.repeat && state.channelId) {
+    e.preventDefault(); // teclas mortas (´ ~ no PT-BR) não ficam esperando o próximo caractere
+    const key = note + octave * 12;
+    held.set(mk, { ch: state.channelId, key });
     audio.liveOn(state.channelId, key, 0.85);
-    rgbKey(k, true);
+    rgbKey(mk, true);
   }
 }
 function onKeyUp(e: KeyboardEvent) {
-  const h = held.get(e.key.toLowerCase());
+  const mk = musicKey(e);
+  const h = held.get(mk);
   if (h) {
     audio.liveOff(h.ch, h.key);
-    held.delete(e.key.toLowerCase());
-    rgbKey(e.key, false);
+    held.delete(mk);
+    rgbKey(mk, false);
   }
 }
 

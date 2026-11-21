@@ -318,7 +318,7 @@ Janelas (`Win` em `widgets.tsx`; ids em `WindowId` de `state.ts`): playlist, rac
 mixer, channel, browser (lateral, recolhível), **amp** (F10), **tune** = Melodify (F11),
 **stitch** = Stitcher (F12). Atalhos: Espaço tocar/parar (com Melodify/Stitcher em foco,
 toca o áudio deles), L pattern/song, F5–F9, Tab, Ctrl+Z/Y/S, Ctrl+, configurações,
-Z…/ e Q…] teclado musical (`pianokeys.ts`, inclui , . ; / e [ = ]; o L segue sendo PAT/SONG), PageDown/PageUp oitava.
+Z…/ e Q…] teclado musical (`pianokeys.ts`, inclui , . ; / e [ = ]; o L segue sendo PAT/SONG), PageDown/PageUp oitava. As notas usam a **posição física** (`KeyboardEvent.code` → nome da tecla no teclado americano, `musicKey`), escolhida em Configurações → Teclado e atalhos: US, ABNT2 (+ `IntlBackslash`/`IntlRo`) ou pelos caracteres (`e.key`, o antigo).
 
 - **Barra de título** sem nome do app (menus Arquivo, Editar, Adicionar, Patterns, Exibir,
   Aparência, Opções, Ferramentas, Ajuda). O nome "MUSIC LABS" só aparece na tela de
