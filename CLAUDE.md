@@ -2,8 +2,7 @@
 
 DAW open source (GPL-3.0) com fluxo de trabalho familiar a quem usa FL Studio (rack de
 canais, piano roll, playlist, mixer), visual próprio e um servidor **MCP** para o Claude
-produzir junto. Código em `~/music-labs` (o nome antigo da pasta ficou; o produto é
-**Music Labs**). Repositório público: `github.com/Felpes-Freitas/music-labs`.
+produzir junto. Código em `~/music-labs`. Repositório público: `github.com/Felpes-Freitas/music-labs`.
 
 Sempre responder ao usuário em **português do Brasil**. Comentários de código, textos da
 interface, mensagens de commit e documentação também em português.
