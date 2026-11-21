@@ -7,6 +7,7 @@ import { getPref, setPref } from '../prefs';
 import { audio, type RecChannels } from '../audio';
 import { api, emit, toast } from '../state';
 import { rgbPrefs, setRgbPrefs, type RgbPrefs } from '../rgb';
+import { KEY_LAYOUTS, keyLayout, setKeyLayout } from '../pianokeys';
 
 type Section = 'aparencia' | 'audio' | 'rgb' | 'bibliotecas' | 'atalhos';
 const SECTIONS: { id: Section; label: string; icon: string }[] = [
@@ -14,7 +15,7 @@ const SECTIONS: { id: Section; label: string; icon: string }[] = [
   { id: 'audio', label: 'Áudio e gravação', icon: 'wave' },
   { id: 'rgb', label: 'Iluminação RGB', icon: 'sparkle' },
   { id: 'bibliotecas', label: 'Bibliotecas', icon: 'folder' },
-  { id: 'atalhos', label: 'Atalhos', icon: 'piano' },
+  { id: 'atalhos', label: 'Teclado e atalhos', icon: 'piano' },
 ];
 
 let open: Section | null = null;
@@ -337,7 +338,7 @@ const KEYS: [string, string][] = [
   ['L', 'Alternar pattern / song'],
   ['F5 · F6 · F7 · Alt+F8 · F9', 'Playlist · Rack · Piano roll · Navegador · Mixer'],
   ['F10 · F11 · F12', 'Amp · Melodify · Stitcher'],
-  ['Duplo clique num áudio da playlist', 'Abre no Melodify'],
+  ['Duplo clique num áudio da playlist', 'Abre o canal do áudio (gravação do amp: abre o amp nos pedais dela)'],
   ['Tab / Shift+Tab', 'Alternar entre as janelas abertas'],
   ['Ctrl+Z · Ctrl+Y', 'Desfazer · Refazer'],
   ['Ctrl+S', 'Salvar'],
@@ -346,7 +347,7 @@ const KEYS: [string, string][] = [
   ['Page Down / Page Up', 'Oitava do teclado abaixo / acima'],
   ['Botão do meio no knob', 'Volta ao valor padrão'],
   ['Botão direito no knob ou no BPM', 'Criar automação (abre a Central de Automações)'],
-  ['Duplo clique num clipe da playlist', 'Abre: pattern → rack; automação → Central de Automações; áudio → Melodify'],
+  ['Duplo clique num clipe da playlist', 'Abre: pattern → rack; automação → Central de Automações; áudio → canal do áudio'],
   ['Duplo clique no nome de uma track', 'Renomear'],
   ['Alt + arrastar', 'Mover janela (se ativado em Aparência)'],
 ];
@@ -484,8 +485,27 @@ function OpenRgbView({ o, busy, setBusy, connected }: { o: { supported: boolean;
 }
 
 function Shortcuts() {
+  const [layout, setLayout] = useState(keyLayout());
   return (
+    <>
     <section class="set-group">
+      <h3>Teclado musical</h3>
+      <div class="set-row">
+        <span class="set-lbl">Teclado físico</span>
+        <div class="seg">
+          {KEY_LAYOUTS.map((l) => (
+            <button class={layout === l.id ? 'on' : ''} data-hint={l.hint} onClick={() => (setKeyLayout(l.id), setLayout(l.id))}>
+              {l.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p class="set-note">
+        As notas seguem a posição das teclas no teclado que você tem na mão, não o layout configurado no sistema: um teclado americano com o layout PT-BR toca as mesmas notas que um americano com layout americano. Fileira de baixo do Z até o <kbd>/</kbd> (C3), fileira de cima do Q até o <kbd>]</kbd> (C4), pretas na fileira de cima de cada uma. No ABNT2 entram também a tecla <kbd>\</kbd> ao lado do Z e a <kbd>/</kbd> ao lado do <kbd>;</kbd>.
+      </p>
+    </section>
+    <section class="set-group">
+      <h3>Atalhos</h3>
       <table class="keys">
         {KEYS.map(([k, d]) => (
           <tr>
@@ -497,6 +517,7 @@ function Shortcuts() {
         ))}
       </table>
     </section>
+    </>
   );
 }
 
