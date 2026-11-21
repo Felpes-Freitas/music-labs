@@ -9,6 +9,7 @@ import { askConfirm } from './ui/Dialog';
 import { getPref, setPref } from './prefs';
 import { accentColor } from './theme';
 import { PAD_COUNT, padColor, padKey } from '../core/pads';
+import { KEYMAP as PIANO, BLACK_PCS as BLACK } from './pianokeys';
 
 export interface RgbPrefs {
   enabled: boolean;
@@ -25,12 +26,6 @@ export function setRgbPrefs(p: Partial<RgbPrefs>) {
   sendScene();
 }
 
-/** Teclado do computador como piano (o mesmo mapa de main.tsx): tecla → nota. */
-const PIANO: Record<string, number> = {
-  z: 48, s: 49, x: 50, d: 51, c: 52, v: 53, g: 54, b: 55, h: 56, n: 57, j: 58, m: 59, ',': 60,
-  q: 60, '2': 61, w: 62, '3': 63, e: 64, r: 65, '5': 66, t: 67, '6': 68, y: 69, '7': 70, u: 71, i: 72, '9': 73, o: 74, '0': 75, p: 76,
-};
-const BLACK = new Set([1, 3, 6, 8, 10]);
 const hex = (c: string) => parseInt(c.replace('#', '').slice(0, 6), 16) || 0;
 const WHITE_KEY = 0xd8dde4;
 const BASE = 0x080808;
@@ -45,8 +40,6 @@ export function sceneKeys(): Record<string, number> {
   }
   const acc = hex(accentColor());
   for (const [k, note] of Object.entries(PIANO)) keys[k] = BLACK.has(note % 12) ? acc : WHITE_KEY;
-  // trocar de oitava
-  keys['-'] = keys['='] = (acc >> 1) & 0x7f7f7f;
   return keys;
 }
 

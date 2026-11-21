@@ -168,7 +168,7 @@ git push --follow-tags
   viram o instrumento nativo mais próximo (FPC → kit, baixo → reese, pad → pad...).
 - Navegador de samples (packs do FL instalados, ~/Música, Downloads, ~/MusicLabs/Samples)
   com busca, pré-escuta e arrastar para o rack.
-- Teclado do computador como piano (Z…M / Q…P, `-` e `=` mudam a oitava), teclado MIDI
+- Teclado do computador como piano (Z…/ e Q…], com os símbolos `, . ; /` e `[ = ]` à direita; Page Down/Page Up mudam a oitava), teclado MIDI
   (Web MIDI), undo/redo ilimitado, autosave, exportação WAV 16/24/32-bit.
 - **Soundpad**: 16 pads (4×4) coloridos, cada um com o som que você quiser (sample,
   instrumento multi-sample, nativo ou preset); no teclado do computador, 1234 / QWER /

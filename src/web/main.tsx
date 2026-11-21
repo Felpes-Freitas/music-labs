@@ -1,6 +1,7 @@
 import { PAD_COUNT, padKey, padNote } from '../core/pads';
 import { padHit } from './ui/PadsPanel';
 import { rgbKey, rgbKeysReleased } from './rgb';
+import { KEYMAP } from './pianokeys';
 import { AutoCenterWindow } from './ui/AutoCenter';
 import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
@@ -30,11 +31,7 @@ window.addEventListener('keydown', (e) => e.key === 'Alt' && altCursor(true));
 window.addEventListener('keyup', (e) => e.key === 'Alt' && altCursor(false));
 window.addEventListener('blur', () => altCursor(false));
 
-// Teclado do computador como piano (duas fileiras, como em muitos DAWs).
-const KEYMAP: Record<string, number> = {
-  z: 48, s: 49, x: 50, d: 51, c: 52, v: 53, g: 54, b: 55, h: 56, n: 57, j: 58, m: 59, ',': 60,
-  q: 60, '2': 61, w: 62, '3': 63, e: 64, r: 65, '5': 66, t: 67, '6': 68, y: 69, '7': 70, u: 71, i: 72, '9': 73, o: 74, '0': 75, p: 76,
-};
+// Teclado do computador como piano: mapa em pianokeys.ts (letras e os símbolos à direita).
 const held = new Map<string, { ch: string; key: number }>();
 /** Tecla → pad do Soundpad. */
 const PAD_BY_KEY: Record<string, number> = Object.fromEntries(Array.from({ length: PAD_COUNT }, (_, i) => [padKey(i), i]));
@@ -92,8 +89,9 @@ function onKeyDown(e: KeyboardEvent) {
   if (e.key === 'F12') return (e.preventDefault(), openWindow('stitch', true));
   if (ctrl || e.altKey) return;
   if (k === 'l' && !e.repeat) return setMode(state.mode === 'pattern' ? 'song' : 'pattern');
-  if (k === '-' ) return (octave = Math.max(-3, octave - 1), toast(`Oitava do teclado: ${octave >= 0 ? '+' : ''}${octave}`));
-  if (k === '=' ) return (octave = Math.min(3, octave + 1), toast(`Oitava do teclado: ${octave >= 0 ? '+' : ''}${octave}`));
+  // oitava do teclado: Page Down / Page Up (o - e o = agora são notas)
+  if (e.key === 'PageDown') return (e.preventDefault(), (octave = Math.max(-3, octave - 1)), toast(`Oitava do teclado: ${octave >= 0 ? '+' : ''}${octave}`));
+  if (e.key === 'PageUp') return (e.preventDefault(), (octave = Math.min(3, octave + 1)), toast(`Oitava do teclado: ${octave >= 0 ? '+' : ''}${octave}`));
   // Soundpad selecionado: o teclado vira a grade 4×4 (1234 / QWER / ASDF / ZXCV)
   const sel = state.channelId ? state.project.channels.find((c) => c.id === state.channelId) : undefined;
   if (sel?.type === 'pads' && k in PAD_BY_KEY) {
