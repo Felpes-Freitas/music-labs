@@ -46,6 +46,19 @@
     e definir o BPM de origem do áudio, em vez de redimensionar os clipes;
   - automação de BPM: o stretch teria de seguir a curva ao longo do clipe.
 
+- **Botões de janela na barra de título como ícones puros.** Os botões que ligam a
+  playlist, o rack, o piano roll, o mixer, o amp, o Melodify, o Stitcher e o navegador
+  (ao lado do "MCP") passam a ser só ícones, sem caixa de fundo. Quando a janela está
+  aberta/selecionada, a **cor do ícone** (foreground) vira a cor de destaque, e não o
+  fundo do botão; fechada, o ícone fica na cor normal (branco/cinza). Hoje
+  (`TitleBar` em Toolbar.tsx, classe `.wbtn.on`) o estado "ligado" pinta o fundo.
+- **Menu da barra de título recolhido (ideia, a avaliar).** Deixar só "Arquivo" no canto
+  superior esquerdo, com uma setinha indicando que expande; ao passar o mouse em cima,
+  abre a lista com Arquivo, Editar, Adicionar, Patterns, Exibir, Aparência, Opções,
+  Ferramentas e Ajuda. Objetivo: ocupar menos espaço em cima e deixar o design mais
+  limpo. A decidir: o que abre no hover e o que abre no clique (para não abrir sem querer
+  quando o mouse só passa por ali), e como fica o atalho por teclado dos menus.
+
 ## Pendências maiores
 
 - Hospedar plugins VST/LV2/CLAP (ponte via Carla/yabridge). Em espera: decidir
