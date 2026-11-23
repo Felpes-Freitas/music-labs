@@ -18,6 +18,10 @@
 </p>
 
 <p align="center">
+  <b>Português</b> · <a href="README.en.md">English</a>
+</p>
+
+<p align="center">
   <a href="https://github.com/Felpes-Freitas/music-labs/releases/latest"><b>Baixar</b></a> ·
   <a href="#galeria">Galeria</a> ·
   <a href="#recursos">Recursos</a> ·
