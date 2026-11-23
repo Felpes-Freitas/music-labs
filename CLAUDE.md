@@ -503,8 +503,21 @@ Z…/ e Q…] teclado musical (`pianokeys.ts`, inclui , . ; / e [ = ]; o L segue
   toggleEdits, sendToPlaylist, startToolRecording/finishToolRecording (corta silêncio),
   importToPool. `clipaudio.ts`: loadAudio (cache), uploadFiles, makeRoomBelow, placeAudios.
 
+### Piano roll
+
+- Clique numa nota (ou criar uma) soa **enquanto o botão está apertado** (`hold`/`holdOff`:
+  `liveOn` sem gate, `liveOff` ao soltar; o envelope do instrumento decide se acaba antes).
+- A engine informa as teclas que soam do canal observado (`audio.watch`, que o piano roll e
+  a janela do canal compartilham); a linha e a tecla delas acendem (`litKeys`).
+- Botão direito em lugar vazio e Ctrl+D desmarcam as notas; duplicar é Ctrl+B.
+- Snap: `Auto (pelo zoom)` = `autoSnapRoll` (core/snap.ts; livre no zoom máximo). Mover uma
+  nota crava a **nota clicada** na linha da grade mais próxima (as outras selecionadas andam
+  o mesmo tanto), e as setas ←/→ vão para a próxima linha, não "+1 passo" (uma nota gravada
+  fora do tempo cai na grade).
+
 ### Dicas e barra de cima
 
+- Os botões de janela da barra de título (`.tb-wins .wbtn`) são só ícones: ligado = ícone na cor de destaque.
 - Visual: botões ligados (`button.on`, PAT/SONG, steps, solo, mute, rec, play) usam cor
   **chapada** (a de destaque do tema, ou verde/vermelho de estado), sem degradê nem brilho
   em cima — pedido do usuário; não reintroduzir `linear-gradient` nesses estados.

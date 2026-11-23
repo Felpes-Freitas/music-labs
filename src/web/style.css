@@ -862,3 +862,8 @@ option, optgroup { background-color: var(--pop); color: var(--text); }
 .win-name .title-edit { font: inherit; color: var(--dim); background: transparent; border: 1px solid transparent; border-radius: 3px; padding: 0 3px; margin: 0 0 0 -3px; height: 20px; box-shadow: none; cursor: text; min-width: 0; }
 .win-name .title-edit:hover { border-color: var(--line2); }
 .win-name .title-edit:focus { color: var(--text); background: var(--well); border-color: var(--acc); outline: none; }
+/* botões de janela da barra de título: só o ícone; ligado = ícone na cor de destaque */
+.tb-wins .wbtn, .tb-wins .wbtn:hover:not(:disabled), .tb-wins .wbtn:active:not(:disabled), .tb-wins .wbtn.on, .tb-wins .wbtn.on:hover:not(:disabled) { background: none; border-color: transparent; box-shadow: none; filter: none; }
+.tb-wins .wbtn { color: var(--dim); }
+.tb-wins .wbtn:hover:not(:disabled) { color: var(--text); }
+.tb-wins .wbtn.on { color: var(--acc); }

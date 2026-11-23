@@ -8,6 +8,7 @@ import { SCALES, inScale, pitchClass } from '../../core/theory';
 import * as A from '../../core/actions';
 import { Win, IconBtn, useCanvas } from './widgets';
 import { ui, accent } from '../theme';
+import { autoSnapRoll } from '../../core/snap';
 
 const RULER = 24;
 const KEYS = 66;
@@ -15,6 +16,7 @@ const SB = 11;
 const BLACK = new Set([1, 3, 6, 8, 10]);
 
 const SNAPS: [string, number][] = [
+  ['Auto (pelo zoom)', -1],
   ['Compasso', 384],
   ['1/2', 192],
   ['Tempo', 96],
@@ -49,7 +51,7 @@ type Tool = 'draw' | 'paint' | 'erase' | 'mute' | 'slice' | 'select';
 type Lane = 'vel' | 'pan';
 
 type Drag =
-  | { kind: 'move'; ids: Set<string>; x0: number; y0: number; orig: Note[]; dKey: number; dPos: number; created?: boolean }
+  | { kind: 'move'; ids: Set<string>; x0: number; y0: number; orig: Note[]; dKey: number; dPos: number; created?: boolean; moved?: boolean; anchor?: string }
   | { kind: 'resize'; ids: Set<string>; x0: number; orig: Note[] }
   | { kind: 'select'; x0: number; y0: number; x1: number; y1: number; add: boolean }
   | { kind: 'erase' }
@@ -88,8 +90,10 @@ export function PianoRoll() {
   const pressed = useRef<number | null>(null);
   const hover = useRef<{ key: number; tick: number } | null>(null);
 
-  const snap = s.snap;
   const bar = ticksPerBar(p);
+  /** Grade do snap agora: a escolhida, ou (Auto) a que cabe no zoom atual; ≤1 = livre. */
+  const snapNow = () => (s.snap === -1 ? autoSnapRoll(view.current.zx, bar) : s.snap);
+  const snap = snapNow(); // para o que é desenhado (o desenho é refeito a cada zoom)
   const plen = pat ? patternLength(p, pat) : bar;
   const color = ch?.color ?? '#5fb3d9';
 
@@ -127,6 +131,10 @@ export function PianoRoll() {
         const root = s.scale !== 'chromatic' && pc === pitchClass(s.scaleRoot);
         ctx.fillStyle = root ? ui('#2b3a3c') : out ? ui('#1b2023') : BLACK.has(pc) ? ui('#23292d') : ui('#2a3135');
         ctx.fillRect(g.gridL, y, g.gridR - g.gridL, rows);
+        if (litKeys.current.has(key) || pressed.current === key) {
+          ctx.fillStyle = 'rgba(255,255,255,0.16)';
+          ctx.fillRect(g.gridL, y, g.gridR - g.gridL, rows);
+        }
         ctx.fillStyle = pc === 0 ? ui('#424d54') : ui('#20262a');
         ctx.fillRect(g.gridL, y + rows - 1, g.gridR - g.gridL, 1);
       }
@@ -210,7 +218,7 @@ export function PianoRoll() {
         for (let i = 0; i < 7; i++) {
           const y1 = bottom - (i + 1) * wh;
           const keyOf = c + [0, 2, 4, 5, 7, 9, 11][i];
-          const isPressed = pressed.current === keyOf;
+          const isPressed = pressed.current === keyOf || litKeys.current.has(keyOf);
           ctx.fillStyle = isPressed ? accent() : ui('#e9ecee');
           ctx.fillRect(0, y1, KEYS - 1, wh - 1);
           ctx.fillStyle = ui('#9aa1a5');
@@ -225,7 +233,7 @@ export function PianoRoll() {
       for (let key = kTop; key >= kBot; key--) {
         if (!BLACK.has(((key % 12) + 12) % 12)) continue;
         const y = keyY(key);
-        ctx.fillStyle = pressed.current === key ? accent() : ui('#1b1e20');
+        ctx.fillStyle = pressed.current === key || litKeys.current.has(key) ? accent() : ui('#1b1e20');
         ctx.fillRect(0, y + 1, KEYS * 0.6, rows - 2);
         ctx.fillStyle = 'rgba(255,255,255,0.12)';
         ctx.fillRect(2, y + 2, KEYS * 0.6 - 5, 2);
@@ -344,7 +352,7 @@ export function PianoRoll() {
       ctx.fillRect(g.gridR, 0, SB, RULER);
       ctx.fillRect(g.gridR, g.gridB, SB, h - g.gridB);
     },
-    [s.version, s.patternId, s.channelId, sel, ghost, snap, s.scale, s.scaleRoot, tool, lane, chord],
+    [s.version, s.patternId, s.channelId, sel, ghost, s.snap, s.scale, s.scaleRoot, tool, lane, chord],
     (ctx, w, h) => {
       // Camada de cima: prévia sob o mouse, retângulo de seleção e cursor de reprodução.
       const v = view.current;
@@ -394,9 +402,23 @@ export function PianoRoll() {
     if (v.scrollX < 0) v.scrollX = 0;
   };
 
+  // teclas que estão soando (teclado do computador, MIDI, piano na tela): a linha acende
+  const litKeys = useRef(new Set<number>());
+  const litSig = useRef('');
+  const pianoOpen = s.windows.piano.open;
+  useEffect(() => {
+    // a engine só informa as teclas do canal "observado" (o canal e o piano roll dividem isso)
+    audio.watch(pianoOpen || s.windows.channel.open ? ch?.id ?? null : null);
+  }, [pianoOpen, s.windows.channel.open, ch?.id]);
   useEffect(
     () =>
       onLive((st) => {
+        const sig = st.lit.join(',');
+        if (sig !== litSig.current) {
+          litSig.current = sig;
+          litKeys.current = new Set(st.lit);
+          paint();
+        }
         const t = st.playing && st.mode === 'pattern' && st.patternId === state.patternId ? st.tick : -1;
         if (t !== playTick.current) {
           playTick.current = t;
@@ -441,8 +463,8 @@ export function PianoRoll() {
   };
   const keyAt = (y: number) => 127 - Math.floor((y - RULER + view.current.scrollY) / view.current.rowH);
   const tickAt = (x: number) => view.current.scrollX + (x - KEYS) / view.current.zx;
-  const snapFloor = (t: number) => (snap > 1 ? Math.floor(t / snap) * snap : Math.round(t));
-  const snapRound = (t: number) => (snap > 1 ? Math.round(t / snap) * snap : Math.round(t));
+  const snapFloor = (t: number) => { const sn = snapNow(); return sn > 1 ? Math.floor(t / sn) * sn : Math.round(t); };
+  const snapRound = (t: number) => { const sn = snapNow(); return sn > 1 ? Math.round(t / sn) * sn : Math.round(t); };
   const fitScale = (k: number) => {
     if (!lockScale || s.scale === 'chromatic') return k;
     for (let d = 0; d < 7; d++) {
@@ -463,6 +485,20 @@ export function PianoRoll() {
     return null;
   };
   const audition = (key: number, vel = 0.8, len = 48) => ch && audio.liveOn(ch.id, key, vel, len);
+  // Nota segurada: soa enquanto o botão do mouse estiver apertado (o próprio envelope do
+  // instrumento decide se ela termina antes); soltar o botão solta a nota.
+  const held = useRef<{ ch: string; keys: number[] } | null>(null);
+  const holdOff = () => {
+    const h = held.current;
+    held.current = null;
+    if (h) for (const k of h.keys) audio.liveOff(h.ch, k);
+  };
+  const hold = (keys: number[], vel = 0.8) => {
+    if (!ch) return;
+    holdOff();
+    held.current = { ch: ch.id, keys };
+    for (const k of keys) audio.liveOn(ch.id, k, vel);
+  };
 
   const onDown = (e: PointerEvent) => {
     if (!pat || !ch) return;
@@ -509,6 +545,7 @@ export function PianoRoll() {
     if (t === 'erase') {
       drag.current = { kind: 'erase' };
       if (hn) commit(notes.filter((n) => n.id !== hn.n.id));
+      else if (right && sel.size) setSel(new Set()); // botão direito no vazio: desmarca as notas
       return;
     }
     if (t === 'mute') {
@@ -540,8 +577,8 @@ export function PianoRoll() {
       lastLen.current = hn.n.len;
       if (hn.edge && t !== 'select') drag.current = { kind: 'resize', ids, x0: x, orig: notes };
       else {
-        drag.current = { kind: 'move', ids, x0: x, y0: y, orig: notes, dKey: 0, dPos: 0 };
-        audition(hn.n.key, hn.n.vel, Math.min(hn.n.len, 96));
+        drag.current = { kind: 'move', ids, x0: x, y0: y, orig: notes, dKey: 0, dPos: 0, anchor: hn.n.id };
+        hold([hn.n.key], hn.n.vel);
       }
       return;
     }
@@ -551,10 +588,11 @@ export function PianoRoll() {
     const created = (CHORDS[chord] ?? [0]).map((iv) => ({ id: uid('n'), key: Math.min(127, key + iv), pos, len: lastLen.current, vel: 0.78 }) as Note);
     const next = [...notes, ...created];
     preview(next);
-    created.forEach((n) => audition(n.key, 0.78, Math.min(n.len, 96)));
+    if (t !== 'paint') hold(created.map((n) => n.key), 0.78);
+    else created.forEach((n) => audition(n.key, 0.78, Math.min(n.len, 96)));
     const ids = new Set(created.map((n) => n.id));
     setSel(ids);
-    drag.current = t === 'paint' ? { kind: 'paint', key, last: pos } : { kind: 'move', ids, x0: x, y0: y, orig: next, dKey: 0, dPos: 0, created: true };
+    drag.current = t === 'paint' ? { kind: 'paint', key, last: pos } : { kind: 'move', ids, x0: x, y0: y, orig: next, dKey: 0, dPos: 0, created: true, anchor: created[0]?.id };
   };
 
   const keyFromKeyboard = (x: number, y: number) => {
@@ -581,7 +619,7 @@ export function PianoRoll() {
     const g = geo(w, h);
     const lh = g.laneB - g.laneTop - 8;
     const cur = curNotes();
-    const near = (n: Note) => Math.abs(tickX(n.pos) - x) < Math.max(4, (snap * view.current.zx) / 2) && (sel.size === 0 || sel.has(n.id));
+    const near = (n: Note) => Math.abs(tickX(n.pos) - x) < Math.max(4, (snapNow() * view.current.zx) / 2) && (sel.size === 0 || sel.has(n.id));
     if (lane === 'vel') {
       const vel = Math.max(0.02, Math.min(1, (g.laneB - 4 - y) / lh));
       preview(cur.map((n) => (near(n) ? { ...n, vel } : n)));
@@ -622,8 +660,14 @@ export function PianoRoll() {
     switch (d.kind) {
       case 'move': {
         let dKey = Math.round(-(y - d.y0) / v.rowH);
+        // só começa a mover depois de uns pixels (um clique parado não desloca nada)
+        if (!d.moved && Math.abs(x - d.x0) < 3 && dKey === 0) return;
+        d.moved = true;
         const rawDt = (x - d.x0) / v.zx;
-        const dPos = snap > 1 ? Math.round(rawDt / snap) * snap : Math.round(rawDt);
+        // a nota clicada vai para a linha da grade mais próxima (as outras selecionadas
+        // andam o mesmo tanto): uma nota gravada fora do tempo fica certa ao ser movida
+        const anchor = d.orig.find((n) => n.id === d.anchor) ?? d.orig.find((n) => d.ids.has(n.id));
+        const dPos = anchor ? snapRound(anchor.pos + rawDt) - anchor.pos : Math.round(rawDt);
         if (lockScale) {
           const first = d.orig.find((n) => d.ids.has(n.id));
           if (first) dKey = fitScale(first.key + dKey) - first.key;
@@ -631,7 +675,7 @@ export function PianoRoll() {
         if (dKey === d.dKey && dPos === d.dPos) return;
         if (dKey !== d.dKey) {
           const first = d.orig.find((n) => d.ids.has(n.id));
-          if (first) audition(first.key + dKey, first.vel, Math.min(first.len, 48));
+          if (first) hold([Math.max(0, Math.min(127, first.key + dKey))], first.vel);
         }
         d.dKey = dKey;
         d.dPos = dPos;
@@ -644,7 +688,8 @@ export function PianoRoll() {
           d.orig.map((n) => {
             if (!d.ids.has(n.id)) return n;
             const end = snapRound(n.pos + n.len + dt);
-            const len = Math.max(snap > 1 ? Math.min(snap, n.len) : 1, Math.round(end - n.pos));
+            const sn = snapNow();
+            const len = Math.max(sn > 1 ? Math.min(sn, n.len) : 1, Math.round(end - n.pos));
             lastLen.current = len;
             return { ...n, len };
           }),
@@ -725,6 +770,7 @@ export function PianoRoll() {
   const onUp = () => {
     const d = drag.current;
     drag.current = null;
+    holdOff();
     if (!d || !pat || !ch) return;
     if (d.kind === 'keys') {
       audio.liveOff(ch.id, d.key);
@@ -779,7 +825,7 @@ export function PianoRoll() {
       const sel = selRef.current;
       const notes = curNotes();
       const chosen = notes.filter((n) => sel.has(n.id));
-      const grid = snap > 1 ? snap : STEP;
+      const grid = snapNow() > 1 ? snapNow() : STEP;
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (sel.size) commit(notes.filter((n) => !sel.has(n.id)));
         setSel(new Set());
@@ -795,7 +841,9 @@ export function PianoRoll() {
         const pasted = clipboard.map((n) => ({ ...n, id: uid('n'), pos: Math.ceil((at + n.pos - start) / grid) * grid }));
         commit([...notes, ...pasted]);
         setSel(new Set(pasted.map((n) => n.id)));
-      } else if (ctrl && k === 'd' && chosen.length) {
+      } else if (ctrl && k === 'd') {
+        setSel(new Set()); // Ctrl+D desmarca todas as notas
+      } else if (ctrl && k === 'b' && chosen.length) {
         const lo = Math.min(...chosen.map((n) => n.pos));
         const span = Math.ceil((Math.max(...chosen.map((n) => n.pos + n.len)) - lo) / grid) * grid;
         const copies = chosen.map((n) => ({ ...n, id: uid('n'), pos: n.pos + span }));
@@ -806,8 +854,9 @@ export function PianoRoll() {
         const dk = (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 12 : 1);
         commit(notes.map((n) => (sel.has(n.id) ? { ...n, key: Math.max(0, Math.min(127, n.key + dk)) } : n)));
       } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && sel.size) {
-        const dt = (e.key === 'ArrowRight' ? 1 : -1) * grid;
-        commit(notes.map((n) => (sel.has(n.id) ? { ...n, pos: Math.max(0, n.pos + dt) } : n)));
+        // vai para a próxima linha da grade na direção (uma nota fora da grade cai na linha)
+        const right = e.key === 'ArrowRight';
+        commit(notes.map((n) => (sel.has(n.id) ? { ...n, pos: Math.max(0, right ? (Math.floor(n.pos / grid) + 1) * grid : (Math.ceil(n.pos / grid) - 1) * grid) } : n)));
       } else if (e.key === 'Escape') setSel(new Set());
       else if (e.shiftKey && !ctrl && !e.altKey && ['p', 'b', 'd', 't', 'c', 'e'].includes(k)) setTool(({ p: 'draw', b: 'paint', d: 'erase', t: 'mute', c: 'slice', e: 'select' } as Record<string, Tool>)[k]);
       else return;
@@ -816,7 +865,7 @@ export function PianoRoll() {
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [notes, sel, pat?.id, ch?.id, snap]);
+  }, [notes, sel, pat?.id, ch?.id, s.snap, bar]);
 
   const toolBtn = (t: Tool, icon: string, label: string, key: string) => <IconBtn icon={icon} on={tool === t} hint={`${label} (${key})`} onClick={() => setTool(t)} />;
 
@@ -843,7 +892,7 @@ export function PianoRoll() {
           </span>
           <span class="tgroup" data-hint="Grade de snap (magnetismo)">
             <svg class="ico" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 3v5a4 4 0 008 0V3M4 5.5h2.5M9.5 5.5H12" /></svg>
-            <select value={snap} onChange={(e) => ((state.snap = Number((e.target as HTMLSelectElement).value)), paint())}>
+            <select value={s.snap} onChange={(e) => ((state.snap = Number((e.target as HTMLSelectElement).value)), paint())}>
               {SNAPS.map(([l, v]) => (
                 <option value={v}>{l}</option>
               ))}

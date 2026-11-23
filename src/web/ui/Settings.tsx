@@ -342,6 +342,7 @@ const KEYS: [string, string][] = [
   ['Tab / Shift+Tab', 'Alternar entre as janelas abertas'],
   ['Ctrl+Z · Ctrl+Y', 'Desfazer · Refazer'],
   ['Ctrl+S', 'Salvar'],
+  ['Piano roll: Ctrl+D · Ctrl+B', 'Desmarcar todas as notas · duplicar as notas selecionadas'],
   ['Ctrl+,', 'Configurações'],
   ['Z…/ · Q…]', 'Teclado musical: letras e símbolos à direita (, . ; / e [ = ])'],
   ['Page Down / Page Up', 'Oitava do teclado abaixo / acima'],

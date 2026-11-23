@@ -103,9 +103,11 @@ export function ChannelSettings() {
   const [tab, setTab] = useState<'inst' | 'gear'>('inst');
   const open = s.windows.channel.open;
   // A engine acende as teclas do canal aberto na tela.
+  // (o piano roll também observa o canal: não solta enquanto ele estiver aberto)
+  const pianoOpen = s.windows.piano.open;
   useEffect(() => {
-    audio.watch(open && ch ? ch.id : null);
-  }, [open, ch?.id]);
+    audio.watch((open || pianoOpen) && ch ? ch.id : null);
+  }, [open, pianoOpen, ch?.id]);
   if (!ch) return null;
   if (ch.type === 'audio') return <AudioChannelWin />;
   const def = INSTRUMENTS[ch.type];
