@@ -1,11 +1,66 @@
-# Music Labs
+<p align="center">
+  <img src="build-resources/icon.png" alt="Music Labs" width="112">
+</p>
 
-DAW open source (Linux, Windows e macOS) com o fluxo de trabalho de rack de canais,
-piano roll, playlist e mixer, um sintetizador espectral próprio (Prisma) e um
-**servidor MCP** para produzir junto com o Claude.
+<h1 align="center">Music Labs</h1>
+
+<p align="center">
+  <b>DAW open source para Linux, Windows e macOS</b><br>
+  Rack de canais, piano roll, playlist e mixer, um sintetizador espectral próprio e um<br>
+  servidor <b>MCP</b> para produzir música junto com o Claude.
+</p>
+
+<p align="center">
+  <a href="https://github.com/Felpes-Freitas/music-labs/releases/latest"><img alt="Versão" src="https://img.shields.io/github/v/release/Felpes-Freitas/music-labs?label=vers%C3%A3o&color=f2a33a"></a>
+  <a href="https://github.com/Felpes-Freitas/music-labs/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Felpes-Freitas/music-labs/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="Licença GPL-3.0" src="https://img.shields.io/badge/licen%C3%A7a-GPL--3.0-blue"></a>
+  <img alt="Linux · Windows · macOS" src="https://img.shields.io/badge/Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-2b2f36">
+</p>
+
+<p align="center">
+  <a href="https://github.com/Felpes-Freitas/music-labs/releases/latest"><b>Baixar</b></a> ·
+  <a href="#galeria">Galeria</a> ·
+  <a href="#recursos">Recursos</a> ·
+  <a href="#produzir-com-o-claude-mcp">MCP</a> ·
+  <a href="#rodar-a-partir-do-código">Código</a>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/visao-geral.webp" alt="Music Labs tocando um projeto: playlist com o arranjo completo e o mixer com os medidores ativos" width="100%">
+</p>
 
 É um app desktop (Electron) com a engine de áudio rodando num AudioWorklet. A mesma
 engine roda no Node para render offline e análise de mix.
+
+## Destaques
+
+- **Fluxo de trabalho clássico** — rack de canais com step sequencer, piano roll, playlist
+  com tracks infinitas e mixer com 16 inserts, roteamento e sidechain.
+- **Instrumentos próprios** — Prisma (sintetizador aditivo espectral), Synth subtrativo,
+  Sampler, Drum Synth, Pluck, FM e um Soundpad 4×4.
+- **Voz e guitarra de verdade** — Amp com cadeia de pedais e gravação inteligente,
+  **Melodify** para afinar nota por nota e **Stitcher** para costurar os melhores takes.
+- **Produza com o Claude** — um servidor MCP que cria canais, escreve notas, arranja,
+  mixa e analisa o resultado, com tudo aparecendo ao vivo na interface.
+- **Nada é destrutivo** — todo áudio editado guarda o original.
+- **Abre projetos `.flp`** — canais, patterns, notas, playlist e roteamento do mixer.
+
+## Galeria
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/playlist.webp" alt="Playlist com o arranjo da música"><br><sub><b>Playlist</b> — arranjo completo com patterns coloridos por instrumento.</sub></td>
+    <td width="50%"><img src="docs/screenshots/piano-roll.webp" alt="Piano roll com a melodia do lead"><br><sub><b>Piano roll</b> — notas, velocity, escalas e ghost notes.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/prisma.webp" alt="Sintetizador Prisma"><br><sub><b>Prisma</b> — sintetizador aditivo espectral com filtro, envelopes e efeitos no canal.</sub></td>
+    <td width="50%"><img src="docs/screenshots/soundpad.webp" alt="Soundpad com 16 pads"><br><sub><b>Soundpad</b> — 16 pads tocados pelo teclado do computador.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/amp.webp" alt="Amp de guitarra com a cadeia de efeitos"><br><sub><b>Amp</b> — cadeia de pedais reordenável e gravações de guitarra na playlist.</sub></td>
+    <td width="50%"><img src="docs/screenshots/melodify.webp" alt="Melodify mostrando as notas de uma gravação"><br><sub><b>Melodify</b> — cada nota cantada ou tocada vira um bloco editável.</sub></td>
+  </tr>
+</table>
 
 ## Instalar
 
@@ -52,7 +107,12 @@ npm version patch      # ou minor/major: atualiza package.json e cria a tag
 git push --follow-tags
 ```
 
-## O que tem
+## Recursos
+
+Clique em cada grupo para ver os detalhes.
+
+<details>
+<summary><b>Rack, piano roll e playlist</b></summary>
 
 - **Rack de canais** com step sequencer (16+ steps, pintar arrastando, mute/solo,
   volume/pan, insert do mixer) e mini piano roll para canais melódicos. Filtro **só este
@@ -72,6 +132,20 @@ git push --follow-tags
   infinitas: a playlist sempre mostra mais tracks; o projeto só guarda as usadas.
 - **Clips de áudio**: arraste um áudio do navegador para a playlist; a forma de onda
   aparece no clip, que pode ser movido, cortado e fatiado e vai para o insert escolhido.
+- **Área selecionada**: arraste na régua (ou clique num clipe) para selecionar um trecho;
+  ele fica destacado de cima a baixo e o play começa nele. Botão direito dentro da área:
+  **Preencher com** (repete um pattern, cortando o último), **Inserir instrumento**
+  (Music Labs, presets, instrumentos da biblioteca/FL, Amp, Melodify, Stitcher: cria um
+  pattern novo só com ele ocupando a área) e apagar clipes da área.
+- **Automação**: botão direito em qualquer knob → "Criar clipe de automação". No clip,
+  clique para criar pontos, arraste para mover e use o botão direito para apagar.
+  Funciona com volume/pan de canais e do mixer e com parâmetros de instrumentos e efeitos.
+
+</details>
+
+<details>
+<summary><b>Gravação: Amp, Melodify e Stitcher</b></summary>
+
 - **Gravação**: o botão vermelho grava do microfone/interface a partir da posição
   atual, com compensação de latência; a onda aparece na playlist enquanto grava, o
   arquivo vai para `~/MusicLabs/Gravações` e vira um clip de áudio. Entrada e canais
@@ -111,10 +185,6 @@ git push --follow-tags
   logo abaixo do original). Espaço toca o áudio do Melodify quando ele está em foco.
   O botão **BPM** detecta o andamento do áudio (ex.: uma gravação sua de guitarra) e
   oferece colocar o projeto nesse BPM, com o áudio alinhado à grade.
-- **Dicas**: a barra do topo explica o que está sob o mouse; em Configurações → Aparência
-  dá para trocar por balões perto do mouse (aí os controles do topo ficam centralizados).
-- **Tap tempo**: o botão TAP ao lado do BPM. Clique no ritmo da música e o BPM segue
-  os cliques.
 - **Stitcher** (F12): em cima, a onda do resultado, com cada pedaço na cor do áudio de
   onde veio (clique para tocar dali; Espaço com a janela em foco); logo abaixo, a
   melodia; embaixo, os áudios, cada um com a sua cor e os pedaços usados destacados.
@@ -131,20 +201,6 @@ git push --follow-tags
   também vale para as mudanças feitas nele.
 - **Nada é destrutivo**: todo áudio da lista guarda o original; as edições podem ser
   desativadas e reativadas (selo "ed." na lista, botão no Melodify).
-- **Navegador lateral** recolhível (botão no topo ou Alt+F8).
-- **Configurações** (menu Aparência ou Ctrl+,): temas Grafite, OLED e Adobe, cor de
-  destaque com seletor de cor, Alt + arrastar janelas, entrada de gravação e atalhos.
-- **Parar duas vezes** corta também as caudas de reverb/eco e notas soltas.
-- **Automação**: botão direito em qualquer knob → "Criar clipe de automação". No clip,
-  clique para criar pontos, arraste para mover e use o botão direito para apagar.
-  Funciona com volume/pan de canais e do mixer e com parâmetros de instrumentos e efeitos.
-- **Área selecionada**: arraste na régua (ou clique num clipe) para selecionar um trecho;
-  ele fica destacado de cima a baixo e o play começa nele. Botão direito dentro da área:
-  **Preencher com** (repete um pattern, cortando o último), **Inserir instrumento**
-  (Music Labs, presets, instrumentos da biblioteca/FL, Amp, Melodify, Stitcher: cria um
-  pattern novo só com ele ocupando a área) e apagar clipes da área.
-- **Transporte**: **loop** (na área selecionada, ou na música inteira), **metrônomo** e
-  **contagem** (3, 2, 1 antes de gravar).
 - **REC geral**: grava **notas** (teclado do computador, teclado MIDI, piano na tela) e
   **automações**: qualquer knob mexido (arrastar, roda, duplo clique, botão do meio) vira
   automação daquele parâmetro a partir daquele momento (antes disso ele fica como estava).
@@ -152,6 +208,12 @@ git push --follow-tags
   ponto. Com o loop, cada volta vira um pattern
   novo numa outra track. Voz e instrumentos de áudio ficam com o Amp, o Melodify e o
   Stitcher.
+
+</details>
+
+<details>
+<summary><b>Mixer, instrumentos e efeitos</b></summary>
+
 - **Mixer**: 16 inserts + master, fader, pan, mute/solo, medidores, roteamento entre
   inserts (buses), até 10 efeitos por insert com dry/wet.
 - **Instrumentos nativos**: Prisma (sintetizador aditivo espectral: filtro harmônico
@@ -163,16 +225,38 @@ git push --follow-tags
 - **Efeitos**: EQ 4 bandas + HPF, filtro com LFO sincronizado, compressor com
   **sidechain**, delay sincronizado (ping-pong), reverb, chorus, saturação, bitcrusher,
   imagem estéreo (mono abaixo de X Hz) e limiter.
-- **Importa .flp do FL Studio**: canais, patterns, notas, playlist, nomes do mixer e
-  roteamento canal→insert. Samples são resolvidos na instalação do Wine; plugins do FL
-  viram o instrumento nativo mais próximo (FPC → kit, baixo → reese, pad → pad...).
-- Navegador de samples (packs do FL instalados, ~/Música, Downloads, ~/MusicLabs/Samples)
-  com busca, pré-escuta e arrastar para o rack.
-- Teclado do computador como piano (Z…/ e Q…], com os símbolos `, . ; /` e `[ = ]` à direita; Page Down/Page Up mudam a oitava), teclado MIDI
-  (Web MIDI), undo/redo ilimitado, autosave, exportação WAV 16/24/32-bit.
 - **Soundpad**: 16 pads (4×4) coloridos, cada um com o som que você quiser (sample,
   instrumento multi-sample, nativo ou preset); no teclado do computador, 1234 / QWER /
   ASDF / ZXCV na mesma disposição da tela. Kits prontos (sintetizados, funcionam sem samples).
+
+</details>
+
+<details>
+<summary><b>Interface, transporte e navegação</b></summary>
+
+- **Transporte**: **loop** (na área selecionada, ou na música inteira), **metrônomo** e
+  **contagem** (3, 2, 1 antes de gravar).
+- **Dicas**: a barra do topo explica o que está sob o mouse; em Configurações → Aparência
+  dá para trocar por balões perto do mouse (aí os controles do topo ficam centralizados).
+- **Tap tempo**: o botão TAP ao lado do BPM. Clique no ritmo da música e o BPM segue
+  os cliques.
+- **Navegador lateral** recolhível (botão no topo ou Alt+F8).
+- Navegador de samples (packs do FL instalados, ~/Música, Downloads, ~/MusicLabs/Samples)
+  com busca, pré-escuta e arrastar para o rack.
+- **Configurações** (menu Aparência ou Ctrl+,): temas Grafite, OLED e Adobe, cor de
+  destaque com seletor de cor, Alt + arrastar janelas, entrada de gravação e atalhos.
+- **Parar duas vezes** corta também as caudas de reverb/eco e notas soltas.
+- Teclado do computador como piano (Z…/ e Q…], com os símbolos `, . ; /` e `[ = ]` à direita; Page Down/Page Up mudam a oitava), teclado MIDI
+  (Web MIDI), undo/redo ilimitado, autosave, exportação WAV 16/24/32-bit.
+
+</details>
+
+<details>
+<summary><b>Importação e integrações</b></summary>
+
+- **Importa .flp do FL Studio**: canais, patterns, notas, playlist, nomes do mixer e
+  roteamento canal→insert. Samples são resolvidos na instalação do Wine; plugins do FL
+  viram o instrumento nativo mais próximo (FPC → kit, baixo → reese, pad → pad...).
 - **Teclado RGB** (opcional, via [OpenRGB](https://openrgb.org)): as teclas acompanham o
   instrumento selecionado — o "piano" do teclado em branco e preto, ou as cores dos pads do
   Soundpad — e a tecla tocada acende. Funciona com os teclados que o OpenRGB controla
@@ -182,10 +266,12 @@ git push --follow-tags
   quem já usa o OpenRGB com o servidor SDK ligado não baixa nada. Configurações → Iluminação
   RGB. Ao fechar o Music Labs, o teclado volta à iluminação que tinha.
 
+</details>
+
 Atalhos: Espaço tocar/parar · L pattern/song · F5 playlist · F6 rack · F7 piano roll ·
 F8 navegador · F9 mixer · Ctrl+S salvar · Ctrl+Z/Y desfazer/refazer.
 
-## MCP
+## Produzir com o Claude (MCP)
 
 O servidor MCP conversa com o app aberto (porta 7717) e sobe o servidor sozinho se o
 app estiver fechado. Ele fica no repositório: depois de `npm ci && npm run build`,
