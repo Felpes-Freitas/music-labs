@@ -640,59 +640,126 @@ class Tremolo extends Fx {
 }
 
 /**
- * Capotraste / oitavador: muda o tom por janelas sobrepostas lendo uma linha de atraso que
- * anda mais rápido ou mais devagar que a escrita (dois cabeçotes defasados em meia janela,
- * com envelope de Hann, somam ganho constante). Latência média de meia janela; janelas
- * maiores soam melhor em notas graves (baixo), menores reagem mais rápido.
+ * Capotraste / oitavador (WSOLA): o som sai em grãos de uma janela (Hann, 50% de
+ * sobreposição) lidos de uma linha de atraso na velocidade do novo tom. Cada grão novo
+ * começa no ponto, perto do ideal, em que a forma de onda mais combina com a do grão que
+ * está saindo (correlação), então as emendas ficam em fase e não "tremem". Mudanças pequenas
+ * de tom usam grãos longos (poucas emendas). Janelas maiores soam melhor em notas graves.
  */
 class Capo extends Fx {
-  private size = 1 << 15;
+  private size = 1 << 16;
   private bl = new Float32Array(this.size);
   private br = new Float32Array(this.size);
+  private mono = new Float32Array(this.size);
   private w = 0;
-  private phase = 0;
   private ratio = 1;
-  private win = 1;
+  private W = 0;
+  private hann = new Float32Array(0);
+  /** grãos: posição de leitura inicial (amostra absoluta) e idade em amostras */
+  private gs = [0, 0];
+  private gk = [-1, -1];
+  private next = 0;
+  private t = 0;
   protected update() {
     const st = num(this.p, 'semis') + 12 * num(this.p, 'octave') + num(this.p, 'cents') / 100;
     this.ratio = Math.pow(2, st / 12);
-    this.win = Math.min(this.size - 4, Math.max(64, (num(this.p, 'grain', 45) / 1000) * this.sr));
+    // o grão dura o tempo de a leitura se afastar uma janela da escrita: mudanças pequenas de
+    // tom ganham grãos longos (poucas emendas, acordes limpos), oitavas grãos mais curtos
+    const win = Math.max(64, (num(this.p, 'grain', 45) / 1000) * this.sr);
+    const len = Math.abs(1 - this.ratio) < 1e-6 ? win : win / Math.abs(1 - this.ratio);
+    const W = 2 * Math.round(Math.min(0.3 * this.sr, Math.max(win, len)) / 2);
+    if (W !== this.W) {
+      this.W = W;
+      this.hann = new Float32Array(W);
+      for (let i = 0; i < W; i++) this.hann[i] = 0.5 - 0.5 * Math.cos((TAU * i) / W);
+      this.gk = [-1, -1];
+      this.t = 0;
+    }
   }
-  private read(b: Float32Array, d: number) {
-    const pos = this.w - 1 - d;
+  private read(b: Float32Array, pos: number) {
     const i = Math.floor(pos);
     const f = pos - i;
     const m = this.size - 1;
     return b[i & m] * (1 - f) + b[(i + 1) & m] * f;
   }
+  /** Começo do grão novo: perto do ideal, onde a onda mais parece com a do grão que sai. */
+  private startGrain(): number {
+    const sr = this.sr, W = this.W, r = this.ratio, m = this.size - 1, x = this.mono;
+    const seek = Math.round(0.012 * sr); // faixa de busca (período de ~80 Hz)
+    const L = Math.round(0.008 * sr); // trecho comparado
+    // atraso mínimo para nunca ler o que ainda não chegou (subindo o tom a leitura alcança a escrita)
+    const nominal = this.w - (Math.max(0, (r - 1) * W) + L + 2);
+    const old = this.gk[this.next ^ 1] >= 0 ? this.gs[this.next ^ 1] + r * this.gk[this.next ^ 1] : -1;
+    if (old < 0 || old + L > this.w) return nominal;
+    const ref = Math.floor(old);
+    let e0 = 0;
+    for (let j = 0; j < L; j += 2) e0 += x[(ref + j) & m] ** 2;
+    if (e0 < 1e-9) return nominal;
+    const score = (s: number) => {
+      let c = 0, e = 1e-9;
+      for (let j = 0; j < L; j += 2) {
+        const v = x[(s + j) & m];
+        c += x[(ref + j) & m] * v;
+        e += v * v;
+      }
+      return c / Math.sqrt(e);
+    };
+    let best = nominal, bs = -Infinity;
+    for (let s = nominal - seek; s <= nominal; s += 2) {
+      const v = score(s);
+      if (v > bs) (bs = v), (best = s);
+    }
+    for (const s of [best - 1, best + 1]) {
+      if (s > nominal) continue;
+      const v = score(s);
+      if (v > bs) (bs = v), (best = s);
+    }
+    // sem uma emenda que combine bem (acordes cheios, ruído), fica no ponto ideal
+    if (bs / Math.sqrt(e0) < 0.9) return nominal;
+    return best;
+  }
   process(L: Float32Array, R: Float32Array, n: number) {
     const m = this.size - 1;
-    if (Math.abs(this.ratio - 1) < 1e-6) {
-      // sem mudança de tom: passa direto (e continua enchendo a linha para trocar sem estalo)
-      for (let i = 0; i < n; i++) {
-        this.bl[this.w & m] = L[i];
-        this.br[this.w & m] = R[i];
-        this.w++;
-      }
-      return;
-    }
-    const W = this.win;
-    const step = (1 - this.ratio) / W;
+    const pass = Math.abs(this.ratio - 1) < 1e-6;
+    const W = this.W, H = W >> 1, r = this.ratio, h = this.hann;
     for (let i = 0; i < n; i++) {
-      this.bl[this.w & m] = L[i];
-      this.br[this.w & m] = R[i];
+      const wi = this.w & m;
+      this.bl[wi] = L[i];
+      this.br[wi] = R[i];
+      this.mono[wi] = L[i] + R[i];
       this.w++;
-      let p = this.phase + step;
-      p -= Math.floor(p);
-      this.phase = p;
-      const q = p + 0.5 - Math.floor(p + 0.5);
-      const g1 = 0.5 - 0.5 * Math.cos(TAU * p);
-      const g2 = 1 - g1;
-      const d1 = p * W, d2 = q * W;
-      L[i] = this.read(this.bl, d1) * g1 + this.read(this.bl, d2) * g2;
-      R[i] = this.read(this.br, d1) * g1 + this.read(this.br, d2) * g2;
+      if (pass) {
+        // sem mudança de tom: passa direto (e continua enchendo a linha para trocar sem estalo)
+        this.gk[0] = this.gk[1] = -1;
+        this.t = 0;
+        continue;
+      }
+      if (this.t === 0) {
+        this.gs[this.next] = this.startGrain();
+        this.gk[this.next] = 0;
+        this.next ^= 1;
+      }
+      if (++this.t >= H) this.t = 0;
+      let l = 0, rr = 0;
+      for (let g = 0; g < 2; g++) {
+        const k = this.gk[g];
+        if (k < 0) continue;
+        const pos = this.gs[g] + r * k;
+        const a = h[k];
+        l += this.read(this.bl, pos) * a;
+        rr += this.read(this.br, pos) * a;
+        this.gk[g] = k + 1 >= W ? -1 : k + 1;
+      }
+      L[i] = l;
+      R[i] = rr;
     }
-    if (this.w > 1 << 30) this.w &= m; // evita perder precisão com o tempo
+    if (this.w > 1 << 30) {
+      // evita perder precisão com o tempo (posições dos grãos andam junto)
+      const shift = this.w - (this.w & m);
+      this.w -= shift;
+      this.gs[0] -= shift;
+      this.gs[1] -= shift;
+    }
   }
 }
 
