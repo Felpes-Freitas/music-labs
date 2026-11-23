@@ -59,6 +59,39 @@
   limpo. A decidir: o que abre no hover e o que abre no clique (para não abrir sem querer
   quando o mouse só passa por ali), e como fica o atalho por teclado dos menus.
 
+## Anotado em 22/11/2026 (piano roll)
+
+- **Nota segue soando enquanto o clique está segurado.** Ao clicar numa nota (ou
+  desenhar uma), ela deve soar **enquanto o botão do mouse estiver apertado**, e não
+  só como um toque curto que termina sozinho. Vale para qualquer instrumento; os que
+  já terminam sozinhos pelo envelope (percussão, one-shot, pluck) ficam como estão.
+  Hoje o clique dispara a nota com duração fixa (`audio.liveOn` com `gate`), então o
+  som corta depois de um tempo mesmo com o mouse segurado. Soltar o botão = `liveOff`.
+- **Tecla tocada acende a linha dela no piano roll.** Ao tocar uma tecla (teclado do
+  computador, MIDI ou piano na tela), a linha daquela nota no piano roll fica mais
+  clara enquanto a nota soa, para dar para tocar um acorde, ver as notas dele e montar
+  no piano roll. (A engine já informa as teclas acesas: `lit` / `onLive`, usado no
+  Soundpad e no piano do canal.)
+- **Botão direito em lugar vazio desmarca a seleção.** Com notas selecionadas, clicar
+  com o botão direito num ponto vazio do piano roll (onde apagar não apaga nada) tira a
+  seleção das notas.
+- **Ctrl+D desmarca todas as notas.** Atenção: hoje o Ctrl+D **duplica** as notas
+  selecionadas (`PianoRoll.tsx`). Decidir para onde vai a duplicação (por exemplo
+  Ctrl+B, como na playlist) ou se o desmarcar usa outro atalho.
+- **Snap automático pelo zoom.** Nova opção na grade de snap: "Auto". Com pouco zoom, o
+  intervalo é grande (compasso, tempo…); conforme aproxima, o intervalo vai diminuindo
+  (1/8, 1/16, 1/32…); no zoom máximo o snap fica livre. Mesma ideia do snap automático
+  da playlist (`core/snap.ts` `autoSnap`), aplicado ao piano roll.
+- **Mover nota "cravando" na grade (quantizar o que está fora).** Hoje o snap move a
+  nota por um **deslocamento** múltiplo do intervalo (`dPos = round(delta / snap) *
+  snap`), então uma nota gravada fora do tempo continua fora: só anda de um lugar errado
+  para outro. O comportamento desejado: ao mover, a nota vai para a **linha da grade
+  mais próxima** (a posição final é arredondada para a grade, não o deslocamento).
+  Assim uma nota gravada "errada" fica certa ao ser arrastada, sem precisar quantizar o
+  pattern inteiro. Vale também para várias notas selecionadas (cada uma crava na grade
+  ou, opcionalmente, o grupo mantém as distâncias entre si e a nota clicada crava) e
+  para redimensionar.
+
 ## Pendências maiores
 
 - Hospedar plugins VST/LV2/CLAP (ponte via Carla/yabridge). Em espera: decidir
