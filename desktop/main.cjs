@@ -1,6 +1,6 @@
 // Music Labs como app desktop: janela sem borda nativa (a barra de título é
 // desenhada pela interface), servidor local iniciado com o Node do Electron.
-const { app, BrowserWindow, ipcMain, shell, screen, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, dialog, powerSaveBlocker } = require('electron');
 const path = require('node:path');
 const http = require('node:http');
 
@@ -121,6 +121,16 @@ function createWindow() {
     );
   }
 }
+
+// Tela ligada enquanto o app toca, grava ou o amp está em uso (a interface avisa).
+let awakeId = -1;
+ipcMain.on('awake', (e, on) => {
+  if (on && awakeId < 0) awakeId = powerSaveBlocker.start('prevent-display-sleep');
+  else if (!on && awakeId >= 0) {
+    powerSaveBlocker.stop(awakeId);
+    awakeId = -1;
+  }
+});
 
 ipcMain.on('win', (e, cmd) => {
   const w = BrowserWindow.fromWebContents(e.sender);

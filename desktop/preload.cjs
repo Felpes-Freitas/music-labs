@@ -14,4 +14,6 @@ contextBridge.exposeInMainWorld('mlabsWindow', {
   /** Explorador de arquivos do sistema: devolve o caminho escolhido (ou null). */
   openDialog: (o) => ipcRenderer.invoke('dialog:open', o),
   saveDialog: (o) => ipcRenderer.invoke('dialog:save', o),
+  /** Mantém a tela ligada (true) ou deixa o sistema apagar (false). */
+  keepAwake: (on) => ipcRenderer.send('awake', !!on),
 });

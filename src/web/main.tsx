@@ -7,6 +7,7 @@ import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import './style.css';
 import './reamp';
+import './awake';
 import { useApp, emit, state, togglePlay, setMode, undo, redo, openWindow, cycleWindows, fitWindows, api, toast, onLive } from './state';
 import { audio } from './audio';
 import { TitleBar, Toolbar, HintTooltip } from './ui/Toolbar';

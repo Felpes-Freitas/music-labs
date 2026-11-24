@@ -509,6 +509,8 @@ declare global {
       /** Explorador de arquivos do sistema (abrir / salvar como): caminho ou null. */
       openDialog?(o: FileDialogOpts): Promise<string | null>;
       saveDialog?(o: FileDialogOpts): Promise<string | null>;
+      /** Mantém a tela ligada (true) ou deixa o sistema apagar (false). */
+      keepAwake?(on: boolean): void;
     };
   }
 }
