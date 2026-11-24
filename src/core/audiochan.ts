@@ -52,6 +52,21 @@ export function completeOps(p: Project): Op[] {
     for (const pt of p.patterns) if (pt.channels?.length === 1 && pt.channels[0] === ch.id && !Object.values(pt.notes).some((n) => n.length)) ops.push(rem(['patterns', pt.id]));
     if (ch.insert > 0 && p.mixer[ch.insert]?.name === ch.name && !p.channels.some((o) => o.id !== ch.id && o.insert === ch.insert)) ops.push(set(['mixer', ch.insert, 'name'], `Insert ${ch.insert}`));
   }
+  // gravações antigas do amp guardavam os pedais sem id: a engine (reamp em tempo real) e a
+  // automação acham cada pedal pelo id, e sem ele todos viravam um só (som estourando)
+  for (const ch of p.channels) {
+    const chain = ch.amp?.chain;
+    if (!chain) continue;
+    const ids = new Set<string>();
+    if (chain.every((e) => e.id && !ids.has(e.id) && ids.add(e.id))) continue;
+    const seen = new Set<string>();
+    const fixed = chain.map((e) => {
+      const id = e.id && !seen.has(e.id) ? e.id : uid('a');
+      seen.add(id);
+      return { ...e, id };
+    });
+    ops.push(set(['channels', ch.id, 'amp', 'chain'], fixed));
+  }
   if (ops.length) return ops; // o resto na próxima passada, com o projeto já limpo
   // tracks que os clipes usam
   let maxTrack = -1;

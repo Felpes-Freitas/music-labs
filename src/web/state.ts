@@ -555,7 +555,7 @@ export function togglePlay() {
 
 /** Gravação pelo amp: entrada crua + cadeia para reaplicar em alta qualidade. */
 export interface AmpTake {
-  chain: { type: EffectType; enabled: boolean; mix: number; params: Params }[];
+  chain: { id: string; type: EffectType; enabled: boolean; mix: number; params: Params }[];
   inGainDb: number;
   outGainDb: number;
   pick: 'stereo' | 'left' | 'right';

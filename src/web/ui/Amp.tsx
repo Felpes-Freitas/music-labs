@@ -191,6 +191,9 @@ function syncNative() {
 
 let recFromAmp = false;
 
+/** Amp em uso (janela aberta ouvindo o retorno ou com o afinador): a tela não deve apagar. */
+export const ampInUse = () => ampOpen && !reampChannel && (amp.monitor || tunerOpen);
+
 export function AmpWindow() {
   const s = useApp();
   const open = s.windows.amp.open;
@@ -268,7 +271,7 @@ export function AmpWindow() {
     }
     recFromAmp = true;
     toggleRecord({
-      chain: amp.chain.map(({ type, enabled, mix, params }) => ({ type, enabled, mix, params: { ...params } })),
+      chain: amp.chain.map(({ id, type, enabled, mix, params }) => ({ id, type, enabled, mix, params: { ...params } })),
       inGainDb: amp.inGain,
       outGainDb: amp.outGain,
       pick: amp.pick,

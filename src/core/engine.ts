@@ -146,17 +146,18 @@ export class Engine {
       if (st.ampLive && ch.amp) {
         const m = st.amp ?? (st.amp = new Map());
         const keepA = new Set<string>();
-        for (const e of ch.amp.chain) {
-          keepA.add(e.id);
+        ch.amp.chain.forEach((e, i) => {
+          const key = ampKey(ch.amp!.chain, i);
+          keepA.add(key);
           const esig = e.type + JSON.stringify(e.params);
-          const ce = m.get(e.id);
-          if (!ce || ce.fx.type !== e.type) m.set(e.id, { fx: createEffect(this.sr, e.type, e.params), sig: esig });
+          const ce = m.get(key);
+          if (!ce || ce.fx.type !== e.type) m.set(key, { fx: createEffect(this.sr, e.type, e.params), sig: esig });
           else if (ce.sig !== esig) {
             ce.fx.setParams(e.params);
             ce.sig = esig;
             ce.autoSig = undefined;
           }
-        }
+        });
         for (const id of [...m.keys()]) if (!keepA.has(id)) m.delete(id);
       } else st.amp = undefined;
       const keep = new Set<string>();
@@ -558,9 +559,9 @@ export class Engine {
       if (clipsIn) for (const c of clipsIn) this.mixClip(p, c, st.L, st.R, segs, tps, live ? rawOf(p, c) : null);
       // reamp em tempo real: o bruto passa pelos pedais (com automação), depois o ganho de saída
       if (live) {
-        for (const e of ch.amp!.chain) {
+        for (const [i, e] of ch.amp!.chain.entries()) {
           if (!e.enabled) continue;
-          const rec = st.amp!.get(e.id);
+          const rec = st.amp!.get(ampKey(ch.amp!.chain, i));
           if (!rec) continue;
           this.applyFxAuto(['channels', ch.id, 'amp', 'chain', e.id, 'params'], e.params, rec);
           if (e.mix >= 0.999) rec.fx.process(st.L, st.R, n, fxCtx);
@@ -798,6 +799,12 @@ export class Engine {
       rmsDb: this.statFrames > 0 && s.sumSq > 0 ? 10 * Math.log10(s.sumSq / this.statFrames) : -Infinity,
     }));
   }
+}
+
+/** Chave do pedal do amp na engine: o id; sem id (ou repetido), a posição — cada pedal com o seu estado. */
+function ampKey(chain: { id?: string }[], i: number): string {
+  const id = chain[i].id;
+  return id && chain.findIndex((e) => e.id === id) === i ? id : `#${i}`;
 }
 
 /** Afinação fina por nota: no sampler em modo "preservar andamento" quem afina é o pitch shifter do canal. */

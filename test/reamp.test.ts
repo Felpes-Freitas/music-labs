@@ -71,3 +71,39 @@ test('projeto inundado de versões antigas: canais de prévia sem clipe somem ao
   assert.equal(r.project.patterns.filter((x) => x.name === 'take1').length, 0, 'pattern-grupo vazio saiu');
   assert.equal(r.project.channels.filter((c) => c.type === 'audio').length, 1, 'o clipe real ganhou o canal dele');
 });
+
+// Gravações antigas guardavam os pedais sem id: na engine todos viravam um só (o último,
+// aplicado várias vezes com os parâmetros dos outros) e o som estourava ao mexer na cadeia.
+function noIds() {
+  const { p, ch } = project(true);
+  const chain = [
+    { type: 'compressor', enabled: true, mix: 1, params: { threshold: -30, ratio: 17, makeup: 4 } },
+    { type: 'cab', enabled: true, mix: 1, params: { level: 12 } },
+    { type: 'reverb', enabled: true, mix: 0.3, params: {} },
+  ];
+  p.channels[0].amp = { chain: chain as any, outGainDb: 0, sig: 'velha' };
+  return { p, ch };
+}
+test('pedais sem id: tempo real não estoura (cada pedal com o seu estado)', () => {
+  const { p } = noIds();
+  const eng = new Engine(SR);
+  const raw = new Float32Array(SR * 2);
+  for (let i = 0; i < raw.length; i++) raw[i] = 0.3 * Math.sin((2 * Math.PI * 196 * i) / SR);
+  eng.setSample('/raw.wav', { sr: SR, ch: [raw] });
+  eng.setSample('/wet.wav', { sr: SR, ch: [raw] });
+  eng.setProject(p);
+  eng.play('song', null, 0);
+  const l = new Float32Array(BLOCK), r = new Float32Array(BLOCK);
+  let peak = 0;
+  for (let i = 0; i < 400; i++) {
+    eng.process(l, r, BLOCK);
+    for (const v of l) peak = Math.max(peak, Math.abs(v));
+  }
+  assert.ok(Number.isFinite(peak) && peak < 4, `pico ${peak}`);
+});
+test('pedais sem id ganham id ao abrir/editar o projeto', () => {
+  const { p } = noIds();
+  const fixed = completeAll(p, applyOps).project.channels[0].amp!.chain;
+  assert.equal(new Set(fixed.map((e) => e.id)).size, 3);
+  assert.ok(fixed.every((e) => e.id));
+});
