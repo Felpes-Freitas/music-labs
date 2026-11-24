@@ -26,6 +26,14 @@ let cfg: MonitorConfig | null = null;
 let slots: { id: string; type: EffectType; fx: Fx }[] = [];
 let leftover: Buffer = Buffer.alloc(0);
 let dropped = 0;
+/**
+ * Fila estimada na saída (amostras), pelo relógio: o pw-play consome em tempo real e,
+ * quando fica sem dados (o Node engasgou), toca silêncio sem consumir nada. O socket
+ * até o pw-play guarda mais de meio segundo, então o que chega depois de um engasgo
+ * vira atraso permanente se não for descartado — por isso a fila é medida aqui.
+ */
+let queued = 0;
+let queuedAt = 0n;
 let running = false;
 let gen = 0; // cada início do retorno tem um número: processos antigos não mexem nos novos
 const startedWith = { buffer: 0, source: '' };
@@ -83,7 +91,15 @@ function processChunk(buf: Buffer): Buffer {
 }
 
 export function monitorStatus() {
-  return { available: process.platform === 'linux', running, buffer: cfg?.buffer ?? 0, ms: cfg ? +((cfg.buffer / SR) * 1000).toFixed(2) : 0, dropped };
+  return { available: process.platform === 'linux', running, buffer: cfg?.buffer ?? 0, ms: cfg ? +((cfg.buffer / SR) * 1000).toFixed(2) : 0, dropped, queueMs: +((queueNow() / SR) * 1000).toFixed(1) };
+}
+
+/** Atualiza a fila estimada até agora (desconta o que a saída tocou desde a última vez). */
+function queueNow() {
+  const now = process.hrtime.bigint();
+  queued = Math.max(0, queued - (Number(now - queuedAt) / 1e9) * SR);
+  queuedAt = now;
+  return queued;
 }
 
 /** Encerra um processo do retorno de verdade (o pw-play ignora SIGINT com a entrada aberta). */
@@ -145,6 +161,8 @@ export function startMonitor(c: MonitorConfig) {
   const p = play;
   // reserva de um bloco de silêncio na saída: absorve a variação de tempo do caminho
   p.stdin!.write(Buffer.alloc(cfg.buffer * 8));
+  queued = cfg.buffer;
+  queuedAt = process.hrtime.bigint();
   rec.stdout!.on('data', (chunk: Buffer) => {
     if (!running || my !== gen || !p.stdin || p.stdin.destroyed) return;
     let buf: Buffer = leftover.length ? Buffer.concat([leftover, chunk]) : chunk;
@@ -152,12 +170,29 @@ export function startMonitor(c: MonitorConfig) {
     leftover = buf.subarray(usable);
     buf = buf.subarray(0, usable);
     if (!usable) return;
-    // se a saída atrasou (fila crescendo), descarta para o atraso não acumular
-    if (p.stdin.writableLength > cfg!.buffer * 8 * 4) {
+    // processa tudo (os efeitos seguem contínuos), mas só manda à saída o que cabe na fila
+    // máxima: o que passar disso é atraso acumulado por engasgos e vai fora
+    const out = processChunk(buf);
+    const frames = out.length >> 3;
+    const max = cfg!.buffer * 2 + Math.round(0.008 * SR);
+    const extra = Math.min(frames, Math.ceil(queueNow() + frames - max));
+    if (extra > 0 || p.stdin.writableLength > cfg!.buffer * 8 * 4) {
       dropped++;
+      const keep = p.stdin.writableLength > cfg!.buffer * 8 * 4 ? 0 : frames - extra;
+      if (keep <= 0) return;
+      const tail = out.subarray((frames - keep) * 8);
+      const fade = Math.min(keep, 64); // entra sem estalo depois do corte
+      for (let i = 0; i < fade; i++) {
+        const g = i / fade;
+        tail.writeFloatLE(tail.readFloatLE(i * 8) * g, i * 8);
+        tail.writeFloatLE(tail.readFloatLE(i * 8 + 4) * g, i * 8 + 4);
+      }
+      queued += keep;
+      p.stdin.write(tail);
       return;
     }
-    p.stdin.write(processChunk(buf));
+    queued += frames;
+    p.stdin.write(out);
   });
   const onExit = () => running && my === gen && stopMonitor();
   rec.on('exit', onExit);
