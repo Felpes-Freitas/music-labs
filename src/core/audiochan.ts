@@ -11,6 +11,7 @@
 import type { Channel, Clip, Pattern, Project } from './model.js';
 import { color, uid } from './model.js';
 import { ins, rem, set, type Op } from './ops.js';
+import { ampSig } from './reamp.js';
 
 /** Nome do arquivo sem pasta e sem extensão. */
 export const fileLabel = (path: string) => (path.split(/[\\/]/).pop() ?? path).replace(/\.[a-z0-9]{2,5}$/i, '');
@@ -66,6 +67,12 @@ export function completeOps(p: Project): Op[] {
       return { ...e, id };
     });
     ops.push(set(['channels', ch.id, 'amp', 'chain'], fixed));
+  }
+  // gravações em que o bruto sobrescreveu a versão com efeitos (mesmo nome de arquivo): marca
+  // a cadeia como mudada para o reamp refazer a versão processada a partir do bruto
+  for (const ch of p.channels) {
+    if (!ch.amp || ch.amp.sig !== ampSig(ch.amp)) continue;
+    if ((p.audios ?? []).some((a) => a.channel === ch.id && a.raw && a.raw === a.path)) ops.push(set(['channels', ch.id, 'amp', 'sig'], 'refazer'));
   }
   if (ops.length) return ops; // o resto na próxima passada, com o projeto já limpo
   // tracks que os clipes usam

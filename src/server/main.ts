@@ -496,8 +496,11 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         const d = new Date();
         const z = (n: number) => String(n).padStart(2, '0');
         const stamp = `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}h${z(d.getMinutes())}m${z(d.getSeconds())}s`;
-        const file = join(RECORDINGS_DIR, `${safeName(q('name') || 'Gravação')} ${stamp}.wav`);
-        writeFileSync(file, buf);
+        // nome único: a versão com efeitos e o bruto de um take chegam no mesmo segundo
+        const base = join(RECORDINGS_DIR, `${safeName(q('name') || 'Gravação')} ${stamp}`);
+        let file = `${base}.wav`;
+        for (let i = 2; existsSync(file); i++) file = `${base} (${i}).wav`;
+        writeFileSync(file, buf, { flag: 'wx' });
         return json(res, 200, { path: file });
       }
       case 'GET /api/monitor':

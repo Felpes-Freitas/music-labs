@@ -107,3 +107,9 @@ test('pedais sem id ganham id ao abrir/editar o projeto', () => {
   assert.equal(new Set(fixed.map((e) => e.id)).size, 3);
   assert.ok(fixed.every((e) => e.id));
 });
+test('gravação cujo bruto sobrescreveu a versão processada é refeita', () => {
+  const { p, ch } = project(false);
+  p.audios![0].path = '/raw.wav'; // mesmo arquivo que o bruto
+  const sig = completeAll(p, applyOps).project.channels.find((c) => c.id === ch)!.amp!.sig;
+  assert.notEqual(sig, ampSig(p.channels[0].amp!));
+});
