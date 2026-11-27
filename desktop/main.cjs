@@ -32,9 +32,10 @@ ipcMain.handle('app:pendingFile', () => {
   pendingFile = null;
   return f;
 });
-// Latência: pede ao PulseAudio/PipeWire blocos pequenos (o padrão do sistema costuma
-// ser 1024 amostras ≈ 21 ms, o que atrasa o retorno e a gravação). Vale só para o app.
-if (!process.env.PULSE_LATENCY_MSEC) process.env.PULSE_LATENCY_MSEC = '8';
+// Latência: cada contexto de áudio pede o próprio tamanho de bloco (latencyHint). Não
+// usar PULSE_LATENCY_MSEC: ele força blocos pequenos em todos os streams do app e a placa
+// inteira passa a rodar em 128 amostras — projetos maiores picotam. O retorno de baixa
+// latência do amp é o nativo (pw-play, src/server/monitor.ts), que não depende disso.
 // som sem precisar de clique (é um app de áudio)
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 

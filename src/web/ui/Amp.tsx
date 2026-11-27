@@ -180,7 +180,7 @@ function syncNative() {
   nativeTimer = window.setTimeout(() => {
     const on = nativeOk && ampOpen && amp.native && amp.monitor;
     const body = on
-      ? { on: true, buffer: amp.buffer, source: nativeSource(devicesNow), pick: amp.pick, inGain: amp.inGain, outGain: amp.outGain, bpm: state.project.bpm, chain: liveChain() }
+      ? { on: true, buffer: ampBlock(amp.buffer), source: nativeSource(devicesNow), pick: amp.pick, inGain: amp.inGain, outGain: amp.outGain, bpm: state.project.bpm, chain: liveChain() }
       : { on: false };
     const json = JSON.stringify(body);
     if (json === nativeLast) return;
@@ -190,6 +190,11 @@ function syncNative() {
 }
 
 let recFromAmp = false;
+
+/** Blocos do retorno nativo: o PipeWire roda a placa inteira em potências de 2, e abaixo
+ * de 128 ela engasga (xruns) e leva junto a música e a gravação do app. */
+const BLOCKS = [128, 256, 512, 1024];
+const ampBlock = (b: number) => BLOCKS.find((x) => x >= b) ?? 1024;
 
 /** Amp em uso (janela aberta ouvindo o retorno ou com o afinador): a tela não deve apagar. */
 export const ampInUse = () => ampOpen && !reampChannel && (amp.monitor || tunerOpen);
@@ -419,22 +424,21 @@ export function AmpWindow() {
                 </div>
               )}
               {nativeOk && amp.native ? (
-                <label class="amp-buf" data-hint="Tamanho do bloco do retorno, em amostras. Menor = menos atraso; se estalar, aumente. 128 costuma ser seguro; 64 é o mínimo, mas pode estalar.">
+                <label class="amp-buf" data-hint="Tamanho do bloco do retorno, em amostras (o PipeWire usa potências de 2). Menor = menos atraso. Vale para a placa de som inteira: se a música ou a gravação engasgarem, aumente. Menos de 128 estala e atrapalha o resto do app.">
                   <span>Bloco</span>
-                  <input
-                    type="number"
-                    min={32}
-                    max={1024}
-                    step={32}
-                    value={amp.buffer}
+                  <select
+                    value={String(ampBlock(amp.buffer))}
                     onChange={(e) => {
-                      const v = Math.max(32, Math.min(1024, Math.round(Number((e.target as HTMLInputElement).value) || 128)));
-                      amp.buffer = v;
+                      amp.buffer = Number((e.target as HTMLSelectElement).value);
                       commit();
                     }}
-                  />
+                  >
+                    {BLOCKS.map((b) => (
+                      <option value={String(b)}>{b}</option>
+                    ))}
+                  </select>
                   <small>
-                    ≈ {((amp.buffer / 48000) * 1000 * 3).toFixed(1)} ms
+                    ≈ {((ampBlock(amp.buffer) / 48000) * 1000 * 3).toFixed(1)} ms
                   </small>
                 </label>
               ) : (

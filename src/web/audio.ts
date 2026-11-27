@@ -1,4 +1,5 @@
 // Ponte entre a interface e o AudioWorklet: contexto de áudio, samples e transporte.
+import { getPref } from './prefs';
 import { channelSamples } from '../core/pads';
 import { ampLive, rawOf } from '../core/reamp';
 import workletUrl from './worklet.ts?worker&url';
@@ -35,7 +36,10 @@ export class Audio {
     await this.resume();
   }
   private async doInit() {
-    const ctx = new AudioContext({ latencyHint: 'interactive' });
+    // folga da saída principal: com blocos de 128 (2,7 ms) qualquer pico do JavaScript (coleta
+    // de memória, otimização) estoura o prazo e o som picota em projetos maiores. O amp usa
+    // outro contexto, com latência mínima, então o retorno da guitarra não muda.
+    const ctx = new AudioContext({ latencyHint: audioBuffer() / 48000 });
     await ctx.audioWorklet.addModule(workletUrl);
     const node = new AudioWorkletNode(ctx, 'musiclabs', { numberOfInputs: 0, outputChannelCount: [2] });
     this.analyser = ctx.createAnalyser();
@@ -498,7 +502,11 @@ export class Audio {
     a.monitor.disconnect();
     a.stream.getTracks().forEach((t) => t.stop());
     this.amp = null;
-    this.mon?.suspend().catch(() => {});
+    // fecha de vez: um contexto de latência mínima aberto (mesmo pausado) pode prender a placa
+    // inteira em blocos pequenos e o resto do app picota
+    const m = this.mon;
+    this.mon = null;
+    m?.close().catch(() => {});
   }
   configAmp(cfg: { chain: unknown[]; inGain: number; outGain: number; pick: RecChannels; bpm: number }) {
     this.amp?.node.port.postMessage({ type: 'config', ...cfg });
@@ -905,4 +913,11 @@ function openInput(deviceId?: string) {
   const audio: MediaTrackConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2 };
   if (deviceId) audio.deviceId = { exact: deviceId };
   return navigator.mediaDevices.getUserMedia({ audio });
+}
+
+/** Tamanho do bloco da saída principal (amostras), escolhido em Configurações. */
+export const AUDIO_BUFFERS = [128, 256, 512, 1024, 2048];
+export function audioBuffer(): number {
+  const b = getPref<number>('audio.buffer', 512);
+  return AUDIO_BUFFERS.includes(b) ? b : 512;
 }

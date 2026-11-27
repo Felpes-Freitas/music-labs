@@ -144,7 +144,10 @@ function sweepOrphans() {
 
 /** Liga (ou atualiza) o retorno. Mudar o bloco ou a entrada reinicia os processos. */
 export function startMonitor(c: MonitorConfig) {
-  cfg = { ...c, buffer: Math.max(16, Math.min(2048, Math.round(c.buffer))) };
+  // potência de 2 (o PipeWire arredonda para baixo) e no mínimo 128: blocos menores forçam a
+  // placa inteira a engasgar e o resto do app (música, gravação) tropeça junto
+  const pow = 2 ** Math.ceil(Math.log2(Math.max(1, Math.round(c.buffer))));
+  cfg = { ...c, buffer: Math.max(128, Math.min(1024, pow)) };
   applyChain(cfg);
   if (running && startedWith.buffer === cfg.buffer && startedWith.source === cfg.source) return monitorStatus();
   sweepOrphans();

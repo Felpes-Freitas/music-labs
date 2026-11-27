@@ -4,7 +4,7 @@ import { useEffect, useReducer, useRef, useState } from 'preact/hooks';
 import { Icon } from './icons';
 import { ACCENTS, themes, prefs as looks, setTheme, setAccent, setAltDrag, setTooltips, accentColor, onTheme, inkFor, type ThemeId } from '../theme';
 import { getPref, setPref } from '../prefs';
-import { audio, type RecChannels } from '../audio';
+import { audio, audioBuffer, AUDIO_BUFFERS, type RecChannels } from '../audio';
 import { api, emit, toast } from '../state';
 import { rgbPrefs, setRgbPrefs, type RgbPrefs } from '../rgb';
 import { KEY_LAYOUTS, keyLayout, setKeyLayout } from '../pianokeys';
@@ -310,9 +310,26 @@ function AudioSection() {
           <span>{ctx ? `${ctx.sampleRate} Hz` : 'áudio desligado'}</span>
         </div>
         <div class="set-row">
+          <span class="set-lbl">Bloco do app</span>
+          <select
+            value={String(audioBuffer())}
+            onChange={(e) => {
+              setPref('audio.buffer', Number((e.target as HTMLSelectElement).value));
+              toast('Bloco de áudio alterado: vale ao reabrir o Music Labs');
+            }}
+          >
+            {AUDIO_BUFFERS.map((b) => (
+              <option value={String(b)}>
+                {b} amostras ({((b / 48000) * 1000).toFixed(1)} ms){b === 512 ? ' · padrão' : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div class="set-row">
           <span class="set-lbl">Latência</span>
           <span>{ms !== null ? `${ms} ms (compensada nas gravações)` : '—'}</span>
         </div>
+        <p class="set-note">Bloco do app: maior = mais folga para projetos grandes (sem picotar), mas o teclado e os pads respondem um pouco depois. Se o som picotar, aumente. O retorno do amp não muda (usa outro caminho, com atraso mínimo). Vale ao reabrir o app.</p>
         <p class="set-note">Parar: o primeiro clique para a música; com tudo parado, outro clique corta também o que ainda soa (caudas de reverb, ecos e notas soltas).</p>
       </section>
     </>
@@ -569,7 +586,7 @@ function LatencySection() {
             </div>
           </div>
           <p class="set-note">
-            O som anda em blocos: cada bloco é um atraso ({pw.quantum} amostras = {qms(pw.quantum ?? 1024)} ms). Blocos menores deixam o retorno e o metrônomo mais rápidos, mas pedem mais do processador — se começar a estalar, suba um nível. Vale enquanto o Music Labs estiver aberto; ao fechar, volta ao normal. O app já pede blocos pequenos sozinho; isto força o sistema inteiro.
+            O som anda em blocos: cada bloco é um atraso ({pw.quantum} amostras = {qms(pw.quantum ?? 1024)} ms). Blocos menores deixam o retorno e o metrônomo mais rápidos, mas pedem mais do processador — se começar a estalar, suba um nível. Vale enquanto o Music Labs estiver aberto; ao fechar, volta ao normal. Isto força o sistema inteiro (todos os programas); o tamanho que o próprio app pede fica em Saída → Bloco do app.
           </p>
         </>
       )}

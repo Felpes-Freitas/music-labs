@@ -734,7 +734,7 @@ body.alt-drag .win, body.alt-drag .win * { cursor: move !important; }
 .amp-ret { display: flex; align-items: center; gap: 8px; }
 .amp-ret .seg button { height: 24px; padding: 0 9px; font-size: 11px; }
 .amp-buf { display: flex; align-items: center; gap: 5px; color: var(--dim); font-size: 11px; }
-.amp-buf input { width: 64px; height: 24px; text-align: right; }
+.amp-buf input, .amp-buf select { width: 72px; height: 24px; text-align: right; }
 .amp-buf small { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--dim2); }
 
 /* ---------------------------------------------------------------- selects no tema
