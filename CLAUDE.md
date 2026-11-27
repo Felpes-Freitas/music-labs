@@ -493,20 +493,6 @@ Z…/ e Q…] teclado musical (`pianokeys.ts`, inclui , . ; / e [ = ]; o L segue
 - **Capotraste** (efeito `capo`, `core/effects.ts`): muda o tom por janelas sobrepostas
   (dois cabeçotes numa linha de atraso, Hann); semitons, oitava (botões −2…+2 no pedal do
   amp, `CapoOctave`), fino e janela; latência ≈ meia janela. Entra no começo da cadeia.
-- **Timbre transfer** (versão crua, `src/server/timbre.ts`): um áudio da lista passa por um
-  modelo **RAVE** (IRCAM, TorchScript) e vira variante nova (`addAudio` com `variantOf`),
-  soando como outro instrumento. Python à parte com PyTorch **só CPU** em
-  `STATE_DIR/timbre/venv` (o script Python fica embutido em timbre.ts e é escrito em
-  `timbre/timbre.py`); modelos em `timbre/models/<nome>.ts`, baixados da lista pública do
-  IRCAM (`play.forum.ircam.fr/rave-vst-api`; muitos são não comerciais, por isso não vêm
-  com o app). ffmpeg converte para float32 mono na taxa do modelo e de volta para WAV 48 kHz.
-  Rotas: `GET /api/timbre` (pronto? modelos), `POST /api/timbre/setup` (cria o venv:
-  python3.10–3.13 do sistema + pip; o índice da CPU do PyTorch — o padrão do PyPI traz
-  CUDA, 5 GB), `/api/timbre/model` (baixa), `POST /api/timbre` ({audio, model}). Interface:
-  botão direito num áudio da lista (Picker.tsx, `timbreMenu`). MCP: `timbre_transfer`.
-  Nesta máquina (i5-8265U): 54 s de guitarra em ~3 s de modelo (~8 s no total). Próximos
-  passos: pedal "Timbre" no retorno nativo (streaming) com reamp em qualidade máxima,
-  gerenciador de modelos, mistura original/transformado, modelo próprio (cavaquinho).
 - **Tap tempo** (`TapButton` em Toolbar.tsx, `tapBpm` em core/tempo.ts): reta pelos
   últimos 12 cliques; pausa de 2 s recomeça; vira um passo de desfazer ao terminar.
 - **Stitcher** (`Stitch.tsx`, `core/stitch.ts`, `core/align.ts`): vários takes da mesma

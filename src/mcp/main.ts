@@ -730,22 +730,6 @@ tool(
 );
 
 tool(
-  'timbre_transfer',
-  'Timbre transfer com IA (RAVE, do IRCAM, roda na CPU): um áudio da lista sai soando como outro instrumento, como variante nova (o original não muda). action: status (ambiente pronto? modelos baixados e os da lista do IRCAM), setup (instala o Python com PyTorch só CPU, ~900 MB, alguns minutos), download (baixa o modelo "model"), apply (audio = id/nome da lista + model → variante "<nome> (<modelo>)" logo abaixo do original).',
-  {
-    action: z.enum(['status', 'setup', 'download', 'apply']),
-    audio: z.string().optional(),
-    model: z.string().optional(),
-  },
-  (a) => {
-    if (a.action === 'status') return api('GET', '/api/timbre');
-    if (a.action === 'setup') return api('POST', '/api/timbre/setup', {});
-    if (a.action === 'download') return api('POST', '/api/timbre/model', { name: a.model });
-    return api('POST', '/api/timbre', { audio: a.audio, model: a.model, origin: 'mcp' });
-  },
-);
-
-tool(
   'send_to_pattern',
   'Manda um canal para outro pattern: as notas dele saem do pattern "from" e vão para "to" (somadas às de lá), e o canal passa a aparecer no rack quando o filtro "só deste pattern" está ligado. Sem "to", cria um pattern novo (newName ou o nome do canal).',
   { channel: z.string(), from: z.string(), to: z.string().optional(), newName: z.string().optional() },
