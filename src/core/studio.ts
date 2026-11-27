@@ -482,10 +482,11 @@ export function audioRef(p: Project, ref: string): AudioItem {
 }
 
 /** Põe um arquivo na lista de áudios do projeto (a que fica ao lado dos patterns). */
-export function addAudio(p: Project, a: { path: string; name?: string }): ActionResult {
+export function addAudio(p: Project, a: { path: string; name?: string; variantOf?: string }): ActionResult {
   const hit = (p.audios ?? []).find((x) => x.path === a.path || x.original === a.path);
   if (hit) return { ops: [], result: { id: hit.id, name: hit.name, existed: true } };
-  const item: AudioItem = { id: uid('au'), name: a.name ?? (a.path.split(/[\\/]/).pop() ?? a.path).replace(/\.[a-z0-9]{2,5}$/i, ''), path: a.path, original: a.path };
+  const parent = a.variantOf ? audioRef(p, a.variantOf).id : undefined;
+  const item: AudioItem = { id: uid('au'), name: a.name ?? (a.path.split(/[\\/]/).pop() ?? a.path).replace(/\.[a-z0-9]{2,5}$/i, ''), path: a.path, original: a.path, ...(parent ? { variantOf: parent } : {}) };
   return { ops: [ins(['audios'], item)], result: { id: item.id, name: item.name } };
 }
 

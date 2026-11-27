@@ -176,3 +176,10 @@ test('copy_effects e leitura detalhada', () => {
   assert.equal(d.automations.length, 1);
   assert.ok(S.mixerDetail(p).some((m) => m.i === 5 && m.effects.length === 2));
 });
+
+test('variante de áudio (timbre transfer): fica ligada ao original', () => {
+  const p = emptyProject();
+  const a = run(p, S.addAudio, { path: '/tmp/x/guitarra.wav', name: 'Guitarra' });
+  const v = run(p, S.addAudio, { path: '/tmp/x/guitarra-violino.wav', name: 'Guitarra (violino)', variantOf: 'Guitarra' });
+  assert.equal(p.audios!.find((x) => x.id === v.id)!.variantOf, a.id);
+});

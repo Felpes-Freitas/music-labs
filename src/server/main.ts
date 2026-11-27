@@ -21,6 +21,8 @@ import { detectBpm, mono } from '../core/tempo.js';
 import { emptyProject, PPQ, PROJECT_EXT } from '../core/model.js';
 import { Store, listProjects, RENDERS_DIR, SAMPLES_DIR, PROJECTS_DIR, RECORDINGS_DIR, IMPORTS_DIR, STATE_DIR, safeName } from './store.js';
 import { startMonitor, stopMonitor, monitorStatus, monitorSources } from './monitor.js';
+import { timbreReady, timbreSetup, timbreModels, timbreDownload, timbreTransfer } from './timbre.js';
+import { audioRef } from '../core/studio.js';
 import { loadSample } from './samples.js';
 import { initLibrary, library, libraryStatus, rescanLibrary, sampleTree, searchLibrary } from './library.js';
 import { AUDIO_EXT, FL_DIR, resolveFlPath, wavFor } from './samples.js';
@@ -502,6 +504,29 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         for (let i = 2; existsSync(file); i++) file = `${base} (${i}).wav`;
         writeFileSync(file, buf, { flag: 'wx' });
         return json(res, 200, { path: file });
+      }
+      case 'GET /api/timbre':
+        // timbre transfer: ambiente pronto? modelos baixados e os da lista do IRCAM
+        return json(res, 200, { ready: await timbreReady(), models: await timbreModels() });
+      case 'POST /api/timbre/setup':
+        await timbreSetup();
+        return json(res, 200, { ready: await timbreReady() });
+      case 'POST /api/timbre/model': {
+        const b = await body(req);
+        await timbreDownload(String(b.name ?? ''));
+        return json(res, 200, { models: await timbreModels() });
+      }
+      case 'POST /api/timbre': {
+        // { audio: id/nome/caminho de um áudio da lista, model } → variante nova na lista
+        const b = await body(req);
+        const it = audioRef(store.project, String(b.audio ?? ''));
+        const model = String(b.model ?? '');
+        const out = await timbreTransfer(it.path, model, `${it.name} · ${model}`);
+        const names = new Set((store.project.audios ?? []).map((x) => x.name));
+        let name = `${it.name} (${model})`;
+        for (let i = 2; names.has(name); i++) name = `${it.name} (${model} ${i})`;
+        const [r] = runActions([{ name: 'addAudio', args: { path: out.path, name, variantOf: it.id } }], b.origin ?? 'mcp', `Timbre transfer: ${model}`);
+        return json(res, 200, { ...out, audio: r });
       }
       case 'GET /api/monitor':
         return json(res, 200, monitorStatus());

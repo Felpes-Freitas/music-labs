@@ -208,8 +208,11 @@ scripts/     ferramentas de diagnóstico e testes de UI (os _*.mts são temporá
   retorno de baixa latência; a gravação guarda o sinal **cru** e os efeitos são
   reaplicados em alta qualidade (`renderChain`, sobreamostragem 4x em amp/overdrive/fuzz).
 - `playBuffer` para prévias das ferramentas.
-- **Latência**: o PipeWire do sistema usa blocos de 1024 (≈21 ms). O Electron define
-  `PULSE_LATENCY_MSEC=8` (desktop/main.cjs) para o app pedir blocos pequenos; Configurações
+- **Latência**: o PipeWire do sistema usa blocos de 1024 (≈21 ms). A saída principal pede
+  `audioBuffer()` amostras (`latencyHint`; Configurações → Saída → "Bloco do app", padrão
+  512; vale ao reabrir). **Não** usar `PULSE_LATENCY_MSEC`: ele forçava 128 em todos os
+  streams do app e a placa inteira picotava em projetos maiores. O amp fecha o contexto
+  `mon` ao fechar (não só pausa). Configurações
   → Áudio tem "Blocos" (força `clock.force-quantum` via `pw-metadata` pelo servidor,
   `/api/latency`; volta a 0 quando o servidor fecha) e **Calibrar atraso da gravação**
   (`audio.calibrateLatency`: cliques + gravador com horário `ml-recorder-t`; resultado em
@@ -221,7 +224,7 @@ scripts/     ferramentas de diagnóstico e testes de UI (os _*.mts são temporá
 - **Retorno nativo do amp** (`src/server/monitor.ts`, `/api/monitor`): o servidor roda
   `pw-record` → cadeia de efeitos (mesmo `core/effects`) → `pw-play`, com `node.group`
   comum (mesmo relógio) e um bloco de reserva na saída. O bloco (amostras) é escolhido
-  no amp ("Bloco", padrão 128; 64 estala nesta máquina). O retorno do navegador fica mudo
+  no amp ("Bloco": 128/256/512/1024, potências de 2 — o PipeWire arredonda para baixo; menos de 128 engasga a placa inteira). O retorno do navegador fica mudo
   quando o nativo está ligado (só serve para o visualizador). A entrada do PipeWire é
   achada pelo nome igual ao da entrada escolhida no amp.
 - **Regra do loop gravando**: só volta se o loop estiver ligado **e** houver área
@@ -490,6 +493,20 @@ Z…/ e Q…] teclado musical (`pianokeys.ts`, inclui , . ; / e [ = ]; o L segue
 - **Capotraste** (efeito `capo`, `core/effects.ts`): muda o tom por janelas sobrepostas
   (dois cabeçotes numa linha de atraso, Hann); semitons, oitava (botões −2…+2 no pedal do
   amp, `CapoOctave`), fino e janela; latência ≈ meia janela. Entra no começo da cadeia.
+- **Timbre transfer** (versão crua, `src/server/timbre.ts`): um áudio da lista passa por um
+  modelo **RAVE** (IRCAM, TorchScript) e vira variante nova (`addAudio` com `variantOf`),
+  soando como outro instrumento. Python à parte com PyTorch **só CPU** em
+  `STATE_DIR/timbre/venv` (o script Python fica embutido em timbre.ts e é escrito em
+  `timbre/timbre.py`); modelos em `timbre/models/<nome>.ts`, baixados da lista pública do
+  IRCAM (`play.forum.ircam.fr/rave-vst-api`; muitos são não comerciais, por isso não vêm
+  com o app). ffmpeg converte para float32 mono na taxa do modelo e de volta para WAV 48 kHz.
+  Rotas: `GET /api/timbre` (pronto? modelos), `POST /api/timbre/setup` (cria o venv:
+  python3.10–3.13 do sistema + pip; o índice da CPU do PyTorch — o padrão do PyPI traz
+  CUDA, 5 GB), `/api/timbre/model` (baixa), `POST /api/timbre` ({audio, model}). Interface:
+  botão direito num áudio da lista (Picker.tsx, `timbreMenu`). MCP: `timbre_transfer`.
+  Nesta máquina (i5-8265U): 54 s de guitarra em ~3 s de modelo (~8 s no total). Próximos
+  passos: pedal "Timbre" no retorno nativo (streaming) com reamp em qualidade máxima,
+  gerenciador de modelos, mistura original/transformado, modelo próprio (cavaquinho).
 - **Tap tempo** (`TapButton` em Toolbar.tsx, `tapBpm` em core/tempo.ts): reta pelos
   últimos 12 cliques; pausa de 2 s recomeça; vira um passo de desfazer ao terminar.
 - **Stitcher** (`Stitch.tsx`, `core/stitch.ts`, `core/align.ts`): vários takes da mesma
