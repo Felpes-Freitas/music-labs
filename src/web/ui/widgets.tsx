@@ -402,9 +402,51 @@ export function MenuTree(p: { x: number; y: number; items: MenuItem[]; onClose: 
  * Um nível do menu. altX: borda esquerda do menu pai — se este não couber à direita,
  * abre à esquerda dele (como nos menus do sistema), em vez de cobrir os níveis anteriores.
  */
-function MenuLevel(p: { x: number; y: number; altX?: number; items: MenuItem[]; onClose: () => void }) {
+function MenuLevel(p: { x: number; y: number; altX?: number; items: MenuItem[]; onClose: () => void; outer?: { current: HTMLDivElement | null } }) {
   const [open, setOpen] = useState<{ i: number; x: number; y: number; altX: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  // "triângulo invisível" (menu aim): indo na diagonal até o submenu aberto, o mouse passa
+  // por cima de outros itens; enquanto ele estiver dentro do triângulo entre a posição
+  // anterior e os cantos do submenu, a troca espera (só acontece se parar ou sair dele)
+  const sub = useRef<HTMLDivElement | null>(null);
+  const prev = useRef<{ x: number; y: number } | null>(null);
+  const cur = useRef<{ x: number; y: number } | null>(null);
+  const pending = useRef<{ i: number; el: HTMLElement; timer: number } | null>(null);
+  const aiming = () => {
+    const box = sub.current?.getBoundingClientRect();
+    const a = prev.current, b = cur.current;
+    if (!box || !a || !b || !open) return false;
+    const right = box.left >= (ref.current?.getBoundingClientRect().left ?? 0);
+    const sx = right ? box.left : box.right;
+    const slack = 12;
+    const c1 = { x: sx, y: box.top - slack }, c2 = { x: sx, y: box.bottom + slack };
+    // ponto dentro do triângulo (a, c1, c2): mesmos sinais nos três produtos vetoriais
+    const side = (p1: { x: number; y: number }, p2: { x: number; y: number }, q: { x: number; y: number }) => (p2.x - p1.x) * (q.y - p1.y) - (p2.y - p1.y) * (q.x - p1.x);
+    const d1 = side(a, c1, b), d2 = side(c1, c2, b), d3 = side(c2, a, b);
+    const neg = d1 < 0 || d2 < 0 || d3 < 0, pos = d1 > 0 || d2 > 0 || d3 > 0;
+    return !(neg && pos) && (right ? b.x > a.x - 1 : b.x < a.x + 1);
+  };
+  const activate = (i: number, el: HTMLElement) => {
+    const it = p.items[i];
+    if (!it?.sub) return setOpen(null);
+    const r = el.getBoundingClientRect();
+    const box = ref.current?.getBoundingClientRect();
+    setOpen({ i, x: r.right - 2, y: r.top - 4, altX: (box?.left ?? r.left) + 2 });
+  };
+  const hover = (i: number, el: HTMLElement) => {
+    if (pending.current) clearTimeout(pending.current.timer);
+    pending.current = null;
+    if (open?.i === i) return;
+    if (!aiming()) return activate(i, el);
+    // a caminho do submenu: espera; se o mouse parar em cima deste item, troca
+    const timer = window.setTimeout(() => {
+      if (pending.current?.i !== i) return;
+      pending.current = null;
+      activate(i, el);
+    }, 280);
+    pending.current = { i, el, timer };
+  };
+  useEffect(() => () => void (pending.current && clearTimeout(pending.current.timer)), []);
   const [pos, setPos] = useState({ x: p.x, y: p.y });
   // não deixa o menu sair da tela
   useLayoutEffect(() => {
@@ -417,7 +459,26 @@ function MenuLevel(p: { x: number; y: number; altX?: number; items: MenuItem[]; 
   }, [p.x, p.y, p.altX, p.items.length]);
   return (
     <>
-      <div ref={ref} class="ctx menutree" style={{ left: `${pos.x}px`, top: `${pos.y}px` }} onPointerDown={(e) => e.stopPropagation()}>
+      <div
+        ref={(el) => {
+          ref.current = el;
+          if (p.outer) p.outer.current = el;
+        }}
+        class="ctx menutree"
+        style={{ left: `${pos.x}px`, top: `${pos.y}px` }}
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerMove={(e) => {
+          prev.current = cur.current;
+          cur.current = { x: e.clientX, y: e.clientY };
+          // saiu do triângulo no meio da espera: troca já
+          const pd = pending.current;
+          if (pd && !aiming()) {
+            clearTimeout(pd.timer);
+            pending.current = null;
+            activate(pd.i, pd.el);
+          }
+        }}
+      >
         {p.items.map((it, i) =>
           it.sep ? (
             <div class="menu-sep" />
@@ -434,10 +495,9 @@ function MenuLevel(p: { x: number; y: number; altX?: number; items: MenuItem[]; 
               }}
               onPointerEnter={(e) => {
                 if (rightHeld && (e.buttons & 2) && it.preview) it.preview();
-                if (!it.sub) return setOpen(null);
-                const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                const box = ref.current?.getBoundingClientRect();
-                setOpen({ i, x: r.right - 2, y: r.top - 4, altX: (box?.left ?? r.left) + 2 });
+                prev.current = cur.current;
+                cur.current = { x: e.clientX, y: e.clientY };
+                hover(i, e.currentTarget as HTMLElement);
               }}
               onClick={() => {
                 if (it.sub) return;
@@ -452,7 +512,7 @@ function MenuLevel(p: { x: number; y: number; altX?: number; items: MenuItem[]; 
           ),
         )}
       </div>
-      {open && p.items[open.i]?.sub && <MenuLevel x={open.x} y={open.y} altX={open.altX} items={p.items[open.i].sub!} onClose={p.onClose} />}
+      {open && p.items[open.i]?.sub && <MenuLevel x={open.x} y={open.y} altX={open.altX} items={p.items[open.i].sub!} onClose={p.onClose} outer={sub} />}
     </>
   );
 }

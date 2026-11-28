@@ -453,6 +453,9 @@ Z…/ e Q…] teclado musical (`pianokeys.ts`, inclui , . ; / e [ = ]; o L segue
   Apex Pro TKL e `/dev/hidraw*` já é acessível sem sudo.
 - **Menus encadeados** (`MenuTree`): submenu que não cabe à direita abre à esquerda do
   pai (`altX`), sem cobrir os níveis anteriores.
+  **Triângulo invisível** (menu aim, `MenuLevel`): indo na diagonal até o submenu aberto,
+  enquanto o mouse estiver dentro do triângulo entre a posição anterior e os cantos do
+  submenu (folga de 12 px), a troca de item espera (280 ms, ou na hora se sair dele).
 - **Janelas** (`Win`): redimensionam pelas 4 bordas e 4 cantos (`.win-edge`, dir n/s/e/w…);
   borda esquerda/de cima não passam da área de trabalho; a playlist continua no fundo
   depois de redimensionada.
