@@ -442,7 +442,8 @@ function MenuLevel(p: { x: number; y: number; altX?: number; items: MenuItem[]; 
     const timer = window.setTimeout(() => {
       if (pending.current?.i !== i) return;
       pending.current = null;
-      activate(i, el);
+      // só troca se o mouse ainda estiver em cima deste item (não seguiu para o submenu)
+      if (el.matches(':hover')) activate(i, el);
     }, 280);
     pending.current = { i, el, timer };
   };
@@ -498,6 +499,14 @@ function MenuLevel(p: { x: number; y: number; altX?: number; items: MenuItem[]; 
                 prev.current = cur.current;
                 cur.current = { x: e.clientX, y: e.clientY };
                 hover(i, e.currentTarget as HTMLElement);
+              }}
+              onPointerLeave={() => {
+                // passou por cima a caminho do submenu: a troca agendada não vale mais
+                const pd = pending.current;
+                if (pd?.i === i) {
+                  clearTimeout(pd.timer);
+                  pending.current = null;
+                }
               }}
               onClick={() => {
                 if (it.sub) return;
